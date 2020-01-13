@@ -7,6 +7,14 @@ from torchvision import datasets, transforms, utils
 from tqdm import tqdm
 
 
+class Dataset():
+    def __init__(self, args):
+        self.dataset = datasets.CIFAR10('./data', download=True,
+                                   transform=transforms.ToTensor())
+        self.loader = DataLoader(self.dataset, batch_size=args.batch_size, shuffle=True,
+                            num_workers=4)
+        self.loader = tqdm(enumerate(sample_data(self.loader)))
+
 class SampleBuffer:
     def __init__(self, max_samples=10000):
         self.max_samples = max_samples
@@ -36,7 +44,7 @@ class SampleBuffer:
         return samples, class_ids
 
 
-def sample_buffer(buffer, batch_size=128, p=0.95, device='cuda'):
+def sample_buffer(buffer, batch_size, p=0.95, device='cuda'):
     if len(buffer) < 1:
         return (
             torch.rand(batch_size, 3, 32, 32, device=device),

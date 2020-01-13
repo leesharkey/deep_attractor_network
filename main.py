@@ -8,36 +8,13 @@ from torchvision import datasets, transforms, utils
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from lib.networks import IGEBM
-from lib.data import SampleBuffer, sample_buffer, sample_data
+from lib.data import SampleBuffer, sample_buffer, sample_data, Dataset
 import lib.utils
 
 
-def requires_grad(parameters, flag=True):
-    for p in parameters:
-        p.requires_grad = flag
 
+def train(model, data, writer, alpha=1, step_size=10, sample_step=60, device='cuda'):
 
-def clip_grad(parameters, optimizer):
-    with torch.no_grad():
-        for group in optimizer.param_groups:
-            for p in group['params']:
-                state = optimizer.state[p]
-
-                if 'step' not in state or state['step'] < 1:
-                    continue
-
-                step = state['step']
-                exp_avg_sq = state['exp_avg_sq']
-                _, beta2 = group['betas']
-
-                bound = 3 * torch.sqrt(exp_avg_sq / (1 - beta2 ** step)) + 0.1
-                p.grad.data.copy_(torch.max(torch.min(p.grad.data, bound), -bound))
-
-
-def train(model, writer, alpha=1, step_size=10, sample_step=60, device='cuda'):
-    dataset = datasets.CIFAR10('./data', download=True, transform=transforms.ToTensor())
-    loader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=4)
-    loader = tqdm(enumerate(sample_data(loader)))
 
     buffer = SampleBuffer()
 
@@ -46,7 +23,7 @@ def train(model, writer, alpha=1, step_size=10, sample_step=60, device='cuda'):
     parameters = model.parameters()
     optimizer = optim.Adam(parameters, lr=1e-4, betas=(0.0, 0.999))
 
-    for i, (pos_img, pos_id) in loader:
+    for i, (pos_img, pos_id) in data.loader:
         # Get the loaded pos samples and put them on the correct device
         pos_img, pos_id = pos_img.to(device), pos_id.to(device)
 
@@ -106,7 +83,7 @@ def train(model, writer, alpha=1, step_size=10, sample_step=60, device='cuda'):
         # Send negative samples to the buffer (on cpu)
         buffer.push(neg_img, neg_id)
 
-        loader.set_description(f'loss: {loss.item():.5f}')
+        data.loader.set_description(f'loss: {loss.item():.5f}')
 
         #if i % 1 == 0:
         if i % 100 == 0:
@@ -121,12 +98,34 @@ def train(model, writer, alpha=1, step_size=10, sample_step=60, device='cuda'):
             )
 
 
+def requires_grad(parameters, flag=True):
+    for p in parameters:
+        p.requires_grad = flag
+
+
+def clip_grad(parameters, optimizer):
+    with torch.no_grad():
+        for group in optimizer.param_groups:
+            for p in group['params']:
+                state = optimizer.state[p]
+
+                if 'step' not in state or state['step'] < 1:
+                    continue
+
+                step = state['step']
+                exp_avg_sq = state['exp_avg_sq']
+                _, beta2 = group['betas']
+
+                bound = 3 * torch.sqrt(exp_avg_sq / (1 - beta2 ** step)) + 0.1
+                p.grad.data.copy_(torch.max(torch.min(p.grad.data, bound), -bound))
+
+
 def main():
     ### Parse CLI arguments.
     parser = argparse.ArgumentParser(description='MNIST classification with ' +
                                      'EP-trained Hopfield neural networks.')
 
-    sgroup = parser.add_argument_group('EP options')
+    sgroup = parser.add_argument_group('Sampling options')
     sgroup.add_argument('--alphas', type=float, nargs='+', default=1e-3,
                         help='Individual learning rates for each layer. '+
                              ' Default: %(default)s. '+
@@ -138,14 +137,6 @@ def main():
                              'The next option defines the multiplier for the'+
                              ' alphas in subsequent layers: ' +
                              'Opt2: {0.05, 0.5}.')
-    sgroup.add_argument('--beta', type=float, default=1.0,
-                        help='The amount that the network is nudged toward ' +
-                             'the desired activity configuration at '
-                             'equilibrium. Default: %(default)s.'+
-                             'When randomizing, the following options define'+
-                             'a range of indices and the random value assigned'+
-                             'to the argument will be 10 to the power of the'+
-                             'float selected from the range. Options: [-1., 0.5].')
     sgroup.add_argument('--epsilon', type=float, default=1e-2,
                         help='The amount that the network is moves forward ' +
                              'according to the activity gradient defined by ' +
@@ -174,10 +165,11 @@ def main():
                              'will be sampled. Options: [2, 100]. ')
 
     tgroup = parser.add_argument_group('Training options')
-    tgroup.add_argument('--assign_special_name', action='store_true',
+    tgroup.add_argument('--require_special_name', action='store_true',
                         help='If true, asks for a description of what is '+
                              'special about the '+
                              'experiment, if anything. Default: %(default)s.')
+    parser.set_defaults(require_special_name=False)
     tgroup.add_argument('--special_name', type=str, metavar='N',
                         default="None",
                         help='A description of what is special about the ' +
@@ -185,7 +177,7 @@ def main():
     tgroup.add_argument('--epochs', type=int, metavar='N', default=2,
                         help='Number of training epochs. ' +
                              'Default: %(default)s.')
-    tgroup.add_argument('--batch_size', type=int, metavar='N', default=32,
+    tgroup.add_argument('--batch_size', type=int, metavar='N', default=128,
                         help='Training batch size. Default: %(default)s.')
     tgroup.add_argument('--lr', type=float, default=1e-3,
                         help='Learning rate of optimizer. Default: ' +
@@ -194,18 +186,19 @@ def main():
                              'a range of indices and the random value assigned'+
                              'to the argument will be 10 to the power of the'+
                              'float selected from the range. Options: [-3, 0.2].')
-    tgroup.add_argument('--optimizer', type=str, default="sgd",
-                        help='Optimizer for weight and biases. Default: ' +
-                             '%(default)s.')
-    tgroup.add_argument('--beta_reg', action='store_true',
-                        help='Regularises the beta by flipping its sign '
-                             'randomly during training' +
-                             'Default: %(default)s.')
-    parser.set_defaults(beta_reg=False)
-    tgroup.add_argument('--dataset', type=str, default="MNIST",
+    tgroup.add_argument('--dataset', type=str, default="CIFAR10",
                         help='The dataset the network will be trained on.' +
                              ' Default: %(default)s.')
-    tgroup.add_argument('--l2_reg_param', type=float, default=0.0,
+    tgroup.add_argument('--l2_reg_param_w', type=float, default=0.0,
+                        help='Scaling parameter for the L2 regularisation ' +
+                             'term placed on the weight values. Default: ' +
+                             '%(default)s.'+
+                             'When randomizing, the following options define' +
+                             'a range of indices and the random value assigned' +
+                             'to the argument will be 10 to the power of the' +
+                             'float selected from the range. '+
+                             'Options: [-6, -2].')
+    tgroup.add_argument('--l2_reg_param_energy', type=float, default=1.0,
                         help='Scaling parameter for the L2 regularisation ' +
                              'term placed on the weight values. Default: ' +
                              '%(default)s.'+
@@ -218,26 +211,16 @@ def main():
                         help='Clips state gradient updates. Default: ' +
                              '%(default)s.')
     parser.set_defaults(state_gradient_clipping=False)
-    tgroup.add_argument('--state_gradient_clipping_minmax', type=float, default=2.,
-                        help='The maximum (and negative min) value to clip ' +
+    tgroup.add_argument('--state_gradient_clipping_val', type=float, default=2.,
+                        help='The maximum norm value to clip ' +
                              'the state gradients at. Default: ' +
                              '%(default)s.')
-    tgroup.add_argument('--initializer', type=str, default="random",
-                        help='The type of initializer used to init the state'+
-                             ' variables at the start of each minibatch.' +
-                             'Options:  [zeros, random, previous, ff_init, ' +
-                             'persistent_particles]. ' +
-                             ' Default: %(default)s.')
-    tgroup.add_argument('--initter_network_lr', type=float, default=0.1,
-                        help='Learning rate to pass to the Adam optimizer ' +
-                             'used to train the InitializerNetwork. Default: ' +
-                             '%(default)s.')
 
 
-    ngroup = parser.add_argument_group('Network options')
+    ngroup = parser.add_argument_group('Network and states options')
     ngroup.add_argument('--activation', type=str, default="hardsig",
                         help='The activation function. Options: ' +
-                             '[hardsig, relu, swish]'
+                             '[hardsig, relu, swish, leaky_relu]'
                              'Default: %(default)s.')
     # ngroup.add_argument('--network_architecture', type=str, default="ff",
     #                     help='The type of network. Options: [ff, ctx]'
@@ -263,13 +246,7 @@ def main():
                              'Options: [-3, 0].')
     ngroup.add_argument('--size_layers', type=int, nargs='+', default=[6, 4, 3],
                         help='Number of units in each hidden layer of the ' +
-                             'network. Default: %(default)s.',
-                        required=True)
-    ngroup.add_argument('--pos_weights_and_biases',  action='store_true',
-                        help='Clamps the weights and biases so that they are' +
-                             'positive only.' +
-                             'Default: %(default)s.')
-    parser.set_defaults(pos_weights_and_biases=False)
+                             'network. Default: %(default)s.')
     ngroup.add_argument('--w_dropout_prob', type=float, default=1.0,
                         help='The fraction of ones in the dropout masks ' +
                              'placed on the weights.'+
@@ -306,11 +283,16 @@ def main():
                              'of scalar data.') #On Euler do around 100
 
     args = parser.parse_args()
+    # Generate random args, if any
     if args.randomize_args is not []:
         args = lib.utils.random_arg_generator(parser, args)
 
+    # Determine the correct device
     vars(args)['use_cuda'] = args.use_cuda and torch.cuda.is_available()
-    # use_cuda = args.use_cuda and torch.cuda.is_available()
+
+    # Give a very short description of what is special about this run
+    if args.require_special_name:
+        vars(args)['special_name'] = input("Special name: ") or "None"
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
@@ -324,8 +306,11 @@ def main():
     # Set up model
     model = IGEBM(10).to('cuda') #TODO change this to the model I want
 
+    # Set up dataset
+    data = Dataset(args)
+
     # Train the model
-    train(model, writer, sample_step=10)
+    train(model, data, writer, sample_step=10)
 
 if __name__ == '__main__':
     main()
