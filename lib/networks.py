@@ -68,6 +68,17 @@ def spectral_norm(module, init=True, std=1, bound=False):
     return module
 
 
+class Interpolate(nn.Module):
+    def __init__(self, size, mode):
+        super(Interpolate, self).__init__()
+        self.interp = nn.functional.interpolate
+        self.size = size
+        self.mode = mode
+
+    def forward(self, x):
+        x = self.interp(x, size=self.size, mode=self.mode, align_corners=False)
+        return x
+
 class ResBlock(nn.Module):
     def __init__(self, in_channel, out_channel, n_class=None, downsample=False):
         super().__init__()
@@ -144,13 +155,14 @@ class ResBlock(nn.Module):
 
 
 class IGEBM(nn.Module):
-    def __init__(self, n_class=None):
+    def __init__(self, args, n_class=None):
         super().__init__()
-
+        # torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1,
+        # padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
         self.conv1 = spectral_norm(nn.Conv2d(3, 128, 3, padding=1), std=1)
 
         self.blocks = nn.ModuleList(
-            [
+            [     #in_channel, out_channel, n_class
                 ResBlock(128, 128, n_class, downsample=True),
                 ResBlock(128, 128, n_class),
                 ResBlock(128, 256, n_class, downsample=True),
@@ -162,7 +174,7 @@ class IGEBM(nn.Module):
 
         self.linear = nn.Linear(256, 1)
 
-    def forward(self, input, class_id=None):
+    def forward(self, input, class_id=None): # TODO change so that it takes a list of states as input
         out = self.conv1(input)
 
         out = F.leaky_relu(out, negative_slope=0.2)
@@ -175,3 +187,129 @@ class IGEBM(nn.Module):
         out = self.linear(out)
 
         return out
+
+class DeepAttractorNetwork(nn.Module):
+    """Define the attractor network. It takes the list of state layers as
+    input, passes each through a base conv net, the output of which is passed
+    to layers ahead and behind (where appropriate). If ahead, these are
+     downsampled so that they have the same dimensions as the statelayer ahead;
+     if behind, these are upsampling so that they have the same dimensions as
+     behind. The concatenated result is passed through another conv net then a
+     relu then another (simply linear) conv net, and
+     then the values of the state layer are added (making it a pre-activation resnet), which
+     outputs a tensor that has the same dimensions as the state layer, defining
+     the energy for each of the state layer neurons. These are all summed in
+     order to get the total energy."""
+    def __init__(self, args, n_class=None):
+        super().__init__()
+        # torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1,
+        # padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
+        # An example that works:
+        # nn.Conv2d(3,4,3,padding=1,bias=False)(torch.rand(128,3,32,32))
+        # Fails: nn.Conv2d(3,4,3,padding=1,bias=False)(torch.rand(128,32,32,3))
+        self.args = args
+        self.state_sizes = args.states_sizes
+        self.act1 = torch.nn.LeakyReLU()
+
+        # Base convs are common to all state layers
+        self.base_convs = nn.ModuleList([
+            spectral_norm(nn.Conv2d(in_channels=3, out_channels=64,
+                                    kernel_size=3, padding=1, bias=True)), #yields [128, 64, 32, 32]
+            spectral_norm(nn.Conv2d(in_channels=9, out_channels=64,
+                                    kernel_size=3, padding=1, bias=True)), #yields [128, 64, 16, 16]
+            spectral_norm(nn.Conv2d(in_channels=18, out_channels=64,
+                                    kernel_size=3, padding=1, bias=True))])  #yields [128, 64, 8, 8]
+        self.intermed_convs = nn.ModuleList([
+            spectral_norm(nn.Conv2d(in_channels=(64*2)+3, out_channels=64,
+                                    kernel_size=3, padding=1, bias=True)),
+            spectral_norm(nn.Conv2d(in_channels=(64*3)+9, out_channels=64,
+                                    kernel_size=3, padding=1, bias=True)),
+            spectral_norm(nn.Conv2d(in_channels=(64*2)+18, out_channels=64,
+                                    kernel_size=3, padding=1, bias=True))])
+
+        self.energy_convs = nn.ModuleList([
+            spectral_norm(nn.Conv2d(in_channels=(64*3)+3, out_channels=3,
+                                    kernel_size=3, padding=1, bias=True)),
+            spectral_norm(nn.Conv2d(in_channels=(64*4)+9, out_channels=9,
+                                    kernel_size=3, padding=1, bias=True)),
+            spectral_norm(nn.Conv2d(in_channels=(64*3)+18, out_channels=18,
+                                    kernel_size=3, padding=1, bias=True))])
+
+        self.interps = nn.ModuleList([Interpolate(size=size[2:], mode='bilinear')
+                                      for size in self.state_sizes])
+
+        # I'm including energy weights because it might give the network a
+        # chance to silence some persistently high energy state neurons during
+        # learning but to unsilence them when they start being learnable (e.g.
+        # when the layers below have learned properly.
+        # These will be clamped to be at least a small positive value
+        self.num_state_neurons = torch.sum(
+            torch.tensor([torch.prod(torch.tensor(ss[1:]))
+                 for ss in self.state_sizes]))
+        self.energy_weights = nn.Linear(int(self.num_state_neurons), 1, bias=False)
+        nn.init.uniform_(self.energy_weights.weight, a=0.5, b=1.5)
+
+    def forward(self, state_layers, class_id=None):
+        base_outs = [None] * len(state_layers)
+        for i in range(len(state_layers)):
+            base_outs[i] = self.base_convs[i](state_layers[i])
+
+        ####
+
+        num_state_layers = len(base_outs)
+        outs = [None] * num_state_layers
+
+        for i in range(num_state_layers):
+            if i == 0:
+                from_next = self.interps[i](base_outs[i + 1])
+                intermed_input = torch.cat([state_layers[i],
+                                          base_outs[i],
+                                          from_next],
+                                         dim=1)  # Concats on channel dim
+            elif i == num_state_layers - 1:
+                from_previous = self.interps[i](base_outs[i - 1])
+                intermed_input = torch.cat([state_layers[i],
+                                          from_previous,
+                                          base_outs[i]], dim=1)
+            else:
+                from_previous = self.interps[i](base_outs[i - 1])
+                from_next = self.interps[i](base_outs[i + 1])
+                intermed_input = torch.cat([state_layers[i],
+                                          from_previous,
+                                          base_outs[i],
+                                          from_next], dim=1)
+            intermed_out = self.intermed_convs[i](intermed_input)
+            energy_input = torch.cat([intermed_input, intermed_out], dim=1)
+            outs[i] = self.energy_convs[i](energy_input)
+
+        outs = [out.view(self.args.batch_size, -1) for out in outs]
+        outs = torch.cat(outs, dim=1)
+        energy = self.energy_weights(outs)
+        return energy
+
+# class BaseConvs(nn.Module):
+#     def __init__(self, args):
+#         super().__init__()
+#         self.state_sizes = args.states_sizes
+#         self.act1 = torch.nn.LeakyReLU()
+#
+#
+#     def forward(self, state_layers):
+#
+#         return outputs
+#
+# class EnergyConvs(nn.Module):
+#     def __init__(self, args):
+#         super().__init__()
+#         self.state_sizes = args.states_sizes
+#         self.act1 = torch.nn.LeakyReLU()
+#
+#     def forward(self, base_outs):
+#
+#         return energy
+
+
+###### Function to help me debug
+shapes = lambda x : [y.shape for y in x]
+nancheck = lambda x : (x != x).any()
+listout = lambda y : [x for x in y]

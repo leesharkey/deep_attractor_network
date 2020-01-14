@@ -7,47 +7,60 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, utils
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from lib.networks import IGEBM
+from lib.networks import IGEBM, DeepAttractorNetwork
 from lib.data import SampleBuffer, sample_buffer, sample_data, Dataset
 import lib.utils
 
 
 
-def train(model, data, writer, alpha=1, step_size=10, sample_step=60, device='cuda'):
+def train(model, args, data, writer, alpha=1, step_size=10, sample_step=60, device='cuda'):
 
+    st_sz = args.states_sizes
 
     buffer = SampleBuffer()
 
-    noise = torch.randn(128, 3, 32, 32, device=device)  # TODO change for samples
+    noises = [torch.randn(st_sz[i][0], st_sz[i][1],
+                          st_sz[i][2], st_sz[i][3], device=device)
+              for i in range(len(st_sz))]
 
     parameters = model.parameters()
     optimizer = optim.Adam(parameters, lr=1e-4, betas=(0.0, 0.999))
+    # initter_optimizer = optim.Adam(parameters, lr=1e-3, betas=(0.0, 0.999))
 
     for i, (pos_img, pos_id) in data.loader:
         # Get the loaded pos samples and put them on the correct device
         pos_img, pos_id = pos_img.to(device), pos_id.to(device)
 
+        # Gets the values of the pos images by initting with ff net and then
+        # running a short inference phase
+        #TODO pos_states = model.get_pos_states(pos_img, pos_id)
+
         # Initialize the chain (either as noise or from buffer)
-        neg_img, neg_id = sample_buffer(buffer=buffer,
+        neg_states, neg_id = sample_buffer(buffer=buffer, # TODO ensure this returns a list with elements of the right shape
                                         batch_size=pos_img.shape[0],
                                         p=0.95)
         # Freeze network parameters and take grads w.r.t only the inputs
-        neg_img.requires_grad = True
+        requires_grad(neg_states, True)
         requires_grad(parameters, False)
         model.eval()
 
         # Negative phase sampling
         for k in tqdm(range(sample_step)):
-            if noise.shape[0] != neg_img.shape[0]:
-                noise = torch.randn(neg_img.shape[0], 3, 32, 32, device=device)
+            # if noise.shape[0] != neg_states[0].shape[0]: #0th dim of 0th SL
+            #     noises = [torch.rand_like(neg_state.shape[0])
+            #               for neg_state in neg_states] # Not sure why this was necess
 
-            noise.normal_(0, 0.005)
-            neg_img.data.add_(noise.data)  # Adding noise to the Langevin step
+            for noise in noises:
+                noise.normal_(0, 0.005)
 
-            neg_out = model(neg_img, neg_id)  # Outputs energy of neg sample
+            # Adding noise in the Langevin step
+            neg_states = [neg_state.data.add_(noise.data)
+                          for noise, neg_state in zip(noises, neg_states)]
+
+            neg_energies = model(neg_states, neg_id)  # Outputs energy of neg sample
             print(neg_out.sum())
-            neg_out.sum().backward()
-            neg_img.grad.data.clamp_(-0.01, 0.01) #TODO change to clip by norm, not just clipping values like implemented. torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip) https://stackoverflow.com/questions/54716377/how-to-do-gradient-clipping-in-pytorch
+            neg_energies.sum().backward()
+            neg_energies.grad.data.clamp_(-0.01, 0.01) #TODO change to clip by norm, not just clipping values like implemented. torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip) https://stackoverflow.com/questions/54716377/how-to-do-gradient-clipping-in-pytorch
 
             # The gradient step in the Langevin step
             neg_img.data.add_(-step_size, neg_img.grad.data)
@@ -244,7 +257,7 @@ def main():
                              'to the argument will be 10 to the power of the' +
                              'float selected from the range. '+
                              'Options: [-3, 0].')
-    ngroup.add_argument('--size_layers', type=int, nargs='+', default=[6, 4, 3],
+    ngroup.add_argument('--states_sizes', type=list, nargs='+', default=[[]],
                         help='Number of units in each hidden layer of the ' +
                              'network. Default: %(default)s.')
     ngroup.add_argument('--w_dropout_prob', type=float, default=1.0,
@@ -294,6 +307,11 @@ def main():
     if args.require_special_name:
         vars(args)['special_name'] = input("Special name: ") or "None"
 
+    if args.dataset == "CIFAR10":
+        vars(args)['states_sizes'] = [[args.batch_size, 3, 32, 32],
+                                     [args.batch_size, 9, 16, 16],
+                                     [args.batch_size, 18, 8, 8]]
+
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
         print(str(k) + '\t' * 2 + str(v))
@@ -304,13 +322,13 @@ def main():
     writer = SummaryWriter(args.tensorboard_log_dir + '/' + model_name)
 
     # Set up model
-    model = IGEBM(10).to('cuda') #TODO change this to the model I want
+    model = DeepAttractorNetwork(args).to('cuda')
 
     # Set up dataset
     data = Dataset(args)
 
     # Train the model
-    train(model, data, writer, sample_step=10)
+    train(model, args, data, writer, sample_step=10)
 
 if __name__ == '__main__':
     main()
