@@ -1,4 +1,5 @@
 import argparse
+import os
 import random
 import numpy as np
 import torch
@@ -7,109 +8,260 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, utils
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
-from lib.networks import IGEBM, DeepAttractorNetwork
-from lib.data import SampleBuffer, sample_buffer, sample_data, Dataset
+import lib.networks as nw
+from lib.data import SampleBuffer, sample_data, Dataset
 import lib.utils
 
+class TrainingManager():
+    def __init__(self, args, model, data, buffer, writer, device, sample_log_dir):
+        self.args = args
+        self.model = model
+        self.data = data
+        self.writer = writer
+        self.buffer = buffer
+        self.device = device
+        self.sample_log_dir = sample_log_dir
+        self.state_sizes = args.states_sizes
+        self.parameters = model.parameters()
+        self.optimizer = optim.Adam(self.parameters, lr=args.lr, betas=(0.0, 0.999))
+        # initter_optimizer = optim.Adam(parameters, lr=1e-3, betas=(0.0, 0.999))
+
+        self.noises = [torch.randn(self.state_sizes[i][0],
+                                   self.state_sizes[i][1],
+                                   self.state_sizes[i][2],
+                                   self.state_sizes[i][3],
+                                   device=self.device)
+                       for i in range(len(self.state_sizes))]
+
+        self.global_step = 0
+        self.batch_num = 0
+
+        if args.initializer == 'ff_init':
+            self.initter = nw.InitializerNetwork(args, writer, device)
+            self.initter.to(device)
+        else:
+            self.initter = None
+
+        if self.args.load_model:
+            path = 'exps/models/' + self.args.load_model + '.pt'
+            model_name = str(self.args.load_model)
+            checkpoint = torch.load(path)
+            self.model.load_state_dict(checkpoint['model'])
+            self.initter.load_state_dict(checkpoint['initializer'])
+            self.optimizer.load_state_dict(checkpoint['model_optimizer'])
+            self.initter.optimizer.load_state_dict(checkpoint['initializer_optimizer'])
+            self.args = checkpoint['args']
+            self.batch_num = checkpoint['batch_num']
+            print("Loaded model " + model_name + ' successfully')
+
+        lib.utils.save_configs_to_csv(self.args, self.model.model_name)
 
 
-def train(model, args, data, writer, alpha=1, step_size=10, sample_step=60, device='cuda'):
+    def pre_train_initializer(self):
+        i = 0
+        for batch, (pos_img, pos_id) in self.data.loader:
+            print("Pretraining step")
+            pos_states, pos_id = self.positive_phase(pos_img, pos_id)
+            i += 1
+            if i > self.args.num_pretraining_batches:
+                break
+        print("\nPretraining of initializer complete")
 
-    st_sz = args.states_sizes
 
-    buffer = SampleBuffer()
+    def train(self):
+        save_dict = self.make_save_dict()
+        path = 'exps/models/' +self.model.model_name + '.pt'
+        torch.save(save_dict, path)
+        for batch, (pos_img, pos_id) in self.data.loader:
 
-    noises = [torch.randn(st_sz[i][0], st_sz[i][1],
-                          st_sz[i][2], st_sz[i][3], device=device)
-              for i in range(len(st_sz))]
+            pos_states, pos_id = self.positive_phase(pos_img, pos_id)
 
-    parameters = model.parameters()
-    optimizer = optim.Adam(parameters, lr=1e-4, betas=(0.0, 0.999))
-    # initter_optimizer = optim.Adam(parameters, lr=1e-3, betas=(0.0, 0.999))
+            neg_states, neg_id = self.negative_phase()
 
-    for i, (pos_img, pos_id) in data.loader:
+            self.param_update_phase(neg_states, neg_id, pos_states, pos_id)
+
+            if self.batch_num % self.args.img_logging_interval == 0:
+                utils.save_image(
+                    neg_states[0].detach().to('cpu'),
+                    os.path.join(self.sample_log_dir,
+                                 str(self.batch_num).zfill(5) + '.png'),
+                    nrow=16,
+                    normalize=True,
+                    range=(0, 1))
+
+            if self.batch_num % self.args.img_logging_interval == 0:
+                save_dict = self.make_save_dict()
+                path = 'exps/models/' + self.model.model_name + '.pt'
+                torch.save(save_dict, path)
+
+            self.batch_num += 1
+            if self.batch_num >= 1e6:
+                # at batchsize=128 there are 390 batches
+                # per epoch, so at 1e6 max batches that's 2.56k epochs.
+                break
+
+        # Save when training is complete too
+        save_dict = self.make_save_dict()
+        path = 'exps/models/' +self.model.model_name + '.pt'
+        torch.save(save_dict, path)
+
+    def positive_phase(self, pos_img, pos_id):
+
+        print('\nStarting positive phase...')
         # Get the loaded pos samples and put them on the correct device
-        pos_img, pos_id = pos_img.to(device), pos_id.to(device)
+        pos_img, pos_id = pos_img.to(self.device), pos_id.to(self.device)
 
         # Gets the values of the pos images by initting with ff net and then
         # running a short inference phase
-        #TODO pos_states = model.get_pos_states(pos_img, pos_id)
-
-        # Initialize the chain (either as noise or from buffer)
-        neg_states, neg_id = sample_buffer(buffer=buffer, # TODO ensure this returns a list with elements of the right shape
-                                        batch_size=pos_img.shape[0],
-                                        p=0.95)
+        pos_states = [pos_img]
+        #requires_grad(pos_states, True)
+        if self.args.initializer == 'ff_init':
+            self.initter.train()
+            pos_states_init = self.initter.forward(pos_img, pos_id)
+            pos_states_new = [psi.clone().detach() for psi in pos_states_init]
+            pos_states.extend(pos_states_new)
+        else:
+            pos_states.extend(
+                [torch.randn(size, device=self.device, requires_grad=True)
+                 for size in self.state_sizes[1:]])
+        ################################################
         # Freeze network parameters and take grads w.r.t only the inputs
-        requires_grad(neg_states, True)
-        requires_grad(parameters, False)
-        model.eval()
 
-        # Negative phase sampling
-        for k in tqdm(range(sample_step)):
-            # if noise.shape[0] != neg_states[0].shape[0]: #0th dim of 0th SL
-            #     noises = [torch.rand_like(neg_state.shape[0])
-            #               for neg_state in neg_states] # Not sure why this was necess
+        requires_grad(pos_states, True)
+        requires_grad(self.parameters, False)
+        requires_grad(self.initter.parameters(), False)
+        self.model.eval()
 
-            for noise in noises:
-                noise.normal_(0, 0.005)
-
-            # Adding noise in the Langevin step
-            neg_states = [neg_state.data.add_(noise.data)
-                          for noise, neg_state in zip(noises, neg_states)]
-
-            neg_energies = model(neg_states, neg_id)  # Outputs energy of neg sample
-            print(neg_out.sum())
-            neg_energies.sum().backward()
-            neg_energies.grad.data.clamp_(-0.01, 0.01) #TODO change to clip by norm, not just clipping values like implemented. torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip) https://stackoverflow.com/questions/54716377/how-to-do-gradient-clipping-in-pytorch
-
-            # The gradient step in the Langevin step
-            neg_img.data.add_(-step_size, neg_img.grad.data)
-
-            # Prepare gradients and sample for next sampling step
-            neg_img.grad.detach_()
-            neg_img.grad.zero_()
-            neg_img.data.clamp_(0, 1)
+        # Positive phase sampling (will be made into initialisation func later)
+        for k in tqdm(range(self.args.num_it_pos)):
+            self.sampler_step(pos_states, pos_id, positive_phase=True)
+            self.global_step += 1
 
         # Stop calculting grads w.r.t. images
-        neg_img = neg_img.detach()
+        for pos_state in pos_states:
+            pos_state.detach_()
 
-        # Put model in training mode and prepare network parameters for updates
-        requires_grad(parameters, True)
-        model.train()
-        model.zero_grad()
+        # Update initializer network if present
+        if self.args.initializer == 'ff_init':
+            requires_grad(self.initter.parameters(), True)
+            loss = self.initter.update_weights(outs=pos_states_init,
+                                               targets=pos_states[1:],
+                                               step=self.global_step)
 
-        # Get energies of positive and negative samples
-        pos_out = model(pos_img, pos_id)
-        neg_out = model(neg_img, neg_id)
+        return pos_states, pos_id
 
-        # Calculate the loss and the gradients for the network params
-        loss = alpha * (pos_out ** 2 + neg_out ** 2)  # L2 penalty on energy magnitudes
-        loss = loss + (pos_out - neg_out)  # Contrastive loss + L2 penalty
-        loss = loss.mean()
-        loss.backward()
+    def negative_phase(self):
+        print('\nStarting negative phase...')
+        # Initialize the chain (either as noise or from buffer)
+        neg_states, neg_id = self.buffer.sample_buffer()
+        # Freeze network parameters and take grads w.r.t only the inputs
+        requires_grad(neg_states, True)
+        requires_grad(self.parameters, False)
+        self.model.eval()
 
-        clip_grad(parameters, optimizer)
+        # Negative phase sampling
+        for k in tqdm(range(self.args.num_it_neg)):
+            self.sampler_step(neg_states, neg_id)
+            self.global_step += 1
 
-        # Update the network params
-        optimizer.step()
+        # Stop calculting grads w.r.t. images
+        for neg_state in neg_states:
+            neg_state.detach_()
 
         # Send negative samples to the buffer (on cpu)
-        buffer.push(neg_img, neg_id)
+        self.buffer.push(neg_states, neg_id)
+        return neg_states, neg_id
 
-        data.loader.set_description(f'loss: {loss.item():.5f}')
+    def sampler_step(self, states, ids, positive_phase=False):
 
-        #if i % 1 == 0:
-        if i % 100 == 0:
-            # TODO When sampling latents, this will need to save
-            #  only the image part
-            utils.save_image(
-                neg_img.detach().to('cpu'),
-                f'samples/{str(i).zfill(5)}.png',
-                nrow=16,
-                normalize=True,
-                range=(0, 1),
-            )
+        for noise in self.noises:
+            noise.normal_(0, 0.005)
 
+        # Adding noise in the Langevin step, but only to latent variables
+        # in positive phase
+        for i, (noise, state) in enumerate(zip(self.noises, states)):
+            if positive_phase and i == 0:
+                pass
+            else:
+                state.data.add_(noise.data)
+
+        energies = self.model(states, ids)  # Outputs energy of neg sample
+        total_energy = energies.sum()
+        if positive_phase:
+            print('\nPos Energy: ' + str(total_energy.cpu().detach().numpy()))
+            self.writer.add_scalar('train/PosSamplesEnergy', total_energy,
+                                   self.global_step)
+        else:
+            print('\nNeg Energy: ' + str(total_energy.cpu().detach().numpy()))
+            self.writer.add_scalar('train/NegSamplesEnergy', total_energy,
+                                   self.global_step)
+
+        total_energy.backward()
+        torch.nn.utils.clip_grad_norm_(states,
+                                       self.args.clip_state_grad_norm,
+                                       norm_type=2)
+
+        for i, state in enumerate(states):
+            # The gradient step in the Langevin step (only for upper layers)
+            if positive_phase and i == 0:
+                pass
+            else:
+                state.data.add_(-self.args.sampling_step_size,
+                                state.grad.data)
+
+            # Prepare gradients and sample for next sampling step
+            state.grad.detach_()
+            state.grad.zero_()
+            state.data.clamp_(0, 1)
+
+    def calc_energ_and_loss(self, neg_states, neg_id, pos_states, pos_id):
+        # Get energies of positive and negative samples
+        pos_energy = self.model(pos_states, pos_id)
+        neg_energy = self.model(neg_states, neg_id)
+
+        # Calculate the loss and the gradients for the network params
+        loss_l2 = self.args.l2_reg_energy_param * (
+                pos_energy ** 2 + neg_energy ** 2)  # L2 penalty on energy magnitudes
+        loss_ml = pos_energy - neg_energy  # Maximum likelihood loss
+        loss = loss_ml + loss_l2
+        loss = loss.mean()
+        loss.backward()
+        self.writer.add_scalar('train/loss', loss.item(), self.global_step)
+        return neg_energy, pos_energy, loss
+
+    def update_weights(self, loss):
+        clip_grad(self.parameters, self.optimizer)
+
+        # Update the network params
+        self.optimizer.step()
+        for energy_weight in self.model.energy_weights.parameters():
+            energy_weight.data.clamp_(self.args.energy_weight_min)
+
+        self.data.loader.set_description(f'loss: {loss.item():.5f}')
+
+    def param_update_phase(self, neg_states, neg_id, pos_states, pos_id):
+
+        # Put model in training mode and prepare network parameters for updates
+        requires_grad(self.parameters, True)
+        self.model.train()  # Not to be confused with self.TrainingManager.train
+        self.model.zero_grad()
+
+        neg_energy, pos_energy, loss = \
+            self.calc_energ_and_loss(neg_states, neg_id,
+                                     pos_states, pos_id)
+
+        self.update_weights(loss)
+
+    def make_save_dict(self):
+        save_dict = {'model': self.model.state_dict(),
+                     'model_optimizer': self.optimizer.state_dict(),
+                     'args': self.args,
+                     'batch_num': self.batch_num}
+        if self.args.initializer =='ff_init':
+            initter_dict = {'initializer': self.initter.state_dict(),
+                            'initializer_optimizer': self.initter.optimizer.state_dict()}
+            save_dict    = {**save_dict, **initter_dict}
+        return save_dict
 
 def requires_grad(parameters, flag=True):
     for p in parameters:
@@ -133,6 +285,33 @@ def clip_grad(parameters, optimizer):
                 p.grad.data.copy_(torch.max(torch.min(p.grad.data, bound), -bound))
 
 
+def finalize_args(parser):
+
+    args = parser.parse_args()
+
+    # Generate random args, if any
+    if args.randomize_args is not []:
+        args = lib.utils.random_arg_generator(parser, args)
+
+    # Determine the correct device
+    vars(args)['use_cuda'] = args.use_cuda and torch.cuda.is_available()
+
+    # Give a very short description of what is special about this run
+    if args.require_special_name:
+        vars(args)['special_name'] = input("Special name: ") or "None"
+
+    if args.dataset == "CIFAR10":
+        vars(args)['states_sizes'] = [[args.batch_size, 3, 32, 32],
+                                     [args.batch_size, 9, 16, 16],
+                                     [args.batch_size, 18, 8, 8]]
+
+    # Print final values for args
+    for k, v in zip(vars(args).keys(), vars(args).values()):
+        print(str(k) + '\t' * 2 + str(v))
+
+    return args
+
+
 def main():
     ### Parse CLI arguments.
     parser = argparse.ArgumentParser(description='MNIST classification with ' +
@@ -150,7 +329,7 @@ def main():
                              'The next option defines the multiplier for the'+
                              ' alphas in subsequent layers: ' +
                              'Opt2: {0.05, 0.5}.')
-    sgroup.add_argument('--epsilon', type=float, default=1e-2,
+    sgroup.add_argument('--sampling_step_size', type=float, default=10,
                         help='The amount that the network is moves forward ' +
                              'according to the activity gradient defined by ' +
                              'the partial derivative of the Hopfield-like ' +
@@ -177,6 +356,7 @@ def main():
                              'a range of integers from which the random value'+
                              'will be sampled. Options: [2, 100]. ')
 
+
     tgroup = parser.add_argument_group('Training options')
     tgroup.add_argument('--require_special_name', action='store_true',
                         help='If true, asks for a description of what is '+
@@ -202,7 +382,7 @@ def main():
     tgroup.add_argument('--dataset', type=str, default="CIFAR10",
                         help='The dataset the network will be trained on.' +
                              ' Default: %(default)s.')
-    tgroup.add_argument('--l2_reg_param_w', type=float, default=0.0,
+    tgroup.add_argument('--l2_reg_w_param', type=float, default=0.0,
                         help='Scaling parameter for the L2 regularisation ' +
                              'term placed on the weight values. Default: ' +
                              '%(default)s.'+
@@ -211,29 +391,45 @@ def main():
                              'to the argument will be 10 to the power of the' +
                              'float selected from the range. '+
                              'Options: [-6, -2].')
-    tgroup.add_argument('--l2_reg_param_energy', type=float, default=1.0,
+    tgroup.add_argument('--l2_reg_energy_param', type=float, default=1.0,
                         help='Scaling parameter for the L2 regularisation ' +
-                             'term placed on the weight values. Default: ' +
+                             'term placed on the energy values. Default: ' +
                              '%(default)s.'+
                              'When randomizing, the following options define' +
                              'a range of indices and the random value assigned' +
                              'to the argument will be 10 to the power of the' +
                              'float selected from the range. '+
                              'Options: [-6, -2].')
-    tgroup.add_argument('--state_gradient_clipping', action='store_true',
-                        help='Clips state gradient updates. Default: ' +
-                             '%(default)s.')
-    parser.set_defaults(state_gradient_clipping=False)
-    tgroup.add_argument('--state_gradient_clipping_val', type=float, default=2.,
+    tgroup.add_argument('--clip_state_grad_norm', type=float, default=0.01,
                         help='The maximum norm value to clip ' +
                              'the state gradients at. Default: ' +
+                             '%(default)s.')
+    tgroup.add_argument('--initializer', type=str, default="random",
+                        help='The type of initializer used to init the state'+
+                             ' variables at the start of each minibatch.' +
+                             'Options:  [zeros, random, previous, ff_init, ' +
+                             'persistent_particles]. ' +
+                             ' Default: %(default)s.')
+    tgroup.add_argument('--initter_network_lr', type=float, default=0.01,
+                        help='Learning rate to pass to the Adam optimizer ' +
+                             'used to train the InitializerNetwork. Default: ' +
+                             '%(default)s.')
+    tgroup.add_argument('--pretrain_initializer', action='store_true',
+                        help='If true, trains the feedforward initializer '+
+                             'for a given number of steps before the training '
+                             'of the main network starts. '+
+                             'Default: %(default)s.')
+    parser.set_defaults(pretrain_initializer=False)
+    tgroup.add_argument('--num_pretraining_batches', type=int, default=30,
+                        help='Learning rate to pass to the Adam optimizer ' +
+                             'used to train the InitializerNetwork. Default: ' +
                              '%(default)s.')
 
 
     ngroup = parser.add_argument_group('Network and states options')
-    ngroup.add_argument('--activation', type=str, default="hardsig",
+    ngroup.add_argument('--activation', type=str, default="leaky_relu",
                         help='The activation function. Options: ' +
-                             '[hardsig, relu, swish, leaky_relu]'
+                             '[relu, swish, leaky_relu]'
                              'Default: %(default)s.')
     # ngroup.add_argument('--network_architecture', type=str, default="ff",
     #                     help='The type of network. Options: [ff, ctx]'
@@ -268,6 +464,16 @@ def main():
                              'to the argument will be 10 to the power of the' +
                              'float selected from the range. ' +
                              'Options: [-0.07, 0].')
+    ngroup.add_argument('--energy_weight_min', type=float, default=0.0,
+                        help='The minimum value that weights in the energy ' +
+                             'weights layer may take.')
+    ngroup.add_argument('--energy_weight_mask', type=int, nargs='+',
+                        default=[1,1,1], help='A list that will be used to' +
+                        'define a Boolean mask over the energy weights, ' +
+                        'allowing you to silence the energy contributions' +
+                        ' of certain state layers selectively.' +
+                        ' Default: %(default)s.')
+
 
 
     mgroup = parser.add_argument_group('Miscellaneous options')
@@ -279,7 +485,10 @@ def main():
                         help='List of CLI args to pass to the random arg ' +
                              'generator. Default: %(default)s.',
                         required=False)
-
+    ngroup.add_argument('--sample_buffer_prob', type=float, default=0.95,
+                        help='The probability that the network will be ' +
+                             'initialised from the buffer instead of from '+
+                             'random noise.')
     # Locally it should be 'exps/tblogs'
     # On Euler it should be '/cluster/scratch/sharkeyl/HH/tblogs'
     mgroup.add_argument('--tensorboard_log_dir', type=str,
@@ -294,41 +503,58 @@ def main():
     mgroup.add_argument('--scalar_logging_interval', type=int, default=1,
                         help='The size of the intervals between the logging ' +
                              'of scalar data.') #On Euler do around 100
+    mgroup.add_argument('--img_logging_interval', type=int, default=100,
+                        help='The size of the intervals between the logging ' +
+                             'of image samples.')
+    mgroup.add_argument('--model_save_interval', type=int, default=10000,
+                        help='The size of the intervals between the model '+
+                             'saves.')
+    mgroup.add_argument('--load_model', type=str,
+                        help='The name of the model that you want to load.'+
+                        ' The file extension should not be included.')
 
-    args = parser.parse_args()
-    # Generate random args, if any
-    if args.randomize_args is not []:
-        args = lib.utils.random_arg_generator(parser, args)
+    args = finalize_args(parser)
 
-    # Determine the correct device
-    vars(args)['use_cuda'] = args.use_cuda and torch.cuda.is_available()
+    if args.use_cuda:
+        device = 'cuda'
+    else:
+        device = 'cpu'
 
-    # Give a very short description of what is special about this run
-    if args.require_special_name:
-        vars(args)['special_name'] = input("Special name: ") or "None"
-
-    if args.dataset == "CIFAR10":
-        vars(args)['states_sizes'] = [[args.batch_size, 3, 32, 32],
-                                     [args.batch_size, 9, 16, 16],
-                                     [args.batch_size, 18, 8, 8]]
-
-    # Print final values for args
-    for k, v in zip(vars(args).keys(), vars(args).values()):
-        print(str(k) + '\t' * 2 + str(v))
-
-    # Set up the tensorboard summary writer
+    # Set up the tensorboard summary writer and log dir
     model_name = lib.utils.datetimenow() + '__rndidx_' + str(np.random.randint(0,99999))
     print(model_name)
     writer = SummaryWriter(args.tensorboard_log_dir + '/' + model_name)
+    sample_log_dir = os.path.join('exps', 'samples', model_name)
+    if not os.path.isdir(sample_log_dir):
+        os.mkdir(sample_log_dir)
 
     # Set up model
-    model = DeepAttractorNetwork(args).to('cuda')
+    model = nw.DeepAttractorNetwork(args, device, model_name).to(device)
 
     # Set up dataset
     data = Dataset(args)
+    buffer = SampleBuffer(args,
+                          batch_size=args.batch_size,
+                          p=args.sample_buffer_prob,
+                          device=device)
+
 
     # Train the model
-    train(model, args, data, writer, sample_step=10)
+    tm = TrainingManager(args, model, data, buffer, writer, device, sample_log_dir)
+    if args.initializer == 'ff_init' and args.pretrain_initializer:
+        tm.pre_train_initializer()
+    tm.train()
+
+shapes = lambda x : [y.shape for y in x]
+nancheck = lambda x : (x != x).any()
+listout = lambda y : [x for x in y]
+gradcheck = lambda  y : [x.requires_grad for x in y]
+leafcheck = lambda  y : [x.is_leaf for x in y]
+existgradcheck = lambda  y : [(x.grad is not None) for x in y]
+existgraddatacheck = lambda  y : [(x.grad.data is not None) for x in y]
+
+
+
 
 if __name__ == '__main__':
     main()

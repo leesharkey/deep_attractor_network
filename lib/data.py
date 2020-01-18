@@ -9,58 +9,87 @@ from tqdm import tqdm
 
 class Dataset():
     def __init__(self, args):
-        self.dataset = datasets.CIFAR10('./data', download=True,
-                                   transform=transforms.ToTensor())
-        self.loader = DataLoader(self.dataset, batch_size=args.batch_size, shuffle=True,
-                            num_workers=4)
+        self.dataset = datasets.CIFAR10('./data',
+                                        download=True,
+                                        transform=transforms.ToTensor())
+
+        self.dataset = self.dataset
+        self.loader = DataLoader(self.dataset,
+                                 batch_size=args.batch_size,
+                                 shuffle=True,
+                                 drop_last=True
+                                 )
+                            #num_workers=4) #this makes debugging very very slow
         self.loader = tqdm(enumerate(sample_data(self.loader)))
 
 class SampleBuffer:
-    def __init__(self, max_samples=10000):
+    def __init__(self, args, batch_size, p, device, max_samples=10000):
+        self.args = args
         self.max_samples = max_samples
+        self.batch_size = batch_size
+        self.p = p
+        self.device = device
         self.buffer = []
 
     def __len__(self):
         return len(self.buffer)
 
-    def push(self, samples, class_ids=None):
-        samples = samples.detach().to('cpu')
+    def push(self, states, class_ids=None):
+        states = listtodevice(listdetach(states), 'cpu')
         class_ids = class_ids.detach().to('cpu')
 
-        for sample, class_id in zip(samples, class_ids):
-            self.buffer.append((sample.detach(), class_id))
+        zippee = states + [class_ids]
+        zippee = listsplit(zippee, size=1, dim=0)
+        for sample_and_class_id in zip(*zippee):
+            sample, class_id = sample_and_class_id[:-1],sample_and_class_id[-1]
+            self.buffer.append((listdetach(sample), class_id))
 
             if len(self.buffer) > self.max_samples:
                 self.buffer.pop(0)
 
     def get(self, n_samples, device='cuda'):
         items = random.choices(self.buffer, k=n_samples)
-        samples, class_ids = zip(*items)
-        samples = torch.stack(samples, 0)
-        class_ids = torch.tensor(class_ids)
-        samples = samples.to(device)
-        class_ids = class_ids.to(device)
+        samples, class_ids = zip(*items)  # Unzips
 
+        # Combines each of N lists of 1 state layers (of len=k) into k lists of len=N
+        samples = zip(*samples)
+        samples = listcat(samples, dim=0)
+        class_ids = torch.tensor(class_ids)
+        samples = listtodevice(samples, device)
+        class_ids = class_ids.to(device)
         return samples, class_ids
 
 
-def sample_buffer(buffer, batch_size, p=0.95, device='cuda'):
-    if len(buffer) < 1:
+    def sample_buffer(self): #TODO consider changing this to be a buffer method
+
+        states_sizes = self.args.states_sizes
+        # noises = [torch.randn(states_sizes[i][0], states_sizes[i][1],
+        #                       states_sizes[i][2], states_sizes[i][3], device=self.device)
+        # #           for i in range(len(st_sz))]
+
+        if len(self.buffer) < 1:
+            return (
+                [torch.rand(states_sizes[0][0], states_sizes[0][1],
+                              states_sizes[0][2], states_sizes[0][3], device=self.device),
+                torch.rand(states_sizes[1][0], states_sizes[1][1],
+                              states_sizes[1][2], states_sizes[1][3], device=self.device),
+                torch.rand(states_sizes[2][0], states_sizes[2][1],
+                              states_sizes[2][2], states_sizes[2][3], device=self.device)], #TODO check these work okay with convolutions
+                torch.randint(0, 10, (self.batch_size,), device=self.device),
+            )
+
+        n_replay = (np.random.rand(self.batch_size) < self.p).sum()
+
+        replay_sample, replay_id = self.get(n_replay)
+        random_sample = [torch.rand(self.batch_size - n_replay, 3, 32, 32, device=self.device),
+                torch.rand(self.batch_size - n_replay, 9, 16, 16, device=self.device),
+                torch.rand(self.batch_size - n_replay, 18, 8, 8, device=self.device)]
+        random_id = torch.randint(0, 10, (self.batch_size - n_replay,), device=self.device)
+
         return (
-            torch.rand(batch_size, 3, 32, 32, device=device),
-            torch.randint(0, 10, (batch_size,), device=device),
+            listcat(zip(replay_sample, random_sample), 0),
+            torch.cat([replay_id, random_id], 0),
         )
-
-    n_replay = (np.random.rand(batch_size) < p).sum()
-
-    replay_sample, replay_id = buffer.get(n_replay)
-    random_sample = torch.rand(batch_size - n_replay, 3, 32, 32, device=device)
-    random_id = torch.randint(0, 10, (batch_size - n_replay,), device=device)
-
-    return (
-        torch.cat([replay_sample, random_sample], 0),
-        torch.cat([replay_id, random_id], 0),
-    )
 
 
 def sample_data(loader):
@@ -74,3 +103,21 @@ def sample_data(loader):
             loader_iter = iter(loader)
 
             yield next(loader_iter)
+
+listdetach = lambda y : [x.detach() for x in y]
+listtodevice = lambda y, device: [x.to(device) for x in y]
+listsplit = lambda y, size, dim: [torch.split(x, size, dim) for x in y]
+liststack = lambda y, dim : [torch.stack(x, dim) for x in y]
+listcat = lambda y, dim : [torch.cat(x, dim) for x in y]
+
+
+
+
+
+shapes = lambda x : [y.shape for y in x]
+nancheck = lambda x : (x != x).any()
+listout = lambda y : [x for x in y]
+gradcheck = lambda  y : [x.requires_grad for x in y]
+leafcheck = lambda  y : [x.is_leaf for x in y]
+existgradcheck = lambda  y : [(x.grad is not None) for x in y]
+existgraddatacheck = lambda  y : [(x.grad.data is not None) for x in y]
