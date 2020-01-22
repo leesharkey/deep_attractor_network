@@ -226,55 +226,41 @@ class DeepAttractorNetwork(nn.Module):
             self.act1 = cust_actv.Swish_module()
         # self.act2 = torch.nn.LeakyReLU()
         self.pad_mode = 'zeros'
+        self.num_ch = 64
 
 
         # Base convs are common to all state layers
         self.base_convs = nn.ModuleList([
             spectral_norm(nn.Conv2d(in_channels=3,
-                                    out_channels=64,
+                                    out_channels=self.num_ch,
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
                                     bias=True)), #yields [128, 64, 32, 32]
             spectral_norm(nn.Conv2d(in_channels=9,
-                                    out_channels=64,
+                                    out_channels=self.num_ch,
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
-                                    bias=True)), #yields [128, 64, 16, 16]
-            spectral_norm(nn.Conv2d(in_channels=18,
-                                    out_channels=64,
-                                    kernel_size=3, padding=1,
-                                    padding_mode=self.pad_mode,
-                                    bias=True))])  #yields [128, 64, 8, 8]
+                                    bias=True))]) #yields [128, 64, 16, 16]
         self.intermed_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=(64*2)+3,
-                                    out_channels=64,
+            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*2)+self.state_sizes[0][1],
+                                    out_channels=self.num_ch,
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
                                     bias=True)),
-            spectral_norm(nn.Conv2d(in_channels=(64*3)+9,
-                                    out_channels=64,
-                                    kernel_size=3, padding=1,
-                                    padding_mode=self.pad_mode,
-                                    bias=True)),
-            spectral_norm(nn.Conv2d(in_channels=(64*2)+18,
-                                    out_channels=64,
+            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*2)+self.state_sizes[1][1],
+                                    out_channels=self.num_ch,
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
                                     bias=True))])
 
         self.energy_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=(64*3)+3,
+            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*3)+3,
                                     out_channels=3,
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
                                     bias=True)),
-            spectral_norm(nn.Conv2d(in_channels=(64*4)+9,
+            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*3)+9,
                                     out_channels=9,
-                                    kernel_size=3, padding=1,
-                                    padding_mode=self.pad_mode,
-                                    bias=True)),
-            spectral_norm(nn.Conv2d(in_channels=(64*3)+18,
-                                    out_channels=18,
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
                                     bias=True))])
@@ -326,9 +312,16 @@ class DeepAttractorNetwork(nn.Module):
                                           from_previous,
                                           base_outs[i],
                                           from_next], dim=1)
+
+            if self.args.mult_gauss_noise:
+                mult_gauss_noise = (1+torch.randn_like(intermed_input))
+                intermed_input = intermed_input * mult_gauss_noise
             intermed_out = self.act1(self.intermed_convs[i](intermed_input))
+
             energy_input = torch.cat([intermed_input, intermed_out], dim=1)
-            energy_input = energy_input * (1+torch.randn_like(energy_input))
+            if self.args.mult_gauss_noise:
+                mult_gauss_noise = (1+torch.randn_like(energy_input))
+                energy_input = energy_input * mult_gauss_noise
             outs[i] = self.act1(self.energy_convs[i](energy_input)) #TODO consider having no bias in this layer in order to keep the energies close to 0.
 
         outs = [out.view(self.args.batch_size, -1) for out in outs]

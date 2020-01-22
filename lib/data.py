@@ -103,9 +103,8 @@ class SampleBuffer:
                 [torch.rand(states_sizes[0][0], states_sizes[0][1],
                               states_sizes[0][2], states_sizes[0][3], device=self.device),
                 torch.rand(states_sizes[1][0], states_sizes[1][1],
-                              states_sizes[1][2], states_sizes[1][3], device=self.device),
-                torch.rand(states_sizes[2][0], states_sizes[2][1],
-                              states_sizes[2][2], states_sizes[2][3], device=self.device)], #TODO check these work okay with convolutions
+                              states_sizes[1][2], states_sizes[1][3], device=self.device)
+                 ], #TODO check these work okay with convolutions
                 torch.randint(0, 10, (self.batch_size,), device=self.device),
             )
 
@@ -113,8 +112,7 @@ class SampleBuffer:
 
         replay_sample, replay_id = self.get(n_replay)
         random_sample = [torch.rand(self.batch_size - n_replay, 3, 32, 32, device=self.device),
-                torch.rand(self.batch_size - n_replay, 9, 16, 16, device=self.device),
-                torch.rand(self.batch_size - n_replay, 18, 8, 8, device=self.device)]
+                torch.rand(self.batch_size - n_replay, 9, 16, 16, device=self.device)]
         random_id = torch.randint(0, 10, (self.batch_size - n_replay,), device=self.device)
         #TODO a func that does rand inits for arbitrary state_size args.
         return (

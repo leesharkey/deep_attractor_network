@@ -340,8 +340,7 @@ def finalize_args(parser):
 
     if args.dataset == "CIFAR10":
         vars(args)['states_sizes'] = [[args.batch_size, 3, 32, 32],
-                                     [args.batch_size, 9, 16, 16],
-                                     [args.batch_size, 18, 8, 8]]
+                                     [args.batch_size, 9, 16, 16]]  #,#[args.batch_size, 18, 8, 8]]
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
@@ -521,11 +520,19 @@ def main():
                         ' of certain state layers selectively.' +
                         ' Default: %(default)s.')
     ngroup.add_argument('--state_optimizer', type=str, default='langevin',
-                        help='')
+                        help='The kind of optimizer to use to descend the '+
+                        'energy landscape. Only Langevin is guaranteed to '+
+                        'converge to the true stationary distribution in '+
+                        'theory.')
     ngroup.add_argument('--momentum_param', type=float, default=1.0,
                         help='')
     ngroup.add_argument('--dampening_param', type=float, default=0.0,
                         help='')
+    ngroup.add_argument('--mult_gauss_noise', action='store_true',
+                        help='Implements multiplicative, 1-centred gaussian '+
+                             'white noise inputs of every conv net (except '+
+                             'the base one)')
+    parser.set_defaults(mult_gauss_noise=False)
 
 
     mgroup = parser.add_argument_group('Miscellaneous options')
@@ -563,7 +570,10 @@ def main():
                              'saves.')
     mgroup.add_argument('--load_model', type=str,
                         help='The name of the model that you want to load.'+
-                        ' The file extension should not be included.')
+                        'The file extension should not be included.')
+    ngroup.add_argument('--no_train_model', action='store_true',
+                        help='Whether or not to train the model ')
+    parser.set_defaults(no_train_model=False)
 
     args = finalize_args(parser)
 
@@ -597,7 +607,8 @@ def main():
     tm = TrainingManager(args, model, data, buffer, writer, device, sample_log_dir)
     if args.initializer == 'ff_init' and args.pretrain_initializer:
         tm.pre_train_initializer()
-    tm.train()
+    if not args.no_train_model:
+        tm.train()
 
 shapes = lambda x : [y.shape for y in x]
 nancheck = lambda x : (x != x).any()
