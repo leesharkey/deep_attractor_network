@@ -581,7 +581,9 @@ def main():
         os.mkdir(sample_log_dir)
 
     # Set up model
+    #model = nw.DeepAttractorNetwork(args, device, model_name).to(device)
     model = nw.DeepAttractorNetwork(args, device, model_name).to(device)
+
 
     # Set up dataset
     data = Dataset(args)

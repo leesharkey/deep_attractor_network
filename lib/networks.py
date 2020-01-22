@@ -156,8 +156,14 @@ class ResBlock(nn.Module):
 
 
 class IGEBM(nn.Module):
-    def __init__(self, args, n_class=None):
+    def __init__(self, args, device, model_name, n_class=None):
         super().__init__()
+        self.args = args
+        self.device = device
+        self.model_name = model_name
+        self.state_sizes = args.states_sizes
+
+
         # torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1,
         # padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
         self.conv1 = spectral_norm(nn.Conv2d(3, 128, 3, padding=1), std=1)
@@ -290,6 +296,7 @@ class DeepAttractorNetwork(nn.Module):
         self.energy_weight_masks = []
         for i, m in enumerate(self.args.energy_weight_mask):
             energy_weight_mask = m * torch.ones(tuple(self.args.states_sizes[i]),
+                                                requires_grad=False,
                                                 device=self.device)
             self.energy_weight_masks.append(energy_weight_mask)
 
@@ -321,6 +328,7 @@ class DeepAttractorNetwork(nn.Module):
                                           from_next], dim=1)
             intermed_out = self.act1(self.intermed_convs[i](intermed_input))
             energy_input = torch.cat([intermed_input, intermed_out], dim=1)
+            energy_input = energy_input * (1+torch.randn_like(energy_input))
             outs[i] = self.act1(self.energy_convs[i](energy_input)) #TODO consider having no bias in this layer in order to keep the energies close to 0.
 
         outs = [out.view(self.args.batch_size, -1) for out in outs]
