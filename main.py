@@ -24,6 +24,8 @@ class TrainingManager():
         self.state_sizes = args.states_sizes
         self.parameters = model.parameters()
         self.optimizer = optim.Adam(self.parameters, lr=args.lr, betas=(0.0, 0.999))
+
+
         # initter_optimizer = optim.Adam(parameters, lr=1e-3, betas=(0.0, 0.999))
 
         self.noises = [torch.randn(self.state_sizes[i][0],
@@ -47,9 +49,11 @@ class TrainingManager():
             model_name = str(self.args.load_model)
             checkpoint = torch.load(path)
             self.model.load_state_dict(checkpoint['model'])
-            self.initter.load_state_dict(checkpoint['initializer'])
             self.optimizer.load_state_dict(checkpoint['model_optimizer'])
-            self.initter.optimizer.load_state_dict(checkpoint['initializer_optimizer'])
+            if args.initializer == 'ff_init':
+                self.initter.load_state_dict(checkpoint['initializer'])
+                self.initter.optimizer.load_state_dict(
+                    checkpoint['initializer_optimizer'])
             self.args = checkpoint['args']
             self.batch_num = checkpoint['batch_num']
             print("Loaded model " + model_name + ' successfully')
@@ -120,6 +124,10 @@ class TrainingManager():
             pos_states_init = self.initter.forward(pos_img, pos_id)
             pos_states_new = [psi.clone().detach() for psi in pos_states_init]
             pos_states.extend(pos_states_new)
+        elif self.args.initializer == 'zeros':
+            pos_states.extend(
+                [torch.zeros(size, device=self.device, requires_grad=True)
+                 for size in self.state_sizes[1:]])
         else:
             pos_states.extend(
                 [torch.randn(size, device=self.device, requires_grad=True)
@@ -129,8 +137,12 @@ class TrainingManager():
 
         requires_grad(pos_states, True)
         requires_grad(self.parameters, False)
-        requires_grad(self.initter.parameters(), False)
+        if self.args.initializer == 'ff_init':
+            requires_grad(self.initter.parameters(), False)
         self.model.eval()
+
+        if self.args.state_optimizer is not 'langevin':
+            self.state_optimizer = get_state_optimizer(self.args, pos_states)
 
         # Positive phase sampling (will be made into initialisation func later)
         for k in tqdm(range(self.args.num_it_pos)):
@@ -148,6 +160,10 @@ class TrainingManager():
                                                targets=pos_states[1:],
                                                step=self.global_step)
 
+        if self.args.cd_mixture:
+            print("Adding pos states to pos buffer")
+            self.buffer.push(pos_states, pos_id, pos=True)
+
         return pos_states, pos_id
 
     def negative_phase(self):
@@ -158,6 +174,10 @@ class TrainingManager():
         requires_grad(neg_states, True)
         requires_grad(self.parameters, False)
         self.model.eval()
+        if self.args.state_optimizer is not 'langevin':
+            self.state_optimizer = get_state_optimizer(self.args, neg_states)
+
+        # Set up state optimizer if approp
 
         # Negative phase sampling
         for k in tqdm(range(self.args.num_it_neg)):
@@ -175,7 +195,7 @@ class TrainingManager():
     def sampler_step(self, states, ids, positive_phase=False):
 
         for noise in self.noises:
-            noise.normal_(0, 0.005)
+            noise.normal_(0, self.args.sigma)
 
         # Adding noise in the Langevin step, but only to latent variables
         # in positive phase
@@ -206,7 +226,10 @@ class TrainingManager():
             if positive_phase and i == 0:
                 pass
             else:
-                state.data.add_(-self.args.sampling_step_size,
+                if self.args.state_optimizer is not 'langevin':
+                    self.state_optimizer.step()
+                else:
+                    state.data.add_(-self.args.sampling_step_size,
                                 state.grad.data)
 
             # Prepare gradients and sample for next sampling step
@@ -267,6 +290,21 @@ def requires_grad(parameters, flag=True):
     for p in parameters:
         p.requires_grad = flag
 
+def get_state_optimizer(args, params):
+    if args.state_optimizer == 'langevin':
+        return None
+    if args.state_optimizer == 'sgd':
+        return optim.SGD(params, args.sampling_step_size)
+    if args.state_optimizer == 'sgd_momentum':
+        return optim.SGD(params, args.sampling_step_size,
+                         momentum=args.momentum_param,
+                         dampening=args.dampening_param)
+    if args.state_optimizer == 'nesterov':
+        return optim.SGD(params, args.sampling_step_size,
+                         momentum=args.momentum_param, nesterov=True)
+    if args.state_optimizer == 'adam':
+        return optim.Adam(params, args.sampling_step_size, betas=(0.9,0.999))
+
 
 def clip_grad(parameters, optimizer):
     with torch.no_grad():
@@ -318,17 +356,17 @@ def main():
                                      'EP-trained Hopfield neural networks.')
 
     sgroup = parser.add_argument_group('Sampling options')
-    sgroup.add_argument('--alphas', type=float, nargs='+', default=1e-3,
-                        help='Individual learning rates for each layer. '+
-                             ' Default: %(default)s. '+
-                             'When randomizing, the following options define'+
-                             'a range of indices and the random value assigned'+
-                             'to the argument will be 10 to the power of the'+
-                             'float selected from the range. ' +
-                             'Options: [-1.25, -0.25]. ' +
-                             'The next option defines the multiplier for the'+
-                             ' alphas in subsequent layers: ' +
-                             'Opt2: {0.05, 0.5}.')
+    # sgroup.add_argument('--alphas', type=float, nargs='+', default=1e-3,
+    #                     help='Individual learning rates for each layer. '+
+    #                          ' Default: %(default)s. '+
+    #                          'When randomizing, the following options define'+
+    #                          'a range of indices and the random value assigned'+
+    #                          'to the argument will be 10 to the power of the'+
+    #                          'float selected from the range. ' +
+    #                          'Options: [-1.25, -0.25]. ' +
+    #                          'The next option defines the multiplier for the'+
+    #                          ' alphas in subsequent layers: ' +
+    #                          'Opt2: {0.05, 0.5}.')
     sgroup.add_argument('--sampling_step_size', type=float, default=10,
                         help='The amount that the network is moves forward ' +
                              'according to the activity gradient defined by ' +
@@ -422,6 +460,15 @@ def main():
     parser.set_defaults(pretrain_initializer=False)
     tgroup.add_argument('--num_pretraining_batches', type=int, default=30,
                         help='Learning rate to pass to the Adam optimizer ' +
+                             'used to train the InitializerNetwork. Default: '+
+                             '%(default)s.')
+    tgroup.add_argument('--cd_mixture', action='store_true',
+                        help='If true, some samples from the positive phase ' +
+                             'are used to initialise the negative phase. ' +
+                             'Default: %(default)s.')
+    parser.set_defaults(cd_mixture=False)
+    tgroup.add_argument('--pos_buffer_frac', type=float, default=0.01,
+                        help='Learning rate to pass to the Adam optimizer ' +
                              'used to train the InitializerNetwork. Default: ' +
                              '%(default)s.')
 
@@ -445,7 +492,7 @@ def main():
                              'deterministic by default)' +
                              'Default: %(default)s.')
     parser.set_defaults(stochastic_mult=False)
-    ngroup.add_argument('--sigma', type=float, default=0.0,
+    ngroup.add_argument('--sigma', type=float, default=0.005,
                         help='Sets the scale of the noise '
                              'in the network.'+
                              'When randomizing, the following options define' +
@@ -473,7 +520,12 @@ def main():
                         'allowing you to silence the energy contributions' +
                         ' of certain state layers selectively.' +
                         ' Default: %(default)s.')
-
+    ngroup.add_argument('--state_optimizer', type=str, default='langevin',
+                        help='')
+    ngroup.add_argument('--momentum_param', type=float, default=1.0,
+                        help='')
+    ngroup.add_argument('--dampening_param', type=float, default=0.0,
+                        help='')
 
 
     mgroup = parser.add_argument_group('Miscellaneous options')
@@ -552,8 +604,6 @@ gradcheck = lambda  y : [x.requires_grad for x in y]
 leafcheck = lambda  y : [x.is_leaf for x in y]
 existgradcheck = lambda  y : [(x.grad is not None) for x in y]
 existgraddatacheck = lambda  y : [(x.grad.data is not None) for x in y]
-
-
 
 
 if __name__ == '__main__':

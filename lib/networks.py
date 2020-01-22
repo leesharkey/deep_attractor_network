@@ -218,41 +218,60 @@ class DeepAttractorNetwork(nn.Module):
             self.act1 = torch.nn.ReLU()
         elif args.activation == "swish":
             self.act1 = cust_actv.Swish_module()
-        self.act2 = torch.nn.LeakyReLU()
+        # self.act2 = torch.nn.LeakyReLU()
+        self.pad_mode = 'zeros'
 
 
         # Base convs are common to all state layers
         self.base_convs = nn.ModuleList([
             spectral_norm(nn.Conv2d(in_channels=3,
                                     out_channels=64,
-                                    kernel_size=3, padding=1, bias=True)), #yields [128, 64, 32, 32]
+                                    kernel_size=3, padding=1,
+                                    padding_mode=self.pad_mode,
+                                    bias=True)), #yields [128, 64, 32, 32]
             spectral_norm(nn.Conv2d(in_channels=9,
                                     out_channels=64,
-                                    kernel_size=3, padding=1, bias=True)), #yields [128, 64, 16, 16]
+                                    kernel_size=3, padding=1,
+                                    padding_mode=self.pad_mode,
+                                    bias=True)), #yields [128, 64, 16, 16]
             spectral_norm(nn.Conv2d(in_channels=18,
                                     out_channels=64,
-                                    kernel_size=3, padding=1, bias=True))])  #yields [128, 64, 8, 8]
+                                    kernel_size=3, padding=1,
+                                    padding_mode=self.pad_mode,
+                                    bias=True))])  #yields [128, 64, 8, 8]
         self.intermed_convs = nn.ModuleList([
             spectral_norm(nn.Conv2d(in_channels=(64*2)+3,
                                     out_channels=64,
-                                    kernel_size=3, padding=1, bias=True)),
+                                    kernel_size=3, padding=1,
+                                    padding_mode=self.pad_mode,
+                                    bias=True)),
             spectral_norm(nn.Conv2d(in_channels=(64*3)+9,
                                     out_channels=64,
-                                    kernel_size=3, padding=1, bias=True)),
+                                    kernel_size=3, padding=1,
+                                    padding_mode=self.pad_mode,
+                                    bias=True)),
             spectral_norm(nn.Conv2d(in_channels=(64*2)+18,
                                     out_channels=64,
-                                    kernel_size=3, padding=1, bias=True))])
+                                    kernel_size=3, padding=1,
+                                    padding_mode=self.pad_mode,
+                                    bias=True))])
 
         self.energy_convs = nn.ModuleList([
             spectral_norm(nn.Conv2d(in_channels=(64*3)+3,
                                     out_channels=3,
-                                    kernel_size=3, padding=1, bias=True)),
+                                    kernel_size=3, padding=1,
+                                    padding_mode=self.pad_mode,
+                                    bias=True)),
             spectral_norm(nn.Conv2d(in_channels=(64*4)+9,
                                     out_channels=9,
-                                    kernel_size=3, padding=1, bias=True)),
+                                    kernel_size=3, padding=1,
+                                    padding_mode=self.pad_mode,
+                                    bias=True)),
             spectral_norm(nn.Conv2d(in_channels=(64*3)+18,
                                     out_channels=18,
-                                    kernel_size=3, padding=1, bias=True))])
+                                    kernel_size=3, padding=1,
+                                    padding_mode=self.pad_mode,
+                                    bias=True))])
 
         self.interps = nn.ModuleList([Interpolate(size=size[2:], mode='bilinear')
                                       for size in self.state_sizes])
@@ -321,22 +340,8 @@ class InitializerNetwork(torch.nn.Module):
         self.input_size = self.args.states_sizes[0]
         self.output_sizes = args.states_sizes[1:]
         self.swish = get_swish()
-        #self.first_ff = nn.Linear(self.input_size, self.input_size).to(self.device)
-        #self.first_bn = nn.BatchNorm1d(self.input_size).to(self.device)
-        # self.ffs = nn.ModuleList([nn.Linear(size1, size2).to(self.device)
-        #                               for (size1, size2) in
-        #                               zip(args.size_layers[:-1],
-        #                                   args.size_layers[1:])])
-        # self.bnorms = nn.ModuleList([nn.BatchNorm1d(size2).to(self.device)
-        #                              for size2 in
-        #                              args.size_layers[1:]])
-        # self.sides = nn.ModuleList([nn.Linear(size2, size2).to(self.device)
-        #                              for size2 in
-        #                              args.size_layers[1:]])
         self.criterion = nn.MSELoss()
         self.criteria = []
-        #bnorm #https://discuss.pytorch.org/t/example-on-how-to-use-batch-norm/216/2
-        x = torch.rand(size=tuple(self.args.states_sizes[0]))
         self.enc1 = nn.Sequential(nn.BatchNorm2d(3),
                                   cust_actv.Swish_module(),
                                   nn.Conv2d(in_channels=3,
@@ -392,7 +397,6 @@ class InitializerNetwork(torch.nn.Module):
                                              kernel_size=3, #adjust kernel size so that output is b,9,16,16
                                              padding=1, bias=True))
 
-        print('boop')
         self.optimizer = optim.Adam(self.parameters(),
                                     lr=self.args.initter_network_lr)
 

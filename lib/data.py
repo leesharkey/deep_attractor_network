@@ -30,42 +30,73 @@ class SampleBuffer:
         self.p = p
         self.device = device
         self.buffer = []
+        if self.args.cd_mixture:
+            self.pos_buffer = []
+            self.max_pos_samples = 1000
 
     def __len__(self):
         return len(self.buffer)
 
-    def push(self, states, class_ids=None):
+    def push(self, states, class_ids=None, pos=False):
+
+        if pos:
+            buffer = self.pos_buffer
+            max_samples = self.max_pos_samples
+        else:
+            buffer = self.buffer
+            max_samples = self.max_samples
+
         states = listtodevice(listdetach(states), 'cpu')
         class_ids = class_ids.detach().to('cpu')
-
         zippee = states + [class_ids]
         zippee = listsplit(zippee, size=1, dim=0)
+
         for sample_and_class_id in zip(*zippee):
             sample, class_id = sample_and_class_id[:-1],sample_and_class_id[-1]
-            self.buffer.append((listdetach(sample), class_id))
-
-            if len(self.buffer) > self.max_samples:
-                self.buffer.pop(0)
+            buffer.append((listdetach(sample), class_id))
+            if len(buffer) > max_samples:
+                buffer.pop(0)
 
     def get(self, n_samples, device='cuda'):
-        items = random.choices(self.buffer, k=n_samples)
-        samples, class_ids = zip(*items)  # Unzips
+        if self.args.cd_mixture and len(self.buffer)>1000:
+            n_samples_pos = (torch.rand(n_samples) < self.args.pos_buffer_frac
+                             ).sum()
+            n_samples_neg = int(n_samples - n_samples_pos)
+            neg_items = random.sample(self.buffer, k=n_samples_neg)
+            neg_samples, neg_class_ids = zip(*neg_items)  # Unzips
+            neg_samples = zip(*neg_samples)
+            neg_samples = listcat(neg_samples, dim=0)
+            neg_class_ids = torch.tensor(neg_class_ids)
+            if n_samples_pos > 0:
+                pos_items = random.sample(self.pos_buffer, k=int(n_samples_pos))
+                pos_samples, pos_class_ids = zip(*pos_items)  # Unzips
+                pos_samples = zip(*pos_samples)
+                pos_samples = listcat(pos_samples, dim=0)
+                pos_class_ids = torch.tensor(pos_class_ids)
+                samples = listcat(zip(pos_samples, neg_samples), dim=0)
+                class_ids = torch.cat([pos_class_ids, neg_class_ids])
+                samples = listtodevice(samples, device)
+                class_ids = class_ids.to(device)
+            else:
+                samples = listtodevice(neg_samples, device)
+                class_ids = neg_class_ids.to(device)
+        else:
+            items = random.choices(self.buffer, k=n_samples)
+            samples, class_ids = zip(*items)  # Unzips
 
-        # Combines each of N lists of 1 state layers (of len=k) into k lists of len=N
-        samples = zip(*samples)
-        samples = listcat(samples, dim=0)
-        class_ids = torch.tensor(class_ids)
-        samples = listtodevice(samples, device)
-        class_ids = class_ids.to(device)
+            # Combines each of N lists of 1 state layers (of len=k) into k lists
+            # of len=N
+            samples = zip(*samples)
+            samples = listcat(samples, dim=0)
+            class_ids = torch.tensor(class_ids)
+            samples = listtodevice(samples, device)
+            class_ids = class_ids.to(device)
         return samples, class_ids
 
-
-    def sample_buffer(self): #TODO consider changing this to be a buffer method
+    def sample_buffer(self):
 
         states_sizes = self.args.states_sizes
-        # noises = [torch.randn(states_sizes[i][0], states_sizes[i][1],
-        #                       states_sizes[i][2], states_sizes[i][3], device=self.device)
-        # #           for i in range(len(st_sz))]
+
 
         if len(self.buffer) < 1:
             return (
@@ -85,7 +116,7 @@ class SampleBuffer:
                 torch.rand(self.batch_size - n_replay, 9, 16, 16, device=self.device),
                 torch.rand(self.batch_size - n_replay, 18, 8, 8, device=self.device)]
         random_id = torch.randint(0, 10, (self.batch_size - n_replay,), device=self.device)
-
+        #TODO a func that does rand inits for arbitrary state_size args.
         return (
             listcat(zip(replay_sample, random_sample), 0),
             torch.cat([replay_id, random_id], 0),
