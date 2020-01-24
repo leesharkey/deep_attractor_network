@@ -78,17 +78,17 @@ class TrainingManager():
         torch.save(save_dict, path)
         for batch, (pos_img, pos_id) in self.data.loader:
 
-            pos_states, pos_id = self.positive_phase(pos_img, pos_id)
+            pos_states_list, pos_id = self.positive_phase(pos_img, pos_id)
 
             neg_states, neg_id = self.negative_phase()
 
-            self.param_update_phase(neg_states, neg_id, pos_states, pos_id)
+            self.param_update_phase(neg_states, neg_id, pos_states_list, pos_id)
 
             if self.batch_num % self.args.img_logging_interval == 0:
                 utils.save_image(
                     neg_states[0].detach().to('cpu'),
                     os.path.join(self.sample_log_dir,
-                                 str(self.batch_num).zfill(5) + '.png'),
+                                 str(self.batch_num).zfill(6) + '.png'),
                     nrow=16,
                     normalize=True,
                     range=(0, 1))
@@ -109,62 +109,91 @@ class TrainingManager():
         path = 'exps/models/' +self.model.model_name + '.pt'
         torch.save(save_dict, path)
 
+    def initialize_pos_states(self, pos_img=None, cond_layer=0):
+
+        if cond_layer == 0:
+            pos_states = [pos_img]
+            init_start = 1
+        else:
+            pos_states = []
+            init_start = 0
+
+        #requires_grad(pos_states, True)
+        if self.args.initializer == 'ff_init':
+            print("Don't forget that you have disabled the ff_init option now!!!!!!!!!!!")
+            # self.initter.train()
+            # pos_states_init = self.initter.forward(pos_img, pos_id)
+            # pos_states_new = [psi.clone().detach() for psi in pos_states_init]
+            # pos_states.extend(pos_states_new)
+        elif self.args.initializer == 'zeros': # probs don't use this now that you're initting all states
+            pos_states.extend(
+                [torch.zeros(size, device=self.device, requires_grad=True)
+                 for size in self.state_sizes[init_start:]])
+        else:
+            pos_states.extend(
+                [torch.randn(size, device=self.device, requires_grad=True)
+                 for size in self.state_sizes[init_start:]])
+
+        return pos_states
+
     def positive_phase(self, pos_img, pos_id):
 
         print('\nStarting positive phase...')
         # Get the loaded pos samples and put them on the correct device
         pos_img, pos_id = pos_img.to(self.device), pos_id.to(self.device)
 
-        # Gets the values of the pos images by initting with ff net and then
-        # running a short inference phase
-        pos_states = [pos_img]
-        #requires_grad(pos_states, True)
-        if self.args.initializer == 'ff_init':
-            self.initter.train()
-            pos_states_init = self.initter.forward(pos_img, pos_id)
-            pos_states_new = [psi.clone().detach() for psi in pos_states_init]
-            pos_states.extend(pos_states_new)
-        elif self.args.initializer == 'zeros':
-            pos_states.extend(
-                [torch.zeros(size, device=self.device, requires_grad=True)
-                 for size in self.state_sizes[1:]])
-        else:
-            pos_states.extend(
-                [torch.randn(size, device=self.device, requires_grad=True)
-                 for size in self.state_sizes[1:]])
-        ################################################
-        # Freeze network parameters and take grads w.r.t only the inputs
+        # Gets the values of the pos states by running a short inference phase
+        # conditioned on a particular state layer
+        pos_states_list = []
 
-        requires_grad(pos_states, True)
+        # I'm feeling like it makes most sense to use the codes from the 0th
+        # pos phase to lock as the code to be used in the subsequent phases
+        # because this one is the one that is constrained most by the data
+        # distribution. #TODO consider whether you want to change this! Think!
+        pos_states = self.initialize_pos_states(pos_img=pos_img, cond_layer=0) #Maybe remove cond_layer arg if keeping pos_phase0 as initter
+        pos_states0 = None
+
         requires_grad(self.parameters, False)
-        if self.args.initializer == 'ff_init':
-            requires_grad(self.initter.parameters(), False)
+        # if self.args.initializer == 'ff_init':
+        #     requires_grad(self.initter.parameters(), False)
         self.model.eval()
 
-        if self.args.state_optimizer is not 'langevin':
-            self.state_optimizer = get_state_optimizer(self.args, pos_states)
+        for pos_phase_idx in range(len(self.state_sizes)): # we have a positive phase for each cond_layer
+            if pos_phase_idx != 0:
+                pos_states = pos_states0
+            # Freeze network parameters and take grads w.r.t only the inputs
+            requires_grad(pos_states, True)
 
-        # Positive phase sampling (will be made into initialisation func later)
-        for k in tqdm(range(self.args.num_it_pos)):
-            self.sampler_step(pos_states, pos_id, positive_phase=True)
-            self.global_step += 1
+            if self.args.state_optimizer is not 'langevin':
+                self.state_optimizer = get_state_optimizer(self.args, pos_states)
 
-        # Stop calculting grads w.r.t. images
-        for pos_state in pos_states:
-            pos_state.detach_()
+            # Positive phase sampling
+            for k in tqdm(range(self.args.num_it_pos)): #TODO ensure that this only changes the unlocked state_layer in each pos_phase_i
+                self.sampler_step(pos_states, pos_id, positive_phase=True,
+                                  cond_layer=pos_phase_idx)
+                self.global_step += 1
 
-        # Update initializer network if present
-        if self.args.initializer == 'ff_init':
-            requires_grad(self.initter.parameters(), True)
-            loss = self.initter.update_weights(outs=pos_states_init,
-                                               targets=pos_states[1:],
-                                               step=self.global_step)
+            # Stop calculting grads w.r.t. images
+            for pos_state in pos_states:
+                pos_state.detach_()
 
-        if self.args.cd_mixture:
-            print("Adding pos states to pos buffer")
-            self.buffer.push(pos_states, pos_id, pos=True)
+            if pos_phase_idx == 0:
+                pos_states0 = pos_states
+            pos_states_list.append(pos_states)
 
-        return pos_states, pos_id
+            # Update initializer network if present
+            # if self.args.initializer == 'ff_init':
+            #     requires_grad(self.initter.parameters(), True)
+            #     loss = self.initter.update_weights(outs=pos_states_init,
+            #                                        targets=pos_states[1:],
+            #                                        step=self.global_step)
+
+            if self.args.cd_mixture: #Consider whether to move this into "if pos_phase_idx == 0:"
+                print("Adding pos states to pos buffer")
+                self.buffer.push(pos_states, pos_id, pos=True)
+
+        return pos_states_list, pos_id
+
 
     def negative_phase(self):
         print('\nStarting negative phase...')
@@ -192,18 +221,16 @@ class TrainingManager():
         self.buffer.push(neg_states, neg_id)
         return neg_states, neg_id
 
-    def sampler_step(self, states, ids, positive_phase=False):
-
-
-        #TODO lee I'm not totally confident that this is implementing Langevin
-        #  dynamics because the noise is added first? Shouldn't we add the noise
-        #  after the gradient calculation?
+    def sampler_step(self, states, ids, positive_phase=False, cond_layer=0):
+        """Cond layer is the layer that is the conditional variable (the
+        one that is fixed and conditions the distribution of the other
+        variable. """
         # Calculate the gradient for the Langevin step
         energies = self.model(states, ids)  # Outputs energy of neg sample
         total_energy = energies.sum()
         if positive_phase:
-            print('\nPos Energy: ' + str(total_energy.cpu().detach().numpy()))
-            self.writer.add_scalar('train/PosSamplesEnergy', total_energy,
+            print('\nPos Energy %s: '% str(cond_layer) + str(total_energy.cpu().detach().numpy()))
+            self.writer.add_scalar('train/PosSamplesEnergy_%s' % str(cond_layer), total_energy,
                                    self.global_step)
         else:
             print('\nNeg Energy: ' + str(total_energy.cpu().detach().numpy()))
@@ -220,17 +247,17 @@ class TrainingManager():
         for noise in self.noises:
             noise.normal_(0, self.args.sigma)
         for i, (noise, state) in enumerate(zip(self.noises, states)):
-            if positive_phase and i == 0:
+            if positive_phase and i == cond_layer:
                 pass
             else:
                 state.data.add_(noise.data)
 
         for i, state in enumerate(states):
             # The gradient step in the Langevin step (only for upper layers)
-            if positive_phase and i == 0:
+            if positive_phase and i == cond_layer:
                 pass
             else:
-                if self.args.state_optimizer is not 'langevin':
+                if self.args.state_optimizer != 'langevin':
                     self.state_optimizer.step()
                 else:
                     state.data.add_(-self.args.sampling_step_size,
@@ -241,20 +268,22 @@ class TrainingManager():
             state.grad.zero_()
             state.data.clamp_(0, 1)
 
-    def calc_energ_and_loss(self, neg_states, neg_id, pos_states, pos_id):
+    def calc_energ_and_loss(self, neg_states, neg_id, pos_states_list, pos_id):
         # Get energies of positive and negative samples
-        pos_energy = self.model(pos_states, pos_id)
+        pos_energies = []
+        for pos_states in pos_states_list:
+            pos_energies += [self.model(pos_states, pos_id)]
         neg_energy = self.model(neg_states, neg_id)
+        energies = pos_energies + [neg_energy]
 
         # Calculate the loss and the gradients for the network params
-        loss_l2 = self.args.l2_reg_energy_param * (
-                pos_energy ** 2 + neg_energy ** 2)  # L2 penalty on energy magnitudes
-        loss_ml = pos_energy - neg_energy  # Maximum likelihood loss
+        loss_l2 = self.args.l2_reg_energy_param * sum([enrg**2 for enrg in energies])  # L2 penalty on energy magnitudes
+        loss_ml = sum(pos_energies) - neg_energy  # Maximum likelihood loss
         loss = loss_ml + loss_l2
         loss = loss.mean()
         loss.backward()
         self.writer.add_scalar('train/loss', loss.item(), self.global_step)
-        return neg_energy, pos_energy, loss
+        return neg_energy, pos_energies, loss
 
     def update_weights(self, loss):
         clip_grad(self.parameters, self.optimizer)
@@ -266,16 +295,16 @@ class TrainingManager():
 
         self.data.loader.set_description(f'loss: {loss.item():.5f}')
 
-    def param_update_phase(self, neg_states, neg_id, pos_states, pos_id):
+    def param_update_phase(self, neg_states, neg_id, pos_states_list, pos_id):
 
         # Put model in training mode and prepare network parameters for updates
         requires_grad(self.parameters, True)
         self.model.train()  # Not to be confused with self.TrainingManager.train
         self.model.zero_grad()
 
-        neg_energy, pos_energy, loss = \
+        neg_energy, pos_energies, loss = \
             self.calc_energ_and_loss(neg_states, neg_id,
-                                     pos_states, pos_id)
+                                     pos_states_list, pos_id)
 
         self.update_weights(loss)
 
@@ -522,7 +551,7 @@ def main():
                         'define a Boolean mask over the energy weights, ' +
                         'allowing you to silence the energy contributions' +
                         ' of certain state layers selectively.' +
-                        ' Default: %(default)s.')
+                        ' Default: %(default)s.')#TODO ensure this remains constant
     ngroup.add_argument('--state_optimizer', type=str, default='langevin',
                         help='The kind of optimizer to use to descend the '+
                         'energy landscape. Only Langevin is guaranteed to '+
@@ -622,6 +651,62 @@ leafcheck = lambda  y : [x.is_leaf for x in y]
 existgradcheck = lambda  y : [(x.grad is not None) for x in y]
 existgraddatacheck = lambda  y : [(x.grad.data is not None) for x in y]
 
+
+# def old_positive_phase(self, pos_img, pos_id):
+#     print('\nStarting positive phase...')
+#     # Get the loaded pos samples and put them on the correct device
+#     pos_img, pos_id = pos_img.to(self.device), pos_id.to(self.device)
+#
+#     # Gets the values of the pos images by initting with ff net and then
+#     # running a short inference phase
+#     pos_states = [pos_img]
+#     # requires_grad(pos_states, True)
+#     if self.args.initializer == 'ff_init':
+#         self.initter.train()
+#         pos_states_init = self.initter.forward(pos_img, pos_id)
+#         pos_states_new = [psi.clone().detach() for psi in pos_states_init]
+#         pos_states.extend(pos_states_new)
+#     elif self.args.initializer == 'zeros':
+#         pos_states.extend(
+#             [torch.zeros(size, device=self.device, requires_grad=True)
+#              for size in self.state_sizes[1:]])
+#     else:
+#         pos_states.extend(
+#             [torch.randn(size, device=self.device, requires_grad=True)
+#              for size in self.state_sizes[1:]])
+#     ################################################
+#     # Freeze network parameters and take grads w.r.t only the inputs
+#
+#     requires_grad(pos_states, True)
+#     requires_grad(self.parameters, False)
+#     if self.args.initializer == 'ff_init':
+#         requires_grad(self.initter.parameters(), False)
+#     self.model.eval()
+#
+#     if self.args.state_optimizer is not 'langevin':
+#         self.state_optimizer = get_state_optimizer(self.args, pos_states)
+#
+#     # Positive phase sampling
+#     for k in tqdm(range(self.args.num_it_pos)):
+#         self.sampler_step(pos_states, pos_id, positive_phase=True)
+#         self.global_step += 1
+#
+#     # Stop calculting grads w.r.t. images
+#     for pos_state in pos_states:
+#         pos_state.detach_()
+#
+#     # Update initializer network if present
+#     if self.args.initializer == 'ff_init':
+#         requires_grad(self.initter.parameters(), True)
+#         loss = self.initter.update_weights(outs=pos_states_init,
+#                                            targets=pos_states[1:],
+#                                            step=self.global_step)
+#
+#     if self.args.cd_mixture:
+#         print("Adding pos states to pos buffer")
+#         self.buffer.push(pos_states, pos_id, pos=True)
+#
+#     return pos_states, pos_id
 
 if __name__ == '__main__':
     main()
