@@ -194,17 +194,11 @@ class TrainingManager():
 
     def sampler_step(self, states, ids, positive_phase=False):
 
-        for noise in self.noises:
-            noise.normal_(0, self.args.sigma)
 
-        # Adding noise in the Langevin step, but only to latent variables
-        # in positive phase
-        for i, (noise, state) in enumerate(zip(self.noises, states)):
-            if positive_phase and i == 0:
-                pass
-            else:
-                state.data.add_(noise.data)
-
+        #TODO lee I'm not totally confident that this is implementing Langevin
+        #  dynamics because the noise is added first? Shouldn't we add the noise
+        #  after the gradient calculation?
+        # Calculate the gradient for the Langevin step
         energies = self.model(states, ids)  # Outputs energy of neg sample
         total_energy = energies.sum()
         if positive_phase:
@@ -220,6 +214,16 @@ class TrainingManager():
         torch.nn.utils.clip_grad_norm_(states,
                                        self.args.clip_state_grad_norm,
                                        norm_type=2)
+
+        # Adding noise in the Langevin step, but only to latent variables
+        # in positive phase
+        for noise in self.noises:
+            noise.normal_(0, self.args.sigma)
+        for i, (noise, state) in enumerate(zip(self.noises, states)):
+            if positive_phase and i == 0:
+                pass
+            else:
+                state.data.add_(noise.data)
 
         for i, state in enumerate(states):
             # The gradient step in the Langevin step (only for upper layers)

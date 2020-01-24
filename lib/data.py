@@ -62,13 +62,13 @@ class SampleBuffer:
             n_samples_pos = (torch.rand(n_samples) < self.args.pos_buffer_frac
                              ).sum()
             n_samples_neg = int(n_samples - n_samples_pos)
-            neg_items = random.sample(self.buffer, k=n_samples_neg)
+            neg_items = random.sample(self.buffer, k=n_samples_neg) #TODO change to pop without replacement
             neg_samples, neg_class_ids = zip(*neg_items)  # Unzips
             neg_samples = zip(*neg_samples)
             neg_samples = listcat(neg_samples, dim=0)
             neg_class_ids = torch.tensor(neg_class_ids)
             if n_samples_pos > 0:
-                pos_items = random.sample(self.pos_buffer, k=int(n_samples_pos))
+                pos_items = random.sample(self.pos_buffer, k=int(n_samples_pos)) #TODO change to pop without replacement
                 pos_samples, pos_class_ids = zip(*pos_items)  # Unzips
                 pos_samples = zip(*pos_samples)
                 pos_samples = listcat(pos_samples, dim=0)
