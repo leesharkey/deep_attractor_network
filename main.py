@@ -129,7 +129,8 @@ class TrainingManager():
             pos_states.extend(
                 [torch.zeros(size, device=self.device, requires_grad=True)
                  for size in self.state_sizes[init_start:]])
-        else:
+        elif self.args.initializer == 'random' or \
+                self.args.initializer == 'pos0':
             pos_states.extend(
                 [torch.randn(size, device=self.device, requires_grad=True)
                  for size in self.state_sizes[init_start:]])
@@ -160,7 +161,11 @@ class TrainingManager():
 
         for pos_phase_idx in range(len(self.state_sizes)): # we have a positive phase for each cond_layer
             if pos_phase_idx != 0:
-                pos_states = pos_states0
+                if self.args.initializer == 'pos0':
+                    pos_states = pos_states0
+                elif self.args.initializer == 'random':
+                    pos_states = self.initialize_pos_states(pos_img=None,
+                                                            cond_layer=pos_phase_idx)
             # Freeze network parameters and take grads w.r.t only the inputs
             requires_grad(pos_states, True)
 
@@ -532,7 +537,7 @@ def main():
                              'to the argument will be 10 to the power of the' +
                              'float selected from the range. '+
                              'Options: [-3, 0].')
-    ngroup.add_argument('--states_sizes', type=list, nargs='+', default=[[]],
+    ngroup.add_argument('--states_sizes', type=list, nargs='+', default=[[]],#This will be filled by default. it's here for saving
                         help='Number of units in each hidden layer of the ' +
                              'network. Default: %(default)s.')
     ngroup.add_argument('--w_dropout_prob', type=float, default=1.0,
