@@ -5,13 +5,20 @@ from torch import nn, optim
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, utils
 from tqdm import tqdm
+import lib.utils
+
 
 
 class Dataset():
     def __init__(self, args):
-        self.dataset = datasets.CIFAR10('./data',
-                                        download=True,
-                                        transform=transforms.ToTensor())
+        if args.dataset == 'CIFAR10':
+            self.dataset = datasets.CIFAR10('./data',
+                                            download=True,
+                                            transform=transforms.ToTensor())
+        elif args.dataset == 'MNIST':
+            self.dataset = datasets.MNIST('./data',
+                                            download=True,
+                                            transform=transforms.ToTensor())
 
         self.dataset = self.dataset
         self.loader = DataLoader(self.dataset,
@@ -95,24 +102,22 @@ class SampleBuffer:
 
     def sample_buffer(self):
 
-        states_sizes = self.args.states_sizes
+        state_sizes = self.args.state_sizes
 
 
         if len(self.buffer) < 1:
-            return (
-                [torch.rand(states_sizes[0][0], states_sizes[0][1],
-                              states_sizes[0][2], states_sizes[0][3], device=self.device),
-                torch.rand(states_sizes[1][0], states_sizes[1][1],
-                              states_sizes[1][2], states_sizes[1][3], device=self.device)
-                 ], #TODO check these work okay with convolutions
+            rand_states = lib.utils.generate_random_states(self.args.state_sizes, self.device)
+            return (rand_states, #TODO check these work okay with convolutions
                 torch.randint(0, 10, (self.batch_size,), device=self.device),
             )
 
         n_replay = (np.random.rand(self.batch_size) < self.p).sum()
 
         replay_sample, replay_id = self.get(n_replay)
-        random_sample = [torch.rand(self.batch_size - n_replay, 3, 32, 32, device=self.device),
-                torch.rand(self.batch_size - n_replay, 9, 16, 16, device=self.device)]
+        new_rand_state_sizes = self.args.state_sizes
+        new_rand_state_sizes = [[size[0] - n_replay, size[1], size[2], size[3]]
+                                for size in new_rand_state_sizes]
+        random_sample = lib.utils.generate_random_states(new_rand_state_sizes, self.device)
         random_id = torch.randint(0, 10, (self.batch_size - n_replay,), device=self.device)
         #TODO a func that does rand inits for arbitrary state_size args.
         return (

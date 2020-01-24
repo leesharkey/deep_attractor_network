@@ -91,7 +91,13 @@ def combine_all_csvs(directory_str, base_csv_name='params_and_results.csv',
     full_df.to_csv(os.path.join(directory_str, base_csv_name))
 
 
-
+def generate_random_states(shapes, device):
+    return [torch.rand(shapes[i][0],
+                         shapes[i][1],
+                         shapes[i][2],
+                         shapes[i][3],
+                         device=device)
+             for i in range(len(shapes))]
 
 
 

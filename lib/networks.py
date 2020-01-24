@@ -161,7 +161,7 @@ class IGEBM(nn.Module):
         self.args = args
         self.device = device
         self.model_name = model_name
-        self.state_sizes = args.states_sizes
+        self.state_sizes = args.state_sizes
 
 
         # torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1,
@@ -217,7 +217,7 @@ class DeepAttractorNetwork(nn.Module):
         self.args = args
         self.device = device
         self.model_name = model_name
-        self.state_sizes = args.states_sizes
+        self.state_sizes = args.state_sizes
         if args.activation == 'leaky_relu':
             self.act1 = torch.nn.LeakyReLU()
         elif args.activation == "relu":
@@ -226,44 +226,36 @@ class DeepAttractorNetwork(nn.Module):
             self.act1 = cust_actv.Swish_module()
         # self.act2 = torch.nn.LeakyReLU()
         self.pad_mode = 'zeros'
+        if self.args.architecture == 'mnist_2_layers_small':
+            self.arch_dict = {
+                'num_ch': 16
+            }
         self.num_ch = 64
 
 
         # Base convs are common to all state layers
         self.base_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=3,
+            spectral_norm(nn.Conv2d(in_channels=self.state_sizes[i][1],
                                     out_channels=self.num_ch,
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
-                                    bias=True)), #yields [128, 64, 32, 32]
-            spectral_norm(nn.Conv2d(in_channels=9,
-                                    out_channels=self.num_ch,
-                                    kernel_size=3, padding=1,
-                                    padding_mode=self.pad_mode,
-                                    bias=True))]) #yields [128, 64, 16, 16]
+                                    bias=True))
+            for i in range(len(self.state_sizes))]) #cifar10 yields [128, 64, 32, 32]#yields [128, 64, 16, 16]
         self.intermed_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*2)+self.state_sizes[0][1],
+            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*2)+self.state_sizes[i][1],
                                     out_channels=self.num_ch,
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
-                                    bias=True)),
-            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*2)+self.state_sizes[1][1],
-                                    out_channels=self.num_ch,
-                                    kernel_size=3, padding=1,
-                                    padding_mode=self.pad_mode,
-                                    bias=True))])
+                                    bias=True))
+            for i in range(len(self.state_sizes))])
 
         self.energy_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*3)+3,
-                                    out_channels=3,
+            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*3)+self.state_sizes[i][1],
+                                    out_channels=self.state_sizes[i][1],
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
-                                    bias=True)),
-            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*3)+9,
-                                    out_channels=9,
-                                    kernel_size=3, padding=1,
-                                    padding_mode=self.pad_mode,
-                                    bias=True))])
+                                    bias=True))
+            for i in range(len(self.state_sizes))])
 
         self.interps = nn.ModuleList([Interpolate(size=size[2:], mode='bilinear')
                                       for size in self.state_sizes])
@@ -281,7 +273,7 @@ class DeepAttractorNetwork(nn.Module):
 
         self.energy_weight_masks = []
         for i, m in enumerate(self.args.energy_weight_mask):
-            energy_weight_mask = m * torch.ones(tuple(self.args.states_sizes[i]),
+            energy_weight_mask = m * torch.ones(tuple(self.args.state_sizes[i]),
                                                 requires_grad=False,
                                                 device=self.device)
             self.energy_weight_masks.append(energy_weight_mask)
@@ -338,8 +330,8 @@ class InitializerNetwork(torch.nn.Module):
         self.args = args
         self.writer = writer
         self.device = device
-        self.input_size = self.args.states_sizes[0]
-        self.output_sizes = args.states_sizes[1:]
+        self.input_size = self.args.state_sizes[0]
+        self.output_sizes = args.state_sizes[1:]
         self.swish = get_swish()
         self.criterion = nn.MSELoss()
         self.criteria = []
@@ -355,7 +347,7 @@ class InitializerNetwork(torch.nn.Module):
                                             out_channels=64,
                                             kernel_size=3,
                                             padding=1, bias=True),
-                                  Interpolate(size=self.args.states_sizes[1][2:],
+                                  Interpolate(size=self.args.state_sizes[1][2:],
                                               mode='bilinear'))
         self.enc2 = nn.Sequential(nn.BatchNorm2d(64),
                                   cust_actv.Swish_module(),
@@ -363,7 +355,7 @@ class InitializerNetwork(torch.nn.Module):
                                             out_channels=64,
                                             kernel_size=3,
                                             padding=1, bias=True),
-                                  Interpolate(size=self.args.states_sizes[2][2:],
+                                  Interpolate(size=self.args.state_sizes[2][2:],
                                               mode='bilinear'))
         self.side1 = nn.Sequential(nn.BatchNorm2d(64),
                                    cust_actv.Swish_module(),

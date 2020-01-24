@@ -21,19 +21,14 @@ class TrainingManager():
         self.buffer = buffer
         self.device = device
         self.sample_log_dir = sample_log_dir
-        self.state_sizes = args.states_sizes
+        self.state_sizes = args.state_sizes
         self.parameters = model.parameters()
-        self.optimizer = optim.Adam(self.parameters, lr=args.lr, betas=(0.0, 0.999))
+        self.optimizer = optim.Adam(self.parameters, lr=args.lr, betas=(0.9, 0.999))
 
 
         # initter_optimizer = optim.Adam(parameters, lr=1e-3, betas=(0.0, 0.999))
 
-        self.noises = [torch.randn(self.state_sizes[i][0],
-                                   self.state_sizes[i][1],
-                                   self.state_sizes[i][2],
-                                   self.state_sizes[i][3],
-                                   device=self.device)
-                       for i in range(len(self.state_sizes))]
+        self.noises = lib.utils.generate_random_states(self.state_sizes, self.device)
 
         self.global_step = 0
         self.batch_num = 0
@@ -79,6 +74,22 @@ class TrainingManager():
         for batch, (pos_img, pos_id) in self.data.loader:
 
             pos_states_list, pos_id = self.positive_phase(pos_img, pos_id)
+            if self.batch_num % self.args.img_logging_interval == 0:
+                if self.args.save_pos_images:
+                    utils.save_image(
+                        pos_states_list[0][0].detach().to('cpu'),
+                        os.path.join(self.sample_log_dir,
+                                     'p0_' + str(self.batch_num).zfill(6) + '.png'),
+                        nrow=16,
+                        normalize=True,
+                        range=(0, 1))
+                    utils.save_image(
+                        pos_states_list[1][0].detach().to('cpu'),
+                        os.path.join(self.sample_log_dir,
+                                     'p1_' + str(self.batch_num).zfill(6) + '.png'),
+                        nrow=16,
+                        normalize=True,
+                        range=(0, 1))
 
             neg_states, neg_id = self.negative_phase()
 
@@ -131,9 +142,9 @@ class TrainingManager():
                  for size in self.state_sizes[init_start:]])
         elif self.args.initializer == 'random' or \
                 self.args.initializer == 'pos0':
-            pos_states.extend(
-                [torch.randn(size, device=self.device, requires_grad=True)
-                 for size in self.state_sizes[init_start:]])
+            rand_states = lib.utils.generate_random_states(
+                self.state_sizes[init_start:], self.device)
+            pos_states.extend(rand_states)
 
         return pos_states
 
@@ -170,7 +181,7 @@ class TrainingManager():
             requires_grad(pos_states, True)
 
             if self.args.state_optimizer is not 'langevin':
-                self.state_optimizer = get_state_optimizer(self.args, pos_states)
+                self.state_optimizers = get_state_optimizers(self.args, pos_states)
 
             # Positive phase sampling
             for k in tqdm(range(self.args.num_it_pos)): #TODO ensure that this only changes the unlocked state_layer in each pos_phase_i
@@ -208,14 +219,14 @@ class TrainingManager():
         requires_grad(neg_states, True)
         requires_grad(self.parameters, False)
         self.model.eval()
-        if self.args.state_optimizer is not 'langevin':
-            self.state_optimizer = get_state_optimizer(self.args, neg_states)
 
         # Set up state optimizer if approp
+        if self.args.state_optimizer is not 'langevin':
+            self.state_optimizers = get_state_optimizers(self.args, neg_states)
 
         # Negative phase sampling
         for k in tqdm(range(self.args.num_it_neg)):
-            self.sampler_step(neg_states, neg_id)
+            self.sampler_step(neg_states, neg_id, cond_layer=None)
             self.global_step += 1
 
         # Stop calculting grads w.r.t. images
@@ -226,7 +237,7 @@ class TrainingManager():
         self.buffer.push(neg_states, neg_id)
         return neg_states, neg_id
 
-    def sampler_step(self, states, ids, positive_phase=False, cond_layer=0):
+    def sampler_step(self, states, ids, positive_phase=False, cond_layer=None):
         """Cond layer is the layer that is the conditional variable (the
         one that is fixed and conditions the distribution of the other
         variable. """
@@ -263,7 +274,7 @@ class TrainingManager():
                 pass
             else:
                 if self.args.state_optimizer != 'langevin':
-                    self.state_optimizer.step()
+                    self.state_optimizers[i].step()
                 else:
                     state.data.add_(-self.args.sampling_step_size,
                                 state.grad.data)
@@ -324,24 +335,26 @@ class TrainingManager():
             save_dict    = {**save_dict, **initter_dict}
         return save_dict
 
+
 def requires_grad(parameters, flag=True):
     for p in parameters:
         p.requires_grad = flag
 
-def get_state_optimizer(args, params):
+
+def get_state_optimizers(args, params):
     if args.state_optimizer == 'langevin':
         return None
     if args.state_optimizer == 'sgd':
-        return optim.SGD(params, args.sampling_step_size)
+        return [optim.SGD([prm], args.sampling_step_size) for prm in params]
     if args.state_optimizer == 'sgd_momentum':
-        return optim.SGD(params, args.sampling_step_size,
+        return [optim.SGD([prm], args.sampling_step_size,
                          momentum=args.momentum_param,
-                         dampening=args.dampening_param)
+                         dampening=args.dampening_param) for prm in params]
     if args.state_optimizer == 'nesterov':
-        return optim.SGD(params, args.sampling_step_size,
-                         momentum=args.momentum_param, nesterov=True)
+        return [optim.SGD([prm], args.sampling_step_size,
+                         momentum=args.momentum_param, nesterov=True) for prm in params]
     if args.state_optimizer == 'adam':
-        return optim.Adam(params, args.sampling_step_size, betas=(0.9,0.999))
+        return [optim.Adam([prm], args.sampling_step_size, betas=(0.9,0.999)) for prm in params]
 
 
 def clip_grad(parameters, optimizer):
@@ -377,8 +390,12 @@ def finalize_args(parser):
         vars(args)['special_name'] = input("Special name: ") or "None"
 
     if args.dataset == "CIFAR10":
-        vars(args)['states_sizes'] = [[args.batch_size, 3, 32, 32],
+        vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
                                      [args.batch_size, 9, 16, 16]]  #,#[args.batch_size, 18, 8, 8]]
+    elif args.dataset == 'MNIST':
+        if args.architecture == 'mnist_2_layers_small':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                          [args.batch_size, 4, 3, 3]]
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
@@ -511,6 +528,10 @@ def main():
 
 
     ngroup = parser.add_argument_group('Network and states options')
+    ngroup.add_argument('--architecture', type=str, default="cifar10_2_layers",
+                        help='The type of architecture that will be built. Options: ' +
+                             '[mnist_2_layers_small, cifar10_2_layers]'
+                             'Default: %(default)s.')
     ngroup.add_argument('--activation', type=str, default="leaky_relu",
                         help='The activation function. Options: ' +
                              '[relu, swish, leaky_relu]'
@@ -537,7 +558,7 @@ def main():
                              'to the argument will be 10 to the power of the' +
                              'float selected from the range. '+
                              'Options: [-3, 0].')
-    ngroup.add_argument('--states_sizes', type=list, nargs='+', default=[[]],#This will be filled by default. it's here for saving
+    ngroup.add_argument('--state_sizes', type=list, nargs='+', default=[[]],#This will be filled by default. it's here for saving
                         help='Number of units in each hidden layer of the ' +
                              'network. Default: %(default)s.')
     ngroup.add_argument('--w_dropout_prob', type=float, default=1.0,
@@ -603,6 +624,10 @@ def main():
     mgroup.add_argument('--img_logging_interval', type=int, default=100,
                         help='The size of the intervals between the logging ' +
                              'of image samples.')
+    ngroup.add_argument('--save_pos_images', action='store_true',
+                        help='Whether or not to save images from the ' +
+                             'positive phases.')
+    parser.set_defaults(save_pos_images=False)
     mgroup.add_argument('--model_save_interval', type=int, default=10000,
                         help='The size of the intervals between the model '+
                              'saves.')
