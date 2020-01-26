@@ -100,7 +100,6 @@ def generate_random_states(shapes, device):
              for i in range(len(shapes))]
 
 
-
 def random_arg_generator(parser, args):
     """Randomly reassigns specified arguments with certain specified values.
 

@@ -25,7 +25,6 @@ class TrainingManager():
         self.parameters = model.parameters()
         self.optimizer = optim.Adam(self.parameters, lr=args.lr, betas=(0.9, 0.999))
 
-
         # initter_optimizer = optim.Adam(parameters, lr=1e-3, betas=(0.0, 0.999))
 
         self.noises = lib.utils.generate_random_states(self.state_sizes, self.device)
@@ -55,21 +54,9 @@ class TrainingManager():
 
         lib.utils.save_configs_to_csv(self.args, self.model.model_name)
 
-
-    def pre_train_initializer(self):
-        i = 0
-        for batch, (pos_img, pos_id) in self.data.loader:
-            print("Pretraining step")
-            pos_states, pos_id = self.positive_phase(pos_img, pos_id)
-            i += 1
-            if i > self.args.num_pretraining_batches:
-                break
-        print("\nPretraining of initializer complete")
-
-
     def train(self):
         save_dict = self.make_save_dict()
-        path = 'exps/models/' +self.model.model_name + '.pt'
+        path = 'exps/models/' + self.model.model_name + '.pt'
         torch.save(save_dict, path)
         for batch, (pos_img, pos_id) in self.data.loader:
 
@@ -253,6 +240,7 @@ class TrainingManager():
             self.writer.add_scalar('train/NegSamplesEnergy', total_energy,
                                    self.global_step)
 
+        # Take gradient (before addition of noise)
         total_energy.backward()
         torch.nn.utils.clip_grad_norm_(states,
                                        self.args.clip_state_grad_norm,
@@ -268,8 +256,8 @@ class TrainingManager():
             else:
                 state.data.add_(noise.data)
 
+        # The gradient step in the Langevin step (only for upper layers)
         for i, state in enumerate(states):
-            # The gradient step in the Langevin step (only for upper layers)
             if positive_phase and i == cond_layer:
                 pass
             else:
@@ -313,6 +301,13 @@ class TrainingManager():
 
     def param_update_phase(self, neg_states, neg_id, pos_states_list, pos_id):
 
+        if self.args.log_histograms and \
+        self.batch_num % self.args.histogram_logging_interval == 0:
+            layer_string = 'train/energy_weights'
+            self.writer.add_histogram(layer_string, self.model.energy_weights.weight,
+                                      self.batch_num)
+
+
         # Put model in training mode and prepare network parameters for updates
         requires_grad(self.parameters, True)
         self.model.train()  # Not to be confused with self.TrainingManager.train
@@ -324,6 +319,7 @@ class TrainingManager():
 
         self.update_weights(loss)
 
+
     def make_save_dict(self):
         save_dict = {'model': self.model.state_dict(),
                      'model_optimizer': self.optimizer.state_dict(),
@@ -334,6 +330,199 @@ class TrainingManager():
                             'initializer_optimizer': self.initter.optimizer.state_dict()}
             save_dict    = {**save_dict, **initter_dict}
         return save_dict
+
+###########################################################################
+###########################################################################
+###########################################################################
+
+class VisualizationManager(TrainingManager):
+
+    """A new class because I need to redefine sampler step to clamp certain
+    neurons, and need to define a new type of sampling phase."""
+    def __init__(self, args, model, data, buffer, writer, device, sample_log_dir):
+        super(TrainingManager, self).__init__()
+        self.args = args
+        self.model = model
+        self.data = data
+        self.writer = writer
+        self.buffer = buffer
+        self.device = device
+        self.sample_log_dir = os.path.join(sample_log_dir, 'viz')
+        if not os.path.isdir(self.sample_log_dir):
+            os.mkdir(self.sample_log_dir)
+        self.state_sizes = args.state_sizes
+        self.parameters = model.parameters()
+        self.optimizer = optim.Adam(self.parameters, lr=args.lr,
+                                    betas=(0.9, 0.999))
+        self.viz_batch_sizes = self.calc_viz_batch_sizes()
+
+        self.global_step = 0
+        self.batch_num = 0
+        if args.initializer == 'ff_init':
+            self.initter = nw.InitializerNetwork(args, writer, device)
+            self.initter.to(device)
+        else:
+            self.initter = None
+
+        if self.args.load_model:
+            path = 'exps/models/' + self.args.load_model + '.pt'
+            model_name = str(self.args.load_model)
+            checkpoint = torch.load(path)
+            self.model.load_state_dict(checkpoint['model'])
+            self.optimizer.load_state_dict(checkpoint['model_optimizer'])
+            if args.initializer == 'ff_init':
+                self.initter.load_state_dict(checkpoint['initializer'])
+                self.initter.optimizer.load_state_dict(
+                    checkpoint['initializer_optimizer'])
+
+            # Update args dict correctly
+            curr_num_it_viz = self.args.num_it_viz # collect the current arg for num_it_viz, because it would be overwritten by the value that was given during training
+            vars(self.args).update(vars(checkpoint['args']))
+            vars(self.args)['num_it_viz'] = curr_num_it_viz
+
+            self.batch_num = checkpoint['batch_num']
+            print("Loaded model " + model_name + ' successfully')
+
+        # self.args.num_it_viz = 13
+
+    def calc_viz_batch_sizes(self):
+        """The batch size is now the number of pixels in the image, and
+        there is only one channel because we only visualize one at a time."""
+        return [self.state_sizes[i][-1] * self.state_sizes[i][-2]
+                 for i in range(len(self.state_sizes))]
+
+    def update_state_size_bs(self, sl_idx):
+        self.model.batch_size = self.viz_batch_sizes[sl_idx]
+        new_state_sizes = [(self.viz_batch_sizes[sl_idx],
+                 self.state_sizes[i][1],
+                 self.state_sizes[i][2],
+                 self.state_sizes[i][3])
+                 for i in range(len(self.state_sizes))]
+        self.state_sizes = new_state_sizes
+        self.model.state_sizes = new_state_sizes
+        self.model.calc_energy_weight_masks()
+        return
+
+    def visualize(self):
+        """Clamps each neuron while sampling the others
+
+        Goes through each of the state layers, and each of the channels"""
+        for state_layer_idx in range(len(self.state_sizes)):
+            for channel_idx in range(self.state_sizes[state_layer_idx][1]): #[1] for num of channels
+                print("Visualizing channel %s of state layer %s" % \
+                      (str(channel_idx), state_layer_idx))
+                self.update_state_size_bs(state_layer_idx)
+                self.noises = lib.utils.generate_random_states(
+                    self.state_sizes,
+                    self.device)
+                # a kind of negative phase where it settles for a long time
+                # and clamps a different neuron for each image
+                clamp_array = torch.zeros(size=self.state_sizes[state_layer_idx],
+                                          dtype=torch.uint8,
+                                          device=self.device)
+                mg = np.meshgrid(np.arange(0,self.state_sizes[state_layer_idx][2]),
+                                 np.arange(0,self.state_sizes[state_layer_idx][3]))
+                idxs = list(zip(mg[1].flatten(), mg[0].flatten()))
+                # Sets to 1 the next pixel in each batch element
+                print("Setting indices")
+                for i0 in range(self.state_sizes[state_layer_idx][0]):
+                    clamp_array[i0, 0][idxs[i0]] = 1.0
+                self.visualization_phase(state_layer_idx,
+                                         channel_idx,
+                                         clamp_array)
+
+    def visualization_phase(self, state_layer_idx, channel_idx, clamp_array,
+                            clamp_value=1.):
+        states = lib.utils.generate_random_states(self.state_sizes,
+                                                  self.device)
+        id = None
+        # Freeze network parameters and take grads w.r.t only the inputs
+        requires_grad(states, True)
+        requires_grad(self.parameters, False)
+        self.model.eval()
+
+        # Set up state optimizer if approp
+        if self.args.state_optimizer is not 'langevin':
+            self.state_optimizers = get_state_optimizers(self.args, states)
+
+        # Viz phase sampling
+        for k in tqdm(range(self.args.num_it_viz)):
+            self.viz_sampler_step(states, id, state_layer_idx, channel_idx,
+                                  clamp_array, clamp_value)
+            if k % self.args.viz_img_logging_step_interval == 0:
+                utils.save_image(
+                    states[0].detach().to('cpu'),
+                    os.path.join(self.sample_log_dir,
+                                 str(channel_idx) + '_' +
+                                 str(state_layer_idx) + '_' +
+                                 str(k).zfill(6)  + '.png'),
+                    nrow=self.state_sizes[state_layer_idx][2],
+                    normalize=True,
+                    range=(0, 1))
+            self.global_step += 1
+
+        # Stop calculting grads w.r.t. images
+        for neg_state in states:
+            neg_state.detach_()
+
+        return states, id
+
+    def viz_sampler_step(self, states, ids, state_layer_idx, channel_idx,
+                         clamp_array, clamp_value):
+        energies = self.model(states, ids)  # Outputs energy of neg sample
+        total_energy = energies.sum()
+
+        total_energy.backward()
+        torch.nn.utils.clip_grad_norm_(states,
+                                       self.args.clip_state_grad_norm,
+                                       norm_type=2)
+
+        for i, noise in enumerate(self.noises):
+            noise.normal_(0, self.args.sigma)
+            if i == state_layer_idx:
+                noise = torch.where(clamp_array,
+                                                  torch.zeros_like(noise),
+                                                  noise)
+        for i, (noise, state) in enumerate(zip(self.noises, states)):
+            state.data.add_(noise.data)
+
+
+        # The gradient step in the Langevin step (only for upper layers)
+        for i, state in enumerate(states):
+            if self.args.state_optimizer != 'langevin':
+                if i == state_layer_idx:
+                    # Zero the momentum of the optimizer, if exists
+                    # This is the momentum buffer (difficult to access because the key is the tensor of params)
+                    state_key = self.state_optimizers[
+                        state_layer_idx].param_groups[0]['params'][0]
+                    if state_key in self.state_optimizers[state_layer_idx].state:
+                        mom_buffer = self.state_optimizers[state_layer_idx].state[state_key]['momentum_buffer']
+                        mom_buffer = torch.where(clamp_array, torch.zeros_like(mom_buffer), mom_buffer)
+
+                    # Zero the gradient of selected neurons # TODO Check that the neurons are actually staying clamped clamped
+                    state.grad.data = torch.where(clamp_array,
+                                                  torch.zeros_like(state.grad.data),
+                                                  state.grad.data)
+
+                    # Finally, make sure the state value is at the clamp value
+                    # TBH zeroing the grad is probs unnecessary
+                    state.data = torch.where(clamp_array,
+                                             torch.ones_like(state.data) * \
+                                             torch.tensor(clamp_value),
+                                             state.data)
+                self.state_optimizers[i].step()
+            else:
+                state.data.add_(-self.args.sampling_step_size,
+                            state.grad.data)
+
+
+
+            # Prepare gradients and sample for next sampling step
+            state.grad.detach_()
+            state.grad.zero_()
+            state.data.clamp_(0, 1)
+
+
 
 
 def requires_grad(parameters, flag=True):
@@ -396,6 +585,8 @@ def finalize_args(parser):
         if args.architecture == 'mnist_2_layers_small':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                           [args.batch_size, 4, 3, 3]]
+        if args.architecture == 'mnist_1_layer_small':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28]]
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
@@ -530,7 +721,7 @@ def main():
     ngroup = parser.add_argument_group('Network and states options')
     ngroup.add_argument('--architecture', type=str, default="cifar10_2_layers",
                         help='The type of architecture that will be built. Options: ' +
-                             '[mnist_2_layers_small, cifar10_2_layers]'
+                             '[mnist_2_layers_small, cifar10_2_layers, mnist_1_layer_small]'
                              'Default: %(default)s.')
     ngroup.add_argument('--activation', type=str, default="leaky_relu",
                         help='The activation function. Options: ' +
@@ -594,6 +785,20 @@ def main():
     parser.set_defaults(mult_gauss_noise=False)
 
 
+    vgroup = parser.add_argument_group('Visualization options')
+    vgroup.add_argument('--viz_neurons', action='store_true',
+                        help='Whether or not to visualise the neurons.')
+    parser.set_defaults(viz_neurons=False)
+    vgroup.add_argument('--num_it_viz', type=int,
+                        help='The number of steps to use to sample images. ' +
+                             'Default: %(default)s.')
+    vgroup.add_argument('--viz_img_logging_step_interval', type=int, default=1,
+                        help='The interval at which to save images that ' +
+                             'are being sampled during visualization. '+
+                             'Default: %(default)s.')
+
+
+
     mgroup = parser.add_argument_group('Miscellaneous options')
     mgroup.add_argument('--use_cuda', action='store_true',
                         help='Flag to enable GPU usage.')
@@ -615,7 +820,11 @@ def main():
                              'tensorboard logs are saved. Default:'+
                              ' %(default)s.',
                         required=False)
-    mgroup.add_argument('--histogram_logging_interval', type=int, default=100,
+    mgroup.add_argument('--log_histograms', action='store_true',
+                        help='Whether or not to log histograms of weights ' +
+                             'and other variables. Warning: Storage intensive.')
+    parser.set_defaults(log_histograms=False)
+    mgroup.add_argument('--histogram_logging_interval', type=int, default=40,
                         help='The size of the intervals between the logging ' +
                              'of histogram data.') #On Euler do around 1000
     mgroup.add_argument('--scalar_logging_interval', type=int, default=1,
@@ -624,7 +833,7 @@ def main():
     mgroup.add_argument('--img_logging_interval', type=int, default=100,
                         help='The size of the intervals between the logging ' +
                              'of image samples.')
-    ngroup.add_argument('--save_pos_images', action='store_true',
+    mgroup.add_argument('--save_pos_images', action='store_true',
                         help='Whether or not to save images from the ' +
                              'positive phases.')
     parser.set_defaults(save_pos_images=False)
@@ -637,6 +846,7 @@ def main():
     ngroup.add_argument('--no_train_model', action='store_true',
                         help='Whether or not to train the model ')
     parser.set_defaults(no_train_model=False)
+
 
     args = finalize_args(parser)
 
@@ -666,12 +876,20 @@ def main():
                           device=device)
 
 
-    # Train the model
-    tm = TrainingManager(args, model, data, buffer, writer, device, sample_log_dir)
-    if args.initializer == 'ff_init' and args.pretrain_initializer:
-        tm.pre_train_initializer()
+
     if not args.no_train_model:
+        # Train the model
+        tm = TrainingManager(args, model, data, buffer, writer, device,
+                             sample_log_dir)
+        if args.initializer == 'ff_init' and args.pretrain_initializer:
+            tm.pre_train_initializer()
         tm.train()
+    if args.viz_neurons:
+        vm = VisualizationManager(args, model, data, buffer, writer, device,
+                                  sample_log_dir)
+        vm.visualize()
+
+
 
 shapes = lambda x : [y.shape for y in x]
 nancheck = lambda x : (x != x).any()
@@ -682,61 +900,17 @@ existgradcheck = lambda  y : [(x.grad is not None) for x in y]
 existgraddatacheck = lambda  y : [(x.grad.data is not None) for x in y]
 
 
-# def old_positive_phase(self, pos_img, pos_id):
-#     print('\nStarting positive phase...')
-#     # Get the loaded pos samples and put them on the correct device
-#     pos_img, pos_id = pos_img.to(self.device), pos_id.to(self.device)
-#
-#     # Gets the values of the pos images by initting with ff net and then
-#     # running a short inference phase
-#     pos_states = [pos_img]
-#     # requires_grad(pos_states, True)
-#     if self.args.initializer == 'ff_init':
-#         self.initter.train()
-#         pos_states_init = self.initter.forward(pos_img, pos_id)
-#         pos_states_new = [psi.clone().detach() for psi in pos_states_init]
-#         pos_states.extend(pos_states_new)
-#     elif self.args.initializer == 'zeros':
-#         pos_states.extend(
-#             [torch.zeros(size, device=self.device, requires_grad=True)
-#              for size in self.state_sizes[1:]])
-#     else:
-#         pos_states.extend(
-#             [torch.randn(size, device=self.device, requires_grad=True)
-#              for size in self.state_sizes[1:]])
-#     ################################################
-#     # Freeze network parameters and take grads w.r.t only the inputs
-#
-#     requires_grad(pos_states, True)
-#     requires_grad(self.parameters, False)
-#     if self.args.initializer == 'ff_init':
-#         requires_grad(self.initter.parameters(), False)
-#     self.model.eval()
-#
-#     if self.args.state_optimizer is not 'langevin':
-#         self.state_optimizer = get_state_optimizer(self.args, pos_states)
-#
-#     # Positive phase sampling
-#     for k in tqdm(range(self.args.num_it_pos)):
-#         self.sampler_step(pos_states, pos_id, positive_phase=True)
-#         self.global_step += 1
-#
-#     # Stop calculting grads w.r.t. images
-#     for pos_state in pos_states:
-#         pos_state.detach_()
-#
-#     # Update initializer network if present
-#     if self.args.initializer == 'ff_init':
-#         requires_grad(self.initter.parameters(), True)
-#         loss = self.initter.update_weights(outs=pos_states_init,
-#                                            targets=pos_states[1:],
-#                                            step=self.global_step)
-#
-#     if self.args.cd_mixture:
-#         print("Adding pos states to pos buffer")
-#         self.buffer.push(pos_states, pos_id, pos=True)
-#
-#     return pos_states, pos_id
-
 if __name__ == '__main__':
     main()
+
+
+
+# def pre_train_initializer(self):
+#     i = 0
+#     for batch, (pos_img, pos_id) in self.data.loader:
+#         print("Pretraining step")
+#         pos_states, pos_id = self.positive_phase(pos_img, pos_id)
+#         i += 1
+#         if i > self.args.num_pretraining_batches:
+#             break
+#     print("\nPretraining of initializer complete")

@@ -215,6 +215,7 @@ class DeepAttractorNetwork(nn.Module):
         # nn.Conv2d(3,4,3,padding=1,bias=False)(torch.rand(128,3,32,32))
         # Fails: nn.Conv2d(3,4,3,padding=1,bias=False)(torch.rand(128,32,32,3))
         self.args = args
+        self.batch_size = self.args.batch_size
         self.device = device
         self.model_name = model_name
         self.state_sizes = args.state_sizes
@@ -226,12 +227,14 @@ class DeepAttractorNetwork(nn.Module):
             self.act1 = cust_actv.Swish_module()
         # self.act2 = torch.nn.LeakyReLU()
         self.pad_mode = 'zeros'
-        if self.args.architecture == 'mnist_2_layers_small':
-            self.arch_dict = {
-                'num_ch': 16
-            }
-        self.num_ch = 64
-
+        if self.args.architecture == 'mnist_1_layer_small':
+            self.num_ch = 16
+            self.num_sl = 1
+        elif self.args.architecture == 'mnist_2_layers_small':
+            self.num_ch = 16
+            self.num_sl = 2
+        elif self.args.architecture == 'cifar10_2_layers':
+            self.num_ch = 64
 
         # Base convs are common to all state layers
         self.base_convs = nn.ModuleList([
@@ -242,7 +245,7 @@ class DeepAttractorNetwork(nn.Module):
                                     bias=True))
             for i in range(len(self.state_sizes))]) #cifar10 yields [128, 64, 32, 32]#yields [128, 64, 16, 16]
         self.intermed_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*2)+self.state_sizes[i][1],
+            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*self.num_sl)+self.state_sizes[i][1],
                                     out_channels=self.num_ch,
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
@@ -250,7 +253,7 @@ class DeepAttractorNetwork(nn.Module):
             for i in range(len(self.state_sizes))])
 
         self.energy_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*3)+self.state_sizes[i][1],
+            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*(self.num_sl+1))+self.state_sizes[i][1],
                                     out_channels=self.state_sizes[i][1],
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
@@ -271,9 +274,13 @@ class DeepAttractorNetwork(nn.Module):
         self.energy_weights = nn.Linear(int(self.num_state_neurons), 1, bias=False)
         nn.init.uniform_(self.energy_weights.weight, a=0.5, b=1.5)
 
+        self.energy_weight_masks = None
+        self.calc_energy_weight_masks()
+
+    def calc_energy_weight_masks(self):
         self.energy_weight_masks = []
         for i, m in enumerate(self.args.energy_weight_mask):
-            energy_weight_mask = m * torch.ones(tuple(self.args.state_sizes[i]),
+            energy_weight_mask = m * torch.ones(tuple(self.state_sizes[i]),
                                                 requires_grad=False,
                                                 device=self.device)
             self.energy_weight_masks.append(energy_weight_mask)
@@ -285,25 +292,30 @@ class DeepAttractorNetwork(nn.Module):
             base_outs[i] = self.act1(self.base_convs[i](state_layers[i]))
 
         outs = [None] * num_state_layers
-        for i in range(num_state_layers):
-            if i == 0:
-                from_next = self.interps[i](base_outs[i + 1])
-                intermed_input = torch.cat([state_layers[i],
-                                           base_outs[i],
-                                           from_next],
-                                           dim=1)
-            elif i == num_state_layers - 1:
-                from_previous = self.interps[i](base_outs[i - 1])
-                intermed_input = torch.cat([state_layers[i],
-                                          from_previous,
-                                          base_outs[i]], dim=1)
-            else:
-                from_previous = self.interps[i](base_outs[i - 1])
-                from_next = self.interps[i](base_outs[i + 1])
-                intermed_input = torch.cat([state_layers[i],
-                                          from_previous,
-                                          base_outs[i],
-                                          from_next], dim=1)
+        if num_state_layers > 1:
+            for i in range(num_state_layers):
+                if i == 0 :
+                    from_next = self.interps[i](base_outs[i + 1])
+                    intermed_input = torch.cat([state_layers[i],
+                                               base_outs[i],
+                                               from_next],
+                                               dim=1)
+                elif i == num_state_layers - 1:
+                    from_previous = self.interps[i](base_outs[i - 1])
+                    intermed_input = torch.cat([state_layers[i],
+                                              from_previous,
+                                              base_outs[i]], dim=1)
+                else:
+                    from_previous = self.interps[i](base_outs[i - 1])
+                    from_next = self.interps[i](base_outs[i + 1])
+                    intermed_input = torch.cat([state_layers[i],
+                                              from_previous,
+                                              base_outs[i],
+                                              from_next], dim=1)
+        else:
+            intermed_input = torch.cat([state_layers[i],
+                                        base_outs[i]], dim=1)
+
 
             if self.args.mult_gauss_noise:
                 mult_gauss_noise = (1+torch.randn_like(intermed_input))
@@ -316,8 +328,10 @@ class DeepAttractorNetwork(nn.Module):
                 energy_input = energy_input * mult_gauss_noise
             outs[i] = self.act1(self.energy_convs[i](energy_input)) #TODO consider having no bias in this layer in order to keep the energies close to 0.
 
-        outs = [out.view(self.args.batch_size, -1) for out in outs]
-        outs = [out * mask.view(self.args.batch_size, -1)
+
+
+        outs = [out.view(self.batch_size, -1) for out in outs]
+        outs = [out * mask.view(self.batch_size, -1)
                 for out, mask in zip(outs, self.energy_weight_masks)]
         outs = torch.cat(outs, dim=1)
         energy = self.energy_weights(outs)
