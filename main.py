@@ -316,13 +316,22 @@ def finalize_args(parser):
         vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
                                      [args.batch_size, 9, 16, 16]]  #,#[args.batch_size, 18, 8, 8]]
     elif args.dataset == 'MNIST':
+        if args.architecture == 'mnist_1_layer_small':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 3, 3, 3]]
         if args.architecture == 'mnist_2_layers_small':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 1, 28, 28],
                                          [args.batch_size, 3, 9, 9]]
-        if args.architecture == 'mnist_1_layer_small':
+        if args.architecture == 'mnist_3_layers_small':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 3, 3, 3]]
+                                         [args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 3, 9, 9],
+                                         [args.batch_size, 10, 3, 3]]
+
+    if len(args.energy_weight_mask) != len(args.state_sizes)-1:
+        raise RuntimeError("Number of energy_weight_mask args is different"+
+                           " from the number of state layers")
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):

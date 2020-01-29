@@ -227,6 +227,9 @@ class DeepAttractorNetwork(nn.Module):
         elif self.args.architecture == 'mnist_2_layers_small':
             self.num_ch = 32
             self.num_sl = 2
+        elif self.args.architecture == 'mnist_3_layers_small':
+            self.num_ch = 32
+            self.num_sl = 3
         elif self.args.architecture == 'cifar10_2_layers':
             self.num_ch = 64
 
