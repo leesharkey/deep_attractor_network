@@ -239,7 +239,12 @@ class DeepAttractorNetwork(nn.Module):
         elif self.args.architecture == 'mnist_3_layers_med':
             self.num_ch = 64
             self.num_sl = 3
-            self.kernel_sizes = [3, 3]
+            self.kernel_sizes = [3, 3, 3]
+            self.padding = 1
+        elif self.args.architecture == 'mnist_3_layers_large':
+            self.num_ch = 64
+            self.num_sl = 3
+            self.kernel_sizes = [3, 3, 3]
             self.padding = 1
         elif self.args.architecture == 'cifar10_2_layers':
             self.num_ch = 64
@@ -299,7 +304,7 @@ class DeepAttractorNetwork(nn.Module):
             self.energy_weight_masks.append(energy_weight_mask)
 
     def forward(self, states, class_id=None):
-        print(states[1:])
+
         num_state_layers = len(states[1:])
 
         inputs = []

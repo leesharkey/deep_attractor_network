@@ -336,6 +336,11 @@ def finalize_args(parser):
                                          [args.batch_size, 64, 28, 28],
                                          [args.batch_size, 32, 9, 9],
                                          [args.batch_size, 10, 3, 3]]
+        if args.architecture == 'mnist_3_layers_large': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 8, 28, 28],  # 6272
+                                         [args.batch_size, 24, 16, 16], # 6144
+                                         [args.batch_size, 128, 6, 6]]  # 4608
 
     if len(args.energy_weight_mask) != len(args.state_sizes)-1:
         raise RuntimeError("Number of energy_weight_mask args is different"+
