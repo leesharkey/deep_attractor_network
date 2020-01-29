@@ -307,8 +307,11 @@ class DeepAttractorNetwork(nn.Module):
         # TODO consider placing a hook here
         outs = [out * mask.view(self.args.batch_size, -1)
                 for out, mask in zip(outs, self.energy_weight_masks)]
+        #print(self.energy_weight_masks[0])
         outs = torch.cat(outs, dim=1)
+        #print(outs)
         energy = self.energy_weights(outs)
+        #print(list(self.energy_weights.parameters()))
         return energy
 
 

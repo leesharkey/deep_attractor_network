@@ -324,8 +324,8 @@ def finalize_args(parser):
                                          [args.batch_size, 3, 3, 3]]
         if args.architecture == 'mnist_2_layers_small':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 3, 9, 9]]
+                                        3 [args.batch_size, 9, 28, 28],
+                                         [args.batch_size, 3, 3, 3]]
         if args.architecture == 'mnist_3_layers_med':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 64, 28, 28],
