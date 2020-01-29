@@ -85,16 +85,16 @@ class TrainingManager():
                                        requires_grad=True)
                            for size in self.args.state_sizes[1:]]
             pos_states.extend(zero_states)
-        elif self.args.initializer == 'random':
-            rand_states = lib.utils.generate_random_states(
-                self.args.state_sizes[1:], self.device)
-            pos_states.extend(rand_states)
         elif self.args.initializer == 'middle':
             raise NotImplementedError("You need to find the mean pixel value and then use the value as the value to init all pixels.")
         elif self.args.initializer == 'mix_prev_middle':
             raise NotImplementedError
-        elif self.args.initializer == 'previous':
+        elif self.args.initializer == 'previous' and prev_states is not None:
             pos_states.extend(prev_states[1:])
+        else:  # self.args.initializer == 'random':
+            rand_states = lib.utils.generate_random_states(
+                self.args.state_sizes[1:], self.device)
+            pos_states.extend(rand_states)
         # TODO maybe consider ff_init
 
         return pos_states
@@ -314,7 +314,10 @@ def finalize_args(parser):
 
     if args.dataset == "CIFAR10":
         vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
-                                     [args.batch_size, 9, 16, 16]]  #,#[args.batch_size, 18, 8, 8]]
+                                     [args.batch_size, 3, 32, 32],
+                                     [args.batch_size, 9, 16, 16],
+                                     [args.batch_size, 9,  8,  8],
+                                     [args.batch_size, 9,  2,  2]]  #,#[args.batch_size, 18, 8, 8]]
     elif args.dataset == 'MNIST':
         if args.architecture == 'mnist_1_layer_small':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
