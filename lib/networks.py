@@ -224,21 +224,35 @@ class DeepAttractorNetwork(nn.Module):
         if self.args.architecture == 'mnist_1_layer_small':
             self.num_ch = 32
             self.num_sl = 1
+            self.kernel_sizes = [3, 3]
+            self.padding = 1
         elif self.args.architecture == 'mnist_2_layers_small':
             self.num_ch = 32
             self.num_sl = 2
+            self.kernel_sizes = [3, 3]
+            self.padding = 1
+        elif args.architecture == 'mnist_2_layers_big_filters':
+            self.num_ch = 32
+            self.num_sl = 2
+            self.kernel_sizes = [9, 3]
+            self.padding = 4
         elif self.args.architecture == 'mnist_3_layers_med':
             self.num_ch = 64
             self.num_sl = 3
+            self.kernel_sizes = [3, 3]
+            self.padding = 1
         elif self.args.architecture == 'cifar10_2_layers':
             self.num_ch = 64
+            self.num_sl = 2
+            self.kernel_sizes = [3, 3]
+            self.padding = 1
 
         # Base convs are common to all state layers
         self.base_convs = nn.ModuleList([
             spectral_norm(nn.Conv2d(in_channels=self.args.state_sizes[i][1] + \
                                                 self.args.state_sizes[i+1][1],
                                     out_channels=self.num_ch,
-                                    kernel_size=3, padding=1,
+                                    kernel_size=self.kernel_sizes[0], padding=self.padding,
                                     padding_mode=self.pad_mode,
                                     bias=True))
             for i in range(len(self.args.state_sizes[1:]))]) ########cifar10 yields [128, 64, 32, 32]#yields [128, 64, 16, 16]
@@ -248,7 +262,7 @@ class DeepAttractorNetwork(nn.Module):
                                                 self.args.state_sizes[i][1] +
                                                 self.args.state_sizes[i+1][1], #Num channels in base conv plus num ch in statelayer plus num channels in prev statelayer
                                     out_channels=self.args.state_sizes[i+1][1],
-                                    kernel_size=3, padding=1,
+                                    kernel_size=self.kernel_sizes[1], padding=1,
                                     padding_mode=self.pad_mode,
                                     bias=True))
             for i in range(len(self.args.state_sizes[1:]))])
@@ -285,7 +299,7 @@ class DeepAttractorNetwork(nn.Module):
             self.energy_weight_masks.append(energy_weight_mask)
 
     def forward(self, states, class_id=None):
-
+        print(states[1:])
         num_state_layers = len(states[1:])
 
         inputs = []

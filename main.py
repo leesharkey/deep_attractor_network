@@ -216,7 +216,8 @@ class TrainingManager():
 
         # Calculate the loss
         ## L2 penalty on energy magnitudes
-        loss_l2 = self.args.l2_reg_energy_param * sum([pos_energy, neg_energy])
+        loss_l2 = self.args.l2_reg_energy_param * sum([pos_energy**2,
+                                                       neg_energy**2])
         loss_ml = pos_energy - neg_energy  # Maximum likelihood loss
         loss = loss_ml + loss_l2
         loss = loss.mean()
@@ -323,6 +324,10 @@ def finalize_args(parser):
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 3, 3, 3]]
         if args.architecture == 'mnist_2_layers_small':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 9, 28, 28],
+                                         [args.batch_size, 3, 3, 3]]
+        if args.architecture == 'mnist_2_layers_big_filters':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 9, 28, 28],
                                          [args.batch_size, 3, 3, 3]]
