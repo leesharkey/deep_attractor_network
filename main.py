@@ -326,10 +326,10 @@ def finalize_args(parser):
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 1, 28, 28],
                                          [args.batch_size, 3, 9, 9]]
-        if args.architecture == 'mnist_3_layers_small':
+        if args.architecture == 'mnist_3_layers_med':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 3, 9, 9],
+                                         [args.batch_size, 64, 28, 28],
+                                         [args.batch_size, 32, 9, 9],
                                          [args.batch_size, 10, 3, 3]]
 
     if len(args.energy_weight_mask) != len(args.state_sizes)-1:
