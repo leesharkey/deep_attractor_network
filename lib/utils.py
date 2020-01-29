@@ -4,6 +4,9 @@ import os
 import re
 import random
 from datetime import datetime
+from torch import nn, optim
+import lib.custom_swish_activation as cust_actv
+
 
 def save_configs_to_csv(args, model_name, results_dict=None):
     """"""
@@ -175,6 +178,40 @@ def extract_possible_values(search_str, arg_helpstr, second_opt=False):
     arg_opts = [opt.strip() for opt in arg_opts]
     arg_opts = [opt for opt in arg_opts if 'Opt2' not in opt] #TODO REMOVE WHEN PUBLISHING
     return arg_opts
+
+def requires_grad(parameters, flag=True):
+    """Sets parameters to require grad"""
+    for p in parameters:
+        p.requires_grad = flag
+
+
+def get_activation_function(args):
+    if args.activation == 'leaky_relu':
+        act = torch.nn.LeakyReLU()
+    elif args.activation == "relu":
+        act = torch.nn.ReLU()
+    elif args.activation == "swish":
+        act = cust_actv.Swish_module()
+    return act
+
+def get_state_optimizers(args, params):
+    """Gets an optimizer for each state_layer values (the gradients themselves
+    may pass through multiple networks unless an energy mask is placed on them
+    and the gradient is 0 at the mask value)."""
+    if args.state_optimizer == 'langevin':
+        return None
+    if args.state_optimizer == 'sgd':
+        return [optim.SGD([prm], args.sampling_step_size) for prm in params]
+    if args.state_optimizer == 'sgd_momentum':
+        return [optim.SGD([prm], args.sampling_step_size,
+                         momentum=args.momentum_param,
+                         dampening=args.dampening_param) for prm in params]
+    if args.state_optimizer == 'nesterov':
+        return [optim.SGD([prm], args.sampling_step_size,
+                         momentum=args.momentum_param, nesterov=True) for prm in params]
+    if args.state_optimizer == 'adam':
+        return [optim.Adam([prm], args.sampling_step_size, betas=(0.9,0.999)) for prm in params]
+
 
 def datetimenow():
     now = datetime.now()

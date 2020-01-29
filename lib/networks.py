@@ -5,7 +5,17 @@ import torch
 from torch import nn, optim
 from torch.nn import functional as F
 from torch.nn import utils
-import lib.custom_swish_activation as cust_actv
+import lib.utils
+
+
+def get_swish():
+    sigmoid = torch.nn.Sigmoid()
+    return lambda x : x * sigmoid(x)
+
+
+def get_leaky_hard_sigmoid():
+    hsig = torch.nn.Hardtanh(min_val=0.0)
+    return lambda x : hsig(x) + 0.01*x
 
 
 class SpectralNorm:
@@ -79,6 +89,7 @@ class Interpolate(nn.Module):
     def forward(self, x):
         x = self.interp(x, size=self.size, mode=self.mode, align_corners=False)
         return x
+
 
 class ResBlock(nn.Module):
     def __init__(self, in_channel, out_channel, n_class=None, downsample=False):
@@ -161,11 +172,10 @@ class IGEBM(nn.Module):
         self.args = args
         self.device = device
         self.model_name = model_name
-        self.state_sizes = args.state_sizes
 
-
-        # torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1,
-        # padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
+        # Template conv params:
+        #  torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1,
+        #  padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
         self.conv1 = spectral_norm(nn.Conv2d(3, 128, 3, padding=1), std=1)
 
         self.blocks = nn.ModuleList(
@@ -195,73 +205,53 @@ class IGEBM(nn.Module):
 
         return out
 
+
 class DeepAttractorNetwork(nn.Module):
-    """Define the attractor network. It takes the list of state layers as
-    input, passes each through a base conv net, the output of which is passed
-    to layers ahead and behind (where appropriate). If ahead, these are
-     downsampled so that they have the same dimensions as the statelayer ahead;
-     if behind, these are upsampling so that they have the same dimensions as
-     behind. The concatenated result is passed through another conv net then a
-     relu then another (simply linear) conv net, and
-     then the values of the state layer are added (making it a pre-activation resnet), which
-     outputs a tensor that has the same dimensions as the state layer, defining
-     the energy for each of the state layer neurons. These are all summed in
-     order to get the total energy."""
+    """Define the attractor network
+
+    Define its inputs, how the inputs are processed, what it outputs, any
+    upsampling or downsampling
+    """
     def __init__(self, args, device, model_name, n_class=None):
         super().__init__()
-        # torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1,
-        # padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
-        # An example that works:
-        # nn.Conv2d(3,4,3,padding=1,bias=False)(torch.rand(128,3,32,32))
-        # Fails: nn.Conv2d(3,4,3,padding=1,bias=False)(torch.rand(128,32,32,3))
         self.args = args
-        self.batch_size = self.args.batch_size
         self.device = device
         self.model_name = model_name
-        self.state_sizes = args.state_sizes
-        if args.activation == 'leaky_relu':
-            self.act1 = torch.nn.LeakyReLU()
-        elif args.activation == "relu":
-            self.act1 = torch.nn.ReLU()
-        elif args.activation == "swish":
-            self.act1 = cust_actv.Swish_module()
-        # self.act2 = torch.nn.LeakyReLU()
         self.pad_mode = 'zeros'
+
+        self.act1 = lib.utils.get_activation_function(args)
+
         if self.args.architecture == 'mnist_1_layer_small':
-            self.num_ch = 16
+            self.num_ch = 32
             self.num_sl = 1
         elif self.args.architecture == 'mnist_2_layers_small':
-            self.num_ch = 16
+            self.num_ch = 32
             self.num_sl = 2
         elif self.args.architecture == 'cifar10_2_layers':
             self.num_ch = 64
 
         # Base convs are common to all state layers
         self.base_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=self.state_sizes[i][1],
+            spectral_norm(nn.Conv2d(in_channels=self.args.state_sizes[i][1] + \
+                                                self.args.state_sizes[i+1][1],
                                     out_channels=self.num_ch,
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
                                     bias=True))
-            for i in range(len(self.state_sizes))]) #cifar10 yields [128, 64, 32, 32]#yields [128, 64, 16, 16]
-        self.intermed_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*self.num_sl)+self.state_sizes[i][1],
-                                    out_channels=self.num_ch,
-                                    kernel_size=3, padding=1,
-                                    padding_mode=self.pad_mode,
-                                    bias=True))
-            for i in range(len(self.state_sizes))])
+            for i in range(len(self.args.state_sizes[1:]))]) ########cifar10 yields [128, 64, 32, 32]#yields [128, 64, 16, 16]
 
         self.energy_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=(self.num_ch*(self.num_sl+1))+self.state_sizes[i][1],
-                                    out_channels=self.state_sizes[i][1],
+            spectral_norm(nn.Conv2d(in_channels=self.num_ch +
+                                                self.args.state_sizes[i][1] +
+                                                self.args.state_sizes[i+1][1], #Num channels in base conv plus num ch in statelayer plus num channels in prev statelayer
+                                    out_channels=self.args.state_sizes[i+1][1],
                                     kernel_size=3, padding=1,
                                     padding_mode=self.pad_mode,
                                     bias=True))
-            for i in range(len(self.state_sizes))])
+            for i in range(len(self.args.state_sizes[1:]))])
 
         self.interps = nn.ModuleList([Interpolate(size=size[2:], mode='bilinear')
-                                      for size in self.state_sizes])
+                                      for size in self.args.state_sizes[1:]])
 
         # I'm including energy weights because it might give the network a
         # chance to silence some persistently high energy state neurons during
@@ -270,7 +260,7 @@ class DeepAttractorNetwork(nn.Module):
         # These will be clamped to be at least a small positive value
         self.num_state_neurons = torch.sum(
             torch.tensor([torch.prod(torch.tensor(ss[1:]))
-                 for ss in self.state_sizes]))
+                 for ss in self.args.state_sizes[1:]]))
         self.energy_weights = nn.Linear(int(self.num_state_neurons), 1, bias=False)
         nn.init.uniform_(self.energy_weights.weight, a=0.5, b=1.5)
 
@@ -278,181 +268,46 @@ class DeepAttractorNetwork(nn.Module):
         self.calc_energy_weight_masks()
 
     def calc_energy_weight_masks(self):
+
+        # TODO
+        #  masks should accoutn for wherever the energy gradient
+        #  is 0, so that swish activation isn’t fixed to a part of the
+        #  slope where it is positive.
+
         self.energy_weight_masks = []
         for i, m in enumerate(self.args.energy_weight_mask):
-            energy_weight_mask = m * torch.ones(tuple(self.state_sizes[i]),
+            energy_weight_mask = m * torch.ones(tuple(self.args.state_sizes[i+1]), #+1 because we don't apply the energy masks to the image
                                                 requires_grad=False,
-                                                device=self.device)
+                                                device=self.device) #TODO still don't know if these ever change value in training
             self.energy_weight_masks.append(energy_weight_mask)
 
-    def forward(self, state_layers, class_id=None):
-        num_state_layers = len(state_layers)
+    def forward(self, states, class_id=None):
+
+        num_state_layers = len(states[1:])
+
+        inputs = []
+        for i, state in enumerate(states[:-1]):
+            resized_prev = self.interps[i](states[i]) # resizes previous state (or image when i==0) to the size of the next statelayer
+            input_i = torch.cat([resized_prev, states[i+1]], dim=1)
+            inputs.append(input_i)
+
         base_outs = [None] * num_state_layers #Not totally sure this is necessary
-        for i in range(len(state_layers)):
-            base_outs[i] = self.act1(self.base_convs[i](state_layers[i]))
+        for i in range(num_state_layers):
+            base_outs[i] = self.act1(self.base_convs[i](inputs[i]))
 
         outs = [None] * num_state_layers
-        if num_state_layers > 1:
-            for i in range(num_state_layers):
-                if i == 0 :
-                    from_next = self.interps[i](base_outs[i + 1])
-                    intermed_input = torch.cat([state_layers[i],
-                                               base_outs[i],
-                                               from_next],
-                                               dim=1)
-                elif i == num_state_layers - 1:
-                    from_previous = self.interps[i](base_outs[i - 1])
-                    intermed_input = torch.cat([state_layers[i],
-                                              from_previous,
-                                              base_outs[i]], dim=1)
-                else:
-                    from_previous = self.interps[i](base_outs[i - 1])
-                    from_next = self.interps[i](base_outs[i + 1])
-                    intermed_input = torch.cat([state_layers[i],
-                                              from_previous,
-                                              base_outs[i],
-                                              from_next], dim=1)
-        else:
-            intermed_input = torch.cat([state_layers[i],
-                                        base_outs[i]], dim=1)
+        for i in range(num_state_layers):
+            energy_input_i = torch.cat([inputs[i], base_outs[i]], dim=1)
+            outs[i] = self.act1(self.energy_convs[i](energy_input_i))
 
-
-            if self.args.mult_gauss_noise:
-                mult_gauss_noise = (1+torch.randn_like(intermed_input))
-                intermed_input = intermed_input * mult_gauss_noise
-            intermed_out = self.act1(self.intermed_convs[i](intermed_input))
-
-            energy_input = torch.cat([intermed_input, intermed_out], dim=1)
-            if self.args.mult_gauss_noise:
-                mult_gauss_noise = (1+torch.randn_like(energy_input))
-                energy_input = energy_input * mult_gauss_noise
-            outs[i] = self.act1(self.energy_convs[i](energy_input)) #TODO consider having no bias in this layer in order to keep the energies close to 0.
-
-
-
-        outs = [out.view(self.batch_size, -1) for out in outs]
-        outs = [out * mask.view(self.batch_size, -1)
+        outs = [out.view(self.args.batch_size, -1) for out in outs]
+        # TODO consider placing a hook here
+        outs = [out * mask.view(self.args.batch_size, -1)
                 for out, mask in zip(outs, self.energy_weight_masks)]
         outs = torch.cat(outs, dim=1)
         energy = self.energy_weights(outs)
         return energy
 
-
-class InitializerNetwork(torch.nn.Module):
-    def __init__(self, args, writer, device):
-        super(InitializerNetwork, self).__init__()
-        self.args = args
-        self.writer = writer
-        self.device = device
-        self.input_size = self.args.state_sizes[0]
-        self.output_sizes = args.state_sizes[1:]
-        self.swish = get_swish()
-        self.criterion = nn.MSELoss()
-        self.criteria = []
-        self.enc1 = nn.Sequential(nn.BatchNorm2d(3),
-                                  cust_actv.Swish_module(),
-                                  nn.Conv2d(in_channels=3,
-                                            out_channels=64,
-                                            kernel_size=3,
-                                            padding=1, bias=True),
-                                  nn.BatchNorm2d(64),
-                                  cust_actv.Swish_module(),
-                                  nn.Conv2d(in_channels=64,
-                                            out_channels=64,
-                                            kernel_size=3,
-                                            padding=1, bias=True),
-                                  Interpolate(size=self.args.state_sizes[1][2:],
-                                              mode='bilinear'))
-        self.enc2 = nn.Sequential(nn.BatchNorm2d(64),
-                                  cust_actv.Swish_module(),
-                                  nn.Conv2d(in_channels=64,
-                                            out_channels=64,
-                                            kernel_size=3,
-                                            padding=1, bias=True),
-                                  Interpolate(size=self.args.state_sizes[2][2:],
-                                              mode='bilinear'))
-        self.side1 = nn.Sequential(nn.BatchNorm2d(64),
-                                   cust_actv.Swish_module(),
-                                   nn.Conv2d(in_channels=64,
-                                             out_channels=64,
-                                             kernel_size=3,
-                                             padding=1, bias=True),
-                                   nn.BatchNorm2d(64),
-                                   cust_actv.Swish_module(),
-                                   nn.Conv2d(in_channels=64,
-                                             out_channels=64,
-                                             kernel_size=3,
-                                             padding=1, bias=True),
-                                   nn.Conv2d(in_channels=64,
-                                             out_channels=9,
-                                             kernel_size=3,
-                                             padding=1, bias=True))#adjust kernel size so that output is b,9,16,16
-        self.side2 = nn.Sequential(nn.BatchNorm2d(64),
-                                   cust_actv.Swish_module(),
-                                   nn.Conv2d(in_channels=64,
-                                             out_channels=64,
-                                             kernel_size=3,
-                                             padding=1, bias=True),
-                                   nn.BatchNorm2d(64),
-                                   cust_actv.Swish_module(),
-                                   nn.Conv2d(in_channels=64,
-                                             out_channels=64,
-                                             kernel_size=3,
-                                             padding=1, bias=True),
-                                   nn.Conv2d(in_channels=64,
-                                             out_channels=18,
-                                             kernel_size=3, #adjust kernel size so that output is b,9,16,16
-                                             padding=1, bias=True))
-
-        self.optimizer = optim.Adam(self.parameters(),
-                                    lr=self.args.initter_network_lr)
-
-
-        self.lh_sig = get_leaky_hard_sigmoid()
-
-    # def forward(self, x):
-    #     # x is input image
-    #     x = x.permute(1,0)
-    #     x = self.swish_bn_layer(x, self.first_ff, self.first_bn).detach()
-    #     side_outs = [None] * (len(self.args.size_layers)-1)
-    #     for i in range(len(self.args.size_layers)-1):
-    #         x = self.swish_bn_layer(x, self.ffs[i], self.bnorms[i])
-    #         side_outs[i] = self.hardsig_layer(x, self.sides[i])
-    #     side_outs = [so.permute(1, 0) for so in side_outs]
-    #     return side_outs
-
-    def forward(self, x, x_id):
-        print("Initializing with FF net")
-        hid1 = self.enc1(x)
-        hid2 = self.enc2(hid1)
-
-        out1 = self.side1(hid1) #TODO clamp these to 0,1
-        out2 = self.side2(hid2)
-
-        # (Leakily) Clamp the outputs to (approximately) [0,1]
-        out1 = self.lh_sig(out1)
-        out2 = self.lh_sig(out2)
-        return out1, out2
-
-    def update_weights(self, outs, targets, step):
-        self.optimizer.zero_grad()
-        self.criteria = [self.criterion(o, t) for o,t in zip(outs,targets)]
-        loss = torch.sum(torch.stack(self.criteria))
-        loss.backward(retain_graph=True)
-        self.optimizer.step()
-        if step % self.args.scalar_logging_interval == 0:
-            print("\nInitializer loss: " + '%.4g' % loss.item())
-            self.writer.add_scalar('train/initter_loss', loss.item(),
-                                   step)
-        return loss
-
-def get_swish():
-    sigmoid = torch.nn.Sigmoid()
-    return lambda x : x * sigmoid(x)
-
-def get_leaky_hard_sigmoid():
-    hsig = torch.nn.Hardtanh(min_val=0.0)
-    return lambda x : hsig(x) + 0.01*x
 
 ###### Function to help me debug
 shapes = lambda x : [y.shape for y in x]
