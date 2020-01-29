@@ -340,7 +340,7 @@ def finalize_args(parser):
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 8, 28, 28],  # 6272
                                          [args.batch_size, 24, 16, 16], # 6144
-                                         [args.batch_size, 128, 6, 6]]  # 4608
+                                         [args.batch_size, 180, 6, 6]]  # 4608
 
     if len(args.energy_weight_mask) != len(args.state_sizes)-1:
         raise RuntimeError("Number of energy_weight_mask args is different"+
