@@ -46,7 +46,7 @@ class SampleBuffer:
         self.neg_buffer = []
         if self.args.cd_mixture:
             self.p_neg_buffer = [] # for 'positive negative buffer'
-            self.max_p_neg_samples = 1000
+            self.max_p_neg_samples = 10000
 
     def __len__(self): #TODO consider removing
         return len(self.neg_buffer)

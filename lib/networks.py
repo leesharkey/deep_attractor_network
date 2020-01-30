@@ -221,6 +221,8 @@ class DeepAttractorNetwork(nn.Module):
 
         self.act1 = lib.utils.get_activation_function(args)
 
+        # TODO consider putting this in its own function and in main, where
+        #  the architectures are defined.
         if self.args.architecture == 'mnist_1_layer_small':
             self.num_ch = 32
             self.num_sl = 1
@@ -231,16 +233,17 @@ class DeepAttractorNetwork(nn.Module):
             self.num_sl = 2
             self.kernel_sizes = [3, 3]
             self.padding = 1
-        elif args.architecture == 'mnist_2_layers_big_filters':
-            self.num_ch = 32
+        elif args.architecture == 'mnist_2_layers_small_equal':
+            self.num_ch = 16
             self.num_sl = 2
-            self.kernel_sizes = [9, 3]
-            self.padding = 4
+            self.kernel_sizes = [3, 3]
+            self.padding = 1
+            self.strides = [1,0]
         elif self.args.architecture == 'mnist_3_layers_med':
             self.num_ch = 64
             self.num_sl = 3
             self.kernel_sizes = [3, 3, 3]
-            self.padding = 1
+            self.padding = 0
         elif self.args.architecture == 'mnist_3_layers_large':
             self.num_ch = 64
             self.num_sl = 3
@@ -258,6 +261,7 @@ class DeepAttractorNetwork(nn.Module):
                                                 self.args.state_sizes[i+1][1],
                                     out_channels=self.num_ch,
                                     kernel_size=self.kernel_sizes[0], padding=self.padding,
+                                    stride=self.strides[0],
                                     padding_mode=self.pad_mode,
                                     bias=True))
             for i in range(len(self.args.state_sizes[1:]))]) ########cifar10 yields [128, 64, 32, 32]#yields [128, 64, 16, 16]

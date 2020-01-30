@@ -163,7 +163,7 @@ class TrainingManager():
         return neg_states, neg_id
 
     def sampler_step(self, states, ids, positive_phase=False):
-
+        # TODO figure out why this isn't turning up in tboard
         # Calculate the gradient for the Langevin step
         energies = self.model(states, ids)  # Outputs energy of neg sample
         total_energy = energies.sum()
@@ -327,10 +327,10 @@ def finalize_args(parser):
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 9, 28, 28],
                                          [args.batch_size, 3, 3, 3]]
-        if args.architecture == 'mnist_2_layers_big_filters':
+        if args.architecture == 'mnist_2_layers_small_equal':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 9, 28, 28],
-                                         [args.batch_size, 3, 3, 3]]
+                                         [args.batch_size, 6, 16, 16],
+                                         [args.batch_size, 256, 3, 3]]
         if args.architecture == 'mnist_3_layers_med':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 64, 28, 28],
