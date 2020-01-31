@@ -12,6 +12,7 @@ import lib.networks as nw
 from lib.data import SampleBuffer, sample_data, Dataset
 import lib.utils
 
+
 class TrainingManager():
     def __init__(self, args, model, data, buffer, writer, device, sample_log_dir):
         self.args = args
@@ -27,12 +28,24 @@ class TrainingManager():
         self.global_step = 0
         self.batch_num = 0
 
+        if args.initializer == 'ff_init':
+            self.initter = nw.InitializerNetwork(args, writer, device)
+            self.initter.to(device)
+        else:
+            self.initter = None
+
         if self.args.load_model:
             loaded_model_name = str(self.args.load_model)
             path = 'exps/models/' + loaded_model_name + '.pt'
             checkpoint = torch.load(path)
             self.model.load_state_dict(checkpoint['model'])
             self.optimizer.load_state_dict(checkpoint['model_optimizer'])
+
+            if args.initializer == 'ff_init':
+                self.initter.load_state_dict(checkpoint['initializer'])
+                self.initter.optimizer.load_state_dict(
+                    checkpoint['initializer_optimizer'])
+
             self.args = checkpoint['args'] #TODO ensure that you don't want to implement something that defines which of the previous args to overwrite
             self.batch_num = checkpoint['batch_num']
             print("Loaded model " + loaded_model_name + ' successfully')
@@ -49,6 +62,7 @@ class TrainingManager():
 
             pos_states, pos_id = self.positive_phase(pos_img, pos_id,
                                                      prev_states)
+
             neg_states, neg_id = self.negative_phase()
             self.param_update_phase(neg_states, neg_id, pos_states, pos_id)
 
@@ -75,7 +89,8 @@ class TrainingManager():
         path = 'exps/models/' +self.model.model_name + '.pt'
         torch.save(save_dict, path)
 
-    def initialize_pos_states(self, pos_img=None, prev_states=None):
+    def initialize_pos_states(self, pos_img=None, pos_id=None,
+                              prev_states=None):
         """Initializes positive states"""
 
         pos_states = [pos_img]
@@ -85,6 +100,15 @@ class TrainingManager():
                                        requires_grad=True)
                            for size in self.args.state_sizes[1:]]
             pos_states.extend(zero_states)
+        #requires_grad(pos_states, True)
+        if self.args.initializer == 'ff_init':
+            # Later consider implementing a ff_init that is trained as normal
+            # and gives the same output but that only a few (maybe random)
+            # state neurons are changed/clamped by the innitter so that you
+            # can still use the 'previous' initialisation in your experiments
+            self.initter.train()
+            pos_states_new = self.initter.forward(pos_img, pos_id)
+            pos_states.extend(pos_states_new)
         elif self.args.initializer == 'middle':
             raise NotImplementedError("You need to find the mean pixel value and then use the value as the value to init all pixels.")
         elif self.args.initializer == 'mix_prev_middle':
@@ -95,7 +119,6 @@ class TrainingManager():
             rand_states = lib.utils.generate_random_states(
                 self.args.state_sizes[1:], self.device)
             pos_states.extend(rand_states)
-        # TODO maybe consider ff_init
 
         return pos_states
 
@@ -107,12 +130,15 @@ class TrainingManager():
 
         # Gets the values of the pos states by running a short inference phase
         # conditioned on a particular state layer
-        pos_states = self.initialize_pos_states(pos_img=pos_img,
+        pos_states_init = self.initialize_pos_states(pos_img=pos_img,
                                                 prev_states=prev_states) #Maybe remove cond_layer arg if keeping pos_phase0 as initter
+        pos_states = [psi.clone().detach() for psi in pos_states_init]
 
         # Freeze network parameters and take grads w.r.t only the inputs
         lib.utils.requires_grad(pos_states, True)
         lib.utils.requires_grad(self.parameters, False)
+        if self.args.initializer == 'ff_init':
+            lib.utils.requires_grad(self.initter.parameters(), False)
         self.model.eval()
 
         # Get an optimizer for each statelayer
@@ -127,6 +153,13 @@ class TrainingManager():
         # Stop calculting grads w.r.t. images
         for pos_state in pos_states:
             pos_state.detach_()
+
+        # Update initializer network if present
+        if self.args.initializer == 'ff_init':
+            lib.utils.requires_grad(self.initter.parameters(), True)
+            loss = self.initter.update_weights(outs=pos_states_init[1:],
+                                               targets=pos_states[1:],
+                                               step=self.global_step)
 
         if self.args.cd_mixture:
             print("Adding pos states to pos buffer")
@@ -169,12 +202,14 @@ class TrainingManager():
         total_energy = energies.sum()
         if positive_phase:
             print('\nPos Energy: ' + str(total_energy.cpu().detach().numpy()))
-            self.writer.add_scalar('train/PosSamplesEnergy', total_energy,
-                                   self.global_step)
+            if self.global_step % self.args.scalar_logging_interval == 0:
+                self.writer.add_scalar('train/PosSamplesEnergy', total_energy,
+                                       self.global_step)
         else:
             print('\nNeg Energy: ' + str(total_energy.cpu().detach().numpy()))
-            self.writer.add_scalar('train/NegSamplesEnergy', total_energy,
-                                   self.global_step)
+            if self.global_step % self.args.scalar_logging_interval == 0:
+                self.writer.add_scalar('train/NegSamplesEnergy', total_energy,
+                                       self.global_step)
 
         # Take gradient wrt states (before addition of noise)
         total_energy.backward()
@@ -280,6 +315,16 @@ class TrainingManager():
             save_dict    = {**save_dict, **initter_dict}
         return save_dict
 
+    def pre_train_initializer(self):
+        i = 0
+        for batch, (pos_img, pos_id) in self.data.loader:
+            print("Pretraining step")
+            pos_states, pos_id = self.positive_phase(pos_img, pos_id)
+            i += 1
+            if i > self.args.num_pretraining_batches:
+                break
+        print("\nPretraining of initializer complete")
+
 
 def clip_grad(parameters, optimizer):
     with torch.no_grad():
@@ -313,34 +358,76 @@ def finalize_args(parser):
     if args.require_special_name:
         vars(args)['special_name'] = input("Special name: ") or "None"
 
-    if args.dataset == "CIFAR10":
-        vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
-                                     [args.batch_size, 3, 32, 32],
-                                     [args.batch_size, 9, 16, 16],
-                                     [args.batch_size, 9,  8,  8],
-                                     [args.batch_size, 9,  2,  2]]  #,#[args.batch_size, 18, 8, 8]]
-    elif args.dataset == 'MNIST':
+    # Set architecture-specific hyperparams
+    if args.dataset == 'MNIST':
         if args.architecture == 'mnist_1_layer_small':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 3, 3, 3]]
-        if args.architecture == 'mnist_2_layers_small':
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1}
+        elif args.architecture == 'mnist_2_layers_small':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 9, 28, 28],
-                                         [args.batch_size, 3, 3, 3]]
-        if args.architecture == 'mnist_2_layers_small_equal':
+                                         [args.batch_size, 9, 3, 3]]
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1}
+        elif args.architecture == 'mnist_2_layers_small_equal':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 6, 16, 16],
                                          [args.batch_size, 256, 3, 3]]
-        if args.architecture == 'mnist_3_layers_med':
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3],
+                                       'strides': [1, 0],
+                                       'padding': 1}
+        elif args.architecture == 'mnist_3_layers_small':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 9, 28, 28], #scale 1
+                                         [args.batch_size, 9, 3, 3], # scale 87.1
+                                         [args.batch_size, 9, 1, 1]] # scale 784
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 1],
+                                       'strides': [1,1,1],
+                                       'padding': 1}
+        elif args.architecture == 'mnist_3_layers_med':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 64, 28, 28],
                                          [args.batch_size, 32, 9, 9],
                                          [args.batch_size, 10, 3, 3]]
-        if args.architecture == 'mnist_3_layers_large': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1,1],
+                                       'padding': 0}
+        elif args.architecture == 'mnist_3_layers_large': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 8, 28, 28],  # 6272
                                          [args.batch_size, 24, 16, 16], # 6144
                                          [args.batch_size, 180, 6, 6]]  # 4608
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1}
+    if args.dataset == "CIFAR10":
+        if args.architecture == 'cifar10_2_layers':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
+                                         [args.batch_size, 3, 32, 32],
+                                         [args.batch_size, 9, 16, 16],
+                                         [args.batch_size, 9, 8, 8],
+                                         [args.batch_size, 9, 2, 2]]  # ,#[args.batch_size, 18, 8, 8]]
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1}
 
     if len(args.energy_weight_mask) != len(args.state_sizes)-1:
         raise RuntimeError("Number of energy_weight_mask args is different"+
@@ -435,6 +522,21 @@ def main():
                              'Options:  [zeros, random, previous, ' +
                              'persistent_particles]. ' +
                              ' Default: %(default)s.')
+    tgroup.add_argument('--initter_network_lr', type=float, default=0.01,
+                        help='Learning rate to pass to the Adam optimizer ' +
+                             'used to train the InitializerNetwork. Default: ' +
+                             '%(default)s.')
+    tgroup.add_argument('--pretrain_initializer', action='store_true',
+                        help='If true, trains the feedforward initializer '+
+                             'for a given number of steps before the training '
+                             'of the main network starts. '+
+                             'Default: %(default)s.')
+    parser.set_defaults(pretrain_initializer=False)
+    tgroup.add_argument('--num_initter_pretraining_batches', type=int,
+                        default=30,
+                        help='Learning rate to pass to the Adam optimizer ' +
+                             'used to train the InitializerNetwork. Default: '+
+                             '%(default)s.')
     tgroup.add_argument('--cd_mixture', action='store_true',
                         help='If true, some samples from the positive phase ' +
                              'are used to initialise the negative phase. ' +
@@ -548,6 +650,7 @@ def main():
     xgroup.add_argument('--state_sizes', type=list, nargs='+', default=[[]],#This will be filled by default. it's here for saving
                         help='Number of units in each hidden layer of the ' +
                              'network. Default: %(default)s.')
+    xgroup.add_argument('--arch_dict', type=dict, default={})
 
     args = finalize_args(parser)
 
@@ -567,6 +670,8 @@ def main():
     # Set up model
     model = nw.DeepAttractorNetwork(args, device, model_name).to(device)
 
+
+
     # Set up dataset
     data = Dataset(args)
     buffer = SampleBuffer(args,
@@ -577,6 +682,10 @@ def main():
         # Train the model
         tm = TrainingManager(args, model, data, buffer, writer, device,
                              sample_log_dir)
+
+        if args.initializer == 'ff_init' and args.pretrain_initializer:
+            tm.pre_train_initializer()
+
         tm.train()
     # if args.viz_neurons:
     #     vm = VisualizationManager(args, model, data, buffer, writer, device,

@@ -6,6 +6,7 @@ from torch import nn, optim
 from torch.nn import functional as F
 from torch.nn import utils
 import lib.utils
+import lib.custom_swish_activation as cust_actv
 
 
 def get_swish():
@@ -221,57 +222,24 @@ class DeepAttractorNetwork(nn.Module):
 
         self.act1 = lib.utils.get_activation_function(args)
 
-        # TODO consider putting this in its own function and in main, where
-        #  the architectures are defined.
-        if self.args.architecture == 'mnist_1_layer_small':
-            self.num_ch = 32
-            self.num_sl = 1
-            self.kernel_sizes = [3, 3]
-            self.padding = 1
-        elif self.args.architecture == 'mnist_2_layers_small':
-            self.num_ch = 32
-            self.num_sl = 2
-            self.kernel_sizes = [3, 3]
-            self.padding = 1
-        elif args.architecture == 'mnist_2_layers_small_equal':
-            self.num_ch = 16
-            self.num_sl = 2
-            self.kernel_sizes = [3, 3]
-            self.padding = 1
-            self.strides = [1,0]
-        elif self.args.architecture == 'mnist_3_layers_med':
-            self.num_ch = 64
-            self.num_sl = 3
-            self.kernel_sizes = [3, 3, 3]
-            self.padding = 0
-        elif self.args.architecture == 'mnist_3_layers_large':
-            self.num_ch = 64
-            self.num_sl = 3
-            self.kernel_sizes = [3, 3, 3]
-            self.padding = 1
-        elif self.args.architecture == 'cifar10_2_layers':
-            self.num_ch = 64
-            self.num_sl = 2
-            self.kernel_sizes = [3, 3]
-            self.padding = 1
-
-        # Base convs are common to all state layers
         self.base_convs = nn.ModuleList([
             spectral_norm(nn.Conv2d(in_channels=self.args.state_sizes[i][1] + \
                                                 self.args.state_sizes[i+1][1],
-                                    out_channels=self.num_ch,
-                                    kernel_size=self.kernel_sizes[0], padding=self.padding,
-                                    stride=self.strides[0],
+                                    out_channels=self.args.arch_dict['num_ch'],
+                                    kernel_size=self.args.arch_dict['kernel_sizes'][0],
+                                    padding=self.args.arch_dict['padding'],
+                                    stride=self.args.arch_dict['strides'][0],
                                     padding_mode=self.pad_mode,
                                     bias=True))
             for i in range(len(self.args.state_sizes[1:]))]) ########cifar10 yields [128, 64, 32, 32]#yields [128, 64, 16, 16]
 
-        self.energy_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=self.num_ch +
+        self.energy_convs = nn.ModuleList([ #TODO check stride works
+            spectral_norm(nn.Conv2d(in_channels=self.args.arch_dict['num_ch'] +
                                                 self.args.state_sizes[i][1] +
                                                 self.args.state_sizes[i+1][1], #Num channels in base conv plus num ch in statelayer plus num channels in prev statelayer
                                     out_channels=self.args.state_sizes[i+1][1],
-                                    kernel_size=self.kernel_sizes[1], padding=1,
+                                    kernel_size=self.args.arch_dict['kernel_sizes'][1],
+                                    padding=self.args.arch_dict['padding'],
                                     padding_mode=self.pad_mode,
                                     bias=True))
             for i in range(len(self.args.state_sizes[1:]))])
@@ -284,6 +252,8 @@ class DeepAttractorNetwork(nn.Module):
         # learning but to unsilence them when they start being learnable (e.g.
         # when the layers below have learned properly.
         # These will be clamped to be at least a small positive value
+        # TODO consider unclamping this after you watch its updates during
+        #  training and the progress of the energy outputs of each layer
         self.num_state_neurons = torch.sum(
             torch.tensor([torch.prod(torch.tensor(ss[1:]))
                  for ss in self.args.state_sizes[1:]]))
@@ -338,7 +308,147 @@ class DeepAttractorNetwork(nn.Module):
         return energy
 
 
+class InitializerNetwork(torch.nn.Module):
+    def __init__(self, args, writer, device):
+        super(InitializerNetwork, self).__init__()
+        self.args = args
+        self.writer = writer
+        self.device = device
+        self.input_size = self.args.state_sizes[0]
+        self.output_sizes = args.state_sizes[1:]
+        self.swish = get_swish()
+        self.criterion = nn.MSELoss()
+        self.criteria = []
+        self.encs = []
+        self.sides = []
+        self.in_channels = self.args.state_sizes[0][1]
+
+        self.enc_base = nn.Sequential(nn.BatchNorm2d(self.in_channels),#TODO consider removing
+                                  cust_actv.Swish_module(),
+                                  nn.Conv2d(in_channels=self.in_channels,
+                                            out_channels=64,
+                                            kernel_size=3,
+                                            padding=1,
+                                            bias=True))
+        for i in range(1, len(self.args.state_sizes)):
+            # encs should take as input the image size and output the statesize for that statelayer
+            self.encs.append(
+                            nn.Sequential(
+                                      nn.BatchNorm2d(64),
+                                      cust_actv.Swish_module(),
+                                      nn.Conv2d(in_channels=64,
+                                                out_channels=64,
+                                                kernel_size=3,
+                                                padding=1,
+                                                bias=True),
+                                      Interpolate(size=self.args.state_sizes[i][2:],
+                                                  mode='bilinear')).to(self.device))
+
+            # Sides should output the statesize for that statelayer and input is same size as output.
+            # so long as the input to the side is the same as the size of the
+            # base conv (i.e. the statesize), I can just use the same settings
+            # as for the base+energy convs
+            self.sides.append(
+                            nn.Sequential(nn.BatchNorm2d(64),
+                                      cust_actv.Swish_module(),
+                                      nn.Conv2d(in_channels=64,
+                                                 out_channels=64,
+                                                 kernel_size=3,
+                                                 padding=1, bias=True),
+                                      nn.BatchNorm2d(64),
+                                      cust_actv.Swish_module(),
+                                      nn.Conv2d(in_channels=64,
+                                                 out_channels=64,
+                                                 kernel_size=3,
+                                                 padding=1, bias=True),
+                                      nn.Conv2d(in_channels=64,
+                                                 out_channels=self.args.state_sizes[i][1],
+                                                 kernel_size=3,
+                                                 padding=1, bias=True)).to(self.device))#adjust kernel size so that output is b,9,16,16
+
+
+        self.optimizer = optim.Adam(self.parameters(),
+                                    lr=self.args.initter_network_lr)
+
+
+        self.lh_sig = get_leaky_hard_sigmoid()
+
+    # def forward(self, x):
+    #     # x is input image
+    #     x = x.permute(1,0)
+    #     x = self.swish_bn_layer(x, self.first_ff, self.first_bn).detach()
+    #     side_outs = [None] * (len(self.args.size_layers)-1)
+    #     for i in range(len(self.args.size_layers)-1):
+    #         x = self.swish_bn_layer(x, self.ffs[i], self.bnorms[i])
+    #         side_outs[i] = self.hardsig_layer(x, self.sides[i])
+    #     side_outs = [so.permute(1, 0) for so in side_outs]
+    #     return side_outs
+
+    def forward(self, x, x_id):
+        print("Initializing with FF net")
+        hids = []
+        inp = self.enc_base(x)
+        for enc_i in self.encs:
+            hid_i = enc_i(inp)
+            hids.append(hid_i)
+            inp = hid_i
+
+        outs = []
+        for side_i, hid_i in zip(self.sides, hids):
+            out_i = side_i(hid_i)
+
+            # (Leakily) Clamp the outputs to (approximately) [0,1]
+            outs.append(self.lh_sig(out_i))
+
+        return outs
+
+    def update_weights(self, outs, targets, step):
+        self.optimizer.zero_grad()
+        self.criteria = [self.criterion(o, t) for o,t in zip(outs,targets)]
+        loss = torch.sum(torch.stack(self.criteria))
+        loss.backward(retain_graph=True)
+        self.optimizer.step()
+        if step % self.args.scalar_logging_interval == 0:
+            print("\nInitializer loss: " + '%.4g' % loss.item())
+            self.writer.add_scalar('train/initter_loss', loss.item(),
+                                   step)
+        return loss
+
+
 ###### Function to help me debug
 shapes = lambda x : [y.shape for y in x]
 nancheck = lambda x : (x != x).any()
 listout = lambda y : [x for x in y]
+
+
+# if self.args.architecture == 'mnist_1_layer_small':
+#     self.num_ch = 32
+#     self.num_sl = 1
+#     self.args.arch_dict['kernel_sizes'] = [3, 3]
+#     self.padding = 1
+# elif self.args.architecture == 'mnist_2_layers_small':
+#     self.num_ch = 32
+#     self.num_sl = 2
+#     self.args.arch_dict['kernel_sizes'] = [3, 3]
+#     self.padding = 1
+# elif args.architecture == 'mnist_2_layers_small_equal':
+#     self.num_ch = 16
+#     self.num_sl = 2
+#     self.args.arch_dict['kernel_sizes'] = [3, 3]
+#     self.padding = 1
+#     self.strides = [1, 0]
+# elif self.args.architecture == 'mnist_3_layers_med':
+#     self.num_ch = 64
+#     self.num_sl = 3
+#     self.args.arch_dict['kernel_sizes'] = [3, 3, 3]
+#     self.padding = 0
+# elif self.args.architecture == 'mnist_3_layers_large':
+#     self.num_ch = 64
+#     self.num_sl = 3
+#     self.args.arch_dict['kernel_sizes'] = [3, 3, 3]
+#     self.padding = 1
+# elif self.args.architecture == 'cifar10_2_layers':
+#     self.num_ch = 64
+#     self.num_sl = 2
+#     self.args.arch_dict['kernel_sizes'] = [3, 3]
+#     self.padding = 1

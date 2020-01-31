@@ -56,6 +56,7 @@ class SampleBuffer:
         #  to be thrown in at least one place here if frac=0
 
         if pos:
+            # During positive phases, we only extend p_neg_buffer
             states = listtodevice(listdetach(states), 'cpu')
             class_ids = class_ids.detach().to('cpu')
             zippee = states + [class_ids]
@@ -71,31 +72,30 @@ class SampleBuffer:
             states = listtodevice(listdetach(states), 'cpu')
             class_ids = class_ids.detach().to('cpu')
 
-            p_neg_states =        [state[:self.num_p_neg_samples]
-                                   for state in states]
+            neg_and_rand_class_ids = class_ids[self.num_p_neg_samples:]
             neg_and_rand_states = [state[self.num_p_neg_samples:]
                                    for state in states]
-
-            p_neg_class_ids =        class_ids[:self.num_p_neg_samples]
-            neg_and_rand_class_ids = class_ids[self.num_p_neg_samples:]
-
-            zippee_p_neg = p_neg_states + [p_neg_class_ids]
-            zippee_p_neg = listsplit(zippee_p_neg, size=1, dim=0)
-
-            for sample_and_class_id in zip(*zippee_p_neg):
-                sample, class_id = sample_and_class_id[:-1],sample_and_class_id[-1]
-                self.p_neg_buffer.append((listdetach(sample), class_id))
-                if len(self.p_neg_buffer) > self.max_p_neg_samples:
-                    self.p_neg_buffer.pop(0)
-
             zippee_neg_and_rand = neg_and_rand_states + [neg_and_rand_class_ids]
             zippee_neg_and_rand = listsplit(zippee_neg_and_rand, size=1, dim=0)
-
             for sample_and_class_id in zip(*zippee_neg_and_rand):
-                sample, class_id = sample_and_class_id[:-1],sample_and_class_id[-1]
+                sample, class_id = sample_and_class_id[:-1],\
+                                   sample_and_class_id[-1]
                 self.neg_buffer.append((listdetach(sample), class_id))
                 if len(self.neg_buffer) > self.max_samples:
                     self.neg_buffer.pop(0)
+
+            if self.args.cd_mixture and self.args.pos_buffer_frac > 0.0:
+                p_neg_states =        [state[:self.num_p_neg_samples]
+                                       for state in states]
+                p_neg_class_ids =        class_ids[:self.num_p_neg_samples]
+                zippee_p_neg = p_neg_states + [p_neg_class_ids]
+                zippee_p_neg = listsplit(zippee_p_neg, size=1, dim=0)
+                for sample_and_class_id in zip(*zippee_p_neg):
+                    sample, class_id = sample_and_class_id[:-1],\
+                                       sample_and_class_id[-1]
+                    self.p_neg_buffer.append((listdetach(sample), class_id))
+                    if len(self.p_neg_buffer) > self.max_p_neg_samples:
+                        self.p_neg_buffer.pop(0)
 
     def get(self):
 
@@ -103,12 +103,7 @@ class SampleBuffer:
         #  to be thrown in at least one place here if frac=0
         neg_items   = random.choices(self.neg_buffer,
                                      k=self.num_neg_samples)
-        p_neg_items = random.choices(self.p_neg_buffer,
-                                     k=self.num_p_neg_samples)
-
         neg_samples,   neg_class_ids   = zip(*neg_items)  # Unzips
-        p_neg_samples, p_neg_class_ids = zip(*p_neg_items)  # Unzips
-
         # Combines each of N lists of 1 state layers (of len=k) into k lists
         # of len=N
         neg_samples = zip(*neg_samples)
@@ -117,16 +112,22 @@ class SampleBuffer:
         neg_samples = listtodevice(neg_samples, self.device)
         neg_class_ids = neg_class_ids.to(self.device)
 
-        # Combines each of N lists of 1 state layers (of len=k) into k lists
-        # of len=N
-        p_neg_samples = zip(*p_neg_samples)
-        p_neg_samples = listcat(p_neg_samples, dim=0)
-        p_neg_class_ids = torch.tensor(p_neg_class_ids)
-        p_neg_samples = listtodevice(p_neg_samples, self.device)
-        p_neg_class_ids = p_neg_class_ids.to(self.device)
+        if self.args.cd_mixture and self.args.pos_buffer_frac > 0.0:
+            p_neg_items = random.choices(self.p_neg_buffer,
+                                         k=self.num_p_neg_samples)
+            p_neg_samples, p_neg_class_ids = zip(*p_neg_items)  # Unzips
+            # Combines each of N lists of 1 state layers (of len=k) into k lists
+            # of len=N
+            p_neg_samples = zip(*p_neg_samples)
+            p_neg_samples = listcat(p_neg_samples, dim=0)
+            p_neg_class_ids = torch.tensor(p_neg_class_ids)
+            p_neg_samples = listtodevice(p_neg_samples, self.device)
+            p_neg_class_ids = p_neg_class_ids.to(self.device)
 
-        samples = listcat(zip(p_neg_samples, neg_samples), dim=0)
-        class_ids = torch.cat((p_neg_class_ids, neg_class_ids), dim=0)
+            samples = listcat(zip(p_neg_samples, neg_samples), dim=0)
+            class_ids = torch.cat((p_neg_class_ids, neg_class_ids), dim=0)
+        else:
+            samples, class_ids = neg_samples, neg_class_ids
 
         return samples, class_ids
 
