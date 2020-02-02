@@ -213,10 +213,11 @@ class DeepAttractorNetwork(nn.Module):
     Define its inputs, how the inputs are processed, what it outputs, any
     upsampling or downsampling
     """
-    def __init__(self, args, device, model_name, n_class=None):
+    def __init__(self, args, device, model_name, writer, n_class=None):
         super().__init__()
         self.args = args
         self.device = device
+        self.writer = writer
         self.model_name = model_name
         self.pad_mode = 'zeros'
 
@@ -277,7 +278,7 @@ class DeepAttractorNetwork(nn.Module):
                                                 device=self.device) #TODO still don't know if these ever change value in training
             self.energy_weight_masks.append(energy_weight_mask)
 
-    def forward(self, states, class_id=None):
+    def forward(self, states, class_id=None, step=None):
 
         num_state_layers = len(states[1:])
 
@@ -295,6 +296,14 @@ class DeepAttractorNetwork(nn.Module):
         for i in range(num_state_layers):
             energy_input_i = torch.cat([inputs[i], base_outs[i]], dim=1)
             outs[i] = self.act1(self.energy_convs[i](energy_input_i))
+
+
+        if self.args.log_histograms and step is not None and \
+            step % self.args.histogram_logging_interval == 0:
+            for i, enrg in enumerate(outs):
+                layer_string = 'train/energies_%s' % i
+                self.writer.add_histogram(layer_string, enrg, step)
+
 
         outs = [out.view(self.args.batch_size, -1) for out in outs]
         # TODO consider placing a hook here

@@ -147,7 +147,8 @@ class TrainingManager():
 
         # Positive phase sampling
         for k in tqdm(range(self.args.num_it_pos)):
-            self.sampler_step(pos_states, pos_id, positive_phase=True)
+            self.sampler_step(pos_states, pos_id, positive_phase=True,
+                              step=self.global_step)
             self.global_step += 1
 
         # Stop calculting grads w.r.t. images
@@ -183,7 +184,7 @@ class TrainingManager():
 
         # Negative phase sampling
         for k in tqdm(range(self.args.num_it_neg)):
-            self.sampler_step(neg_states, neg_id)
+            self.sampler_step(neg_states, neg_id, step=self.global_step)
             self.global_step += 1
 
         # Stop calculting grads w.r.t. images
@@ -195,10 +196,9 @@ class TrainingManager():
 
         return neg_states, neg_id
 
-    def sampler_step(self, states, ids, positive_phase=False):
-        # TODO figure out why this isn't turning up in tboard
+    def sampler_step(self, states, ids, positive_phase=False, step=None):
         # Calculate the gradient for the Langevin step
-        energies = self.model(states, ids)  # Outputs energy of neg sample
+        energies = self.model(states, ids, step)  # Outputs energy of neg sample
         total_energy = energies.sum()
         if positive_phase:
             print('\nPos Energy: ' + str(total_energy.cpu().detach().numpy()))
@@ -416,6 +416,18 @@ def finalize_args(parser):
                                        'kernel_sizes': [3, 3, 3],
                                        'strides': [1,1],
                                        'padding': 1}
+        elif args.architecture == 'mnist_4_layers_med': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],  # 12544
+                                         [args.batch_size, 24, 16, 16],  # 6144
+                                         [args.batch_size, 32,  9,  9],  # 2592
+                                         [args.batch_size, 180, 3,  3]]  # 1620
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1}
+            vars(args)['energy_weight_mask'] = [1, 2, 4.84, 7.743]
     if args.dataset == "CIFAR10":
         if args.architecture == 'cifar10_2_layers':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
@@ -566,7 +578,7 @@ def main():
                              'Options: [-3, 0].')
     ngroup.add_argument('--energy_weight_min', type=float, default=0.0,
                         help='The minimum value that weights in the energy ' +
-                             'weights layer may take.') #TODO
+                             'weights layer may take.')
     ngroup.add_argument('--energy_weight_mask', type=int, nargs='+',
                         default=[1,1,1], help='A list that will be used to' +
                         'define a Boolean mask over the energy weights, ' +
@@ -668,7 +680,7 @@ def main():
         os.mkdir(sample_log_dir)
 
     # Set up model
-    model = nw.DeepAttractorNetwork(args, device, model_name).to(device)
+    model = nw.DeepAttractorNetwork(args, device, model_name, writer).to(device)
 
 
 
