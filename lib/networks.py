@@ -206,6 +206,86 @@ class IGEBM(nn.Module):
 
         return out
 
+class DenseConv(nn.Module):
+    def __init__(self, args, layer_idx):
+        super().__init__()
+        self.args = args
+        self.pad_mode = 'zeros'
+        self.layer_idx = layer_idx
+        self.act = lib.utils.get_activation_function(args)
+
+        # The indices of the state_layers that will be input to this net.
+        self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
+
+        # The summed number of channels of all the input state_layers
+        self.in_channels = sum([self.args.state_sizes[j][1]
+                                for j in self.input_idxs])
+
+        # Size values of state_layer of this network
+        self.state_layer_ch = self.args.state_sizes[layer_idx][1]
+        self.state_layer_h_w = self.args.state_sizes[layer_idx][2:]
+        print("Input channels in %i: %i" % (layer_idx, self.in_channels))
+        print("Input h and w  in %i: %r" % (layer_idx, self.state_layer_h_w))
+
+        # Network
+        self.interp = Interpolate(size=self.state_layer_h_w, mode='bilinear')
+        self.base_conv = spectral_norm(nn.Conv2d(
+                in_channels=self.in_channels,
+                out_channels=self.args.arch_dict['num_ch'],
+                kernel_size=self.args.arch_dict['kernel_sizes'][0],
+                padding=self.args.arch_dict['padding'],
+                stride=self.args.arch_dict['strides'][0],
+                padding_mode=self.pad_mode,
+                bias=True))
+        self.energy_conv = spectral_norm(nn.Conv2d(
+                in_channels=self.args.arch_dict['num_ch'] + self.in_channels,
+                out_channels=self.state_layer_ch,
+                kernel_size=self.args.arch_dict['kernel_sizes'][0],
+                padding=self.args.arch_dict['padding'],
+                padding_mode=self.pad_mode,
+                bias=True), std=1e-10, bound=True)
+
+    def forward(self, inputs, class_id=None):
+        reshaped_inps = [self.interp(inp) for inp in inputs
+                         if inp.shape[2:] != self.state_layer_h_w]
+        reshaped_inps = torch.cat(reshaped_inps, dim=1)
+        base_out = self.act(self.base_conv(reshaped_inps))
+        energy_input = torch.cat([reshaped_inps, base_out], dim=1)
+        out = self.act(self.energy_conv(energy_input))
+        return out
+
+
+class FCFC(nn.Module):
+    def __init__(self, args, layer_idx):
+        super().__init__()
+        self.args = args
+        self.act = lib.utils.get_activation_function(args)
+        self.layer_idx = layer_idx
+
+        # The indices of the state_layers that will be input to this net and
+        # their sizes. They may be flattened conv outputs.
+        self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
+        self.in_sizes = [torch.prod(torch.tensor(self.args.state_sizes[j][1:]))
+                         for j in self.input_idxs]
+
+        self.out_size = self.args.state_sizes[layer_idx][1]
+        self.base_fc_layers = nn.ModuleList([spectral_norm(
+            nn.Linear(in_size, self.out_size)) for in_size in self.in_sizes])
+        self.energy_fc_layer = nn.Sequential(
+            spectral_norm(nn.Linear(self.out_size * len(self.in_sizes),
+                                    self.out_size)),
+            self.act,
+            spectral_norm(nn.Linear(self.out_size, self.out_size)),
+            self.act)
+
+    def forward(self, inputs, class_id=None):
+        reshaped_inps = [inp.view(self.args.batch_size, -1) for inp in inputs]
+        base_outs = [self.act(base_fc(inp))
+                     for base_fc, inp in zip(self.base_fc_layers,
+                                             reshaped_inps)]
+        energy_input = torch.cat(base_outs, dim=1)
+        out = self.energy_fc_layer(energy_input)
+        return out
 
 class DeepAttractorNetwork(nn.Module):
     """Define the attractor network
@@ -219,91 +299,38 @@ class DeepAttractorNetwork(nn.Module):
         self.device = device
         self.writer = writer
         self.model_name = model_name
-        self.pad_mode = 'zeros'
-
-        self.act1 = lib.utils.get_activation_function(args)
-
-        self.base_convs = nn.ModuleList([
-            spectral_norm(nn.Conv2d(in_channels=self.args.state_sizes[i][1] + \
-                                                self.args.state_sizes[i+1][1],
-                                    out_channels=self.args.arch_dict['num_ch'],
-                                    kernel_size=self.args.arch_dict['kernel_sizes'][0],
-                                    padding=self.args.arch_dict['padding'],
-                                    stride=self.args.arch_dict['strides'][0],
-                                    padding_mode=self.pad_mode,
-                                    bias=True))
-            for i in range(len(self.args.state_sizes[1:]))]) ########cifar10 yields [128, 64, 32, 32]#yields [128, 64, 16, 16]
-
-        self.energy_convs = nn.ModuleList([ #TODO check stride works
-            spectral_norm(nn.Conv2d(in_channels=self.args.arch_dict['num_ch'] +
-                                                self.args.state_sizes[i][1] +
-                                                self.args.state_sizes[i+1][1], #Num channels in base conv plus num ch in statelayer plus num channels in prev statelayer
-                                    out_channels=self.args.state_sizes[i+1][1],
-                                    kernel_size=self.args.arch_dict['kernel_sizes'][1],
-                                    padding=self.args.arch_dict['padding'],
-                                    padding_mode=self.pad_mode,
-                                    bias=True))
-            for i in range(len(self.args.state_sizes[1:]))])
-
-        self.interps = nn.ModuleList([Interpolate(size=size[2:], mode='bilinear')
-                                      for size in self.args.state_sizes[1:]])
-
-        # I'm including energy weights because it might give the network a
-        # chance to silence some persistently high energy state neurons during
-        # learning but to unsilence them when they start being learnable (e.g.
-        # when the layers below have learned properly.
-        # These will be clamped to be at least a small positive value
-        # TODO consider unclamping this after you watch its updates during
-        #  training and the progress of the energy outputs of each layer
+        self.num_state_layers = len(self.args.state_sizes[1:])
+        self.act = lib.utils.get_activation_function(args)
         self.num_state_neurons = torch.sum(
             torch.tensor([torch.prod(torch.tensor(ss[1:]))
                  for ss in self.args.state_sizes[1:]]))
         self.energy_weights = nn.Linear(int(self.num_state_neurons), 1, bias=False)
-        nn.init.uniform_(self.energy_weights.weight, a=0.5, b=1.5)
-
+        nn.init.uniform_(self.energy_weights.weight, a=0.1, b=0.9)
         self.energy_weight_masks = None
         self.calc_energy_weight_masks()
-
-    def calc_energy_weight_masks(self):
-
         # TODO
-        #  masks should accoutn for wherever the energy gradient
-        #  is 0, so that swish activation isn’t fixed to a part of the
-        #  slope where it is positive.
-
-        self.energy_weight_masks = []
-        for i, m in enumerate(self.args.energy_weight_mask):
-            energy_weight_mask = m * torch.ones(tuple(self.args.state_sizes[i+1]), #+1 because we don't apply the energy masks to the image
-                                                requires_grad=False,
-                                                device=self.device) #TODO still don't know if these ever change value in training
-            self.energy_weight_masks.append(energy_weight_mask)
+        # set up the conv and fc layers in the DAN
+        num_convs = len([s for s in self.args.state_sizes[1:] if len(s)==4])
+        num_fcs = len([s for s in self.args.state_sizes if len(s)==2])
+        self.convs = [DenseConv(args, i) for i in range(1,num_convs+1)]
+        self.fcs = [FCFC(args, j) for j in range(num_convs+1,
+                                                 num_convs+1+num_fcs)]
+        self.nets = nn.ModuleList(self.convs)
+        self.nets.extend(self.fcs)
 
     def forward(self, states, class_id=None, step=None):
-
-        num_state_layers = len(states[1:])
-
-        inputs = []
-        for i, state in enumerate(states[:-1]):
-            resized_prev = self.interps[i](states[i]) # resizes previous state (or image when i==0) to the size of the next statelayer
-            input_i = torch.cat([resized_prev, states[i+1]], dim=1)
-            inputs.append(input_i)
-
-        base_outs = [None] * num_state_layers #Not totally sure this is necessary
-        for i in range(num_state_layers):
-            base_outs[i] = self.act1(self.base_convs[i](inputs[i]))
-
-        outs = [None] * num_state_layers
-        for i in range(num_state_layers):
-            energy_input_i = torch.cat([inputs[i], base_outs[i]], dim=1)
-            outs[i] = self.act1(self.energy_convs[i](energy_input_i))
-
+        outs = []
+        for i, (state, net) in enumerate(zip(states, self.nets), start=1):
+            inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            inp_states = [states[j] for j in inp_idxs]
+            out = self.nets[i-1](inp_states)
+            outs.append(out)
 
         if self.args.log_histograms and step is not None and \
             step % self.args.histogram_logging_interval == 0:
             for i, enrg in enumerate(outs):
                 layer_string = 'train/energies_%s' % i
                 self.writer.add_histogram(layer_string, enrg, step)
-
 
         outs = [out.view(self.args.batch_size, -1) for out in outs]
         # TODO consider placing a hook here
@@ -315,6 +342,22 @@ class DeepAttractorNetwork(nn.Module):
         energy = self.energy_weights(outs)
         #print(list(self.energy_weights.parameters()))
         return energy
+
+
+    def calc_energy_weight_masks(self):
+        # TODO
+        #  masks should accoutn for wherever the energy gradient
+        #  is 0, so that swish activation isn’t fixed to a part of the
+        #  slope where it is positive.
+
+        self.energy_weight_masks = []
+        for i, m in enumerate(self.args.energy_weight_mask):
+            energy_weight_mask = m * torch.ones(
+                tuple(self.args.state_sizes[i + 1]),
+                # +1 because we don't apply the energy masks to the image
+                requires_grad=False,
+                device=self.device)  # TODO still don't know if these ever change value in training
+            self.energy_weight_masks.append(energy_weight_mask)
 
 
 class InitializerNetwork(torch.nn.Module):

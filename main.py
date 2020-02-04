@@ -428,6 +428,65 @@ def finalize_args(parser):
                                        'strides': [1,1],
                                        'padding': 1}
             vars(args)['energy_weight_mask'] = [1, 2, 4.84, 7.743]
+        elif args.architecture == 'mnist_5_layers_med_fc_top2': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],  # 12544
+                                         [args.batch_size, 24, 16, 16],  # 6144
+                                         [args.batch_size, 32,  9,  9],  # 2592
+                                         [args.batch_size, 1024],
+                                         [args.batch_size, 256]]
+
+            mod_connect_dict = {0: [],
+                                1: [0,1],
+                                2: [1,2],
+                                3: [2,3],
+                                4: [3,4],
+                                5: [4,5]}
+
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = [1, 2, 4.84, 12.25, 49]
+        elif args.architecture == 'mnist_3_layers_med_fc_top1': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],  # 12544
+                                         [args.batch_size, 32,  9,  9],  # 2592
+                                         [args.batch_size, 256]]
+
+            mod_connect_dict = {0: [],
+                                1: [0,1],
+                                2: [1,2],
+                                3: [2,3]}
+
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = [1, 4.84, 49]
+        elif args.architecture == 'mnist_3_layers_med_fc_top1_wild': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],  # 12544
+                                         [args.batch_size, 32,  9,  9],  # 2592
+                                         [args.batch_size, 256]]
+
+            mod_connect_dict = {0: [],
+                                1: [0,1,2],
+                                2: [0,1,2],
+                                3: [2,3]}
+
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = [1, 4.84, 49]
+
     if args.dataset == "CIFAR10":
         if args.architecture == 'cifar10_2_layers':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],

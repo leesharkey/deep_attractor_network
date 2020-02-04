@@ -145,10 +145,9 @@ class SampleBuffer:
             )
 
         replay_sample, replay_id = self.get()
-        new_rand_state_sizes = self.args.state_sizes
-        new_rand_state_sizes = [[self.num_rand_samples, size[1],
-                                 size[2], size[3]]
-                                for size in new_rand_state_sizes]
+        new_rand_state_sizes = [s.copy() for s in self.args.state_sizes]
+        for size in new_rand_state_sizes:
+            size[0] = self.num_rand_samples
         random_sample = lib.utils.generate_random_states(new_rand_state_sizes,
                                                          self.device)
         random_id = torch.randint(0, 10, (self.num_rand_samples,), device=self.device)

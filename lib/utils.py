@@ -95,12 +95,24 @@ def combine_all_csvs(directory_str, base_csv_name='params_and_results.csv',
 
 
 def generate_random_states(shapes, device):
-    return [torch.rand(shapes[i][0],
-                         shapes[i][1],
-                         shapes[i][2],
-                         shapes[i][3],
-                         device=device)
-             for i in range(len(shapes))]
+    rand_states = []
+    for shape in shapes:
+        if len(shape)==4:
+            rs = torch.rand(shape[0],
+                            shape[1],
+                            shape[2],
+                            shape[3],
+                            device=device)
+        elif len(shape)==2:
+            rs = torch.rand(shape[0],
+                            shape[1],
+                            device=device)
+        else:
+            raise ValueError("Shape error. " +
+                             "Must be either 4 (for conv) or 2 (for FC).")
+        rand_states.append(rs)
+
+    return rand_states
 
 
 def random_arg_generator(parser, args):
