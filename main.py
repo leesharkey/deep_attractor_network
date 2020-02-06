@@ -275,7 +275,7 @@ class TrainingManager():
 
         # Ensure energy weights don't go below minimum value
         for energy_weight in self.model.energy_weights.parameters():
-            energy_weight.data.clamp_(self.args.energy_weight_min)
+            energy_weight.data.clamp_(self.args.energy_weight_min, 1) #LEE: EXPERIMENTAL MAXIMUM!!!!
 
         # Print loss
         self.data.loader.set_description(f'loss: {loss.item():.5f}')

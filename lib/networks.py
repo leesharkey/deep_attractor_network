@@ -269,13 +269,14 @@ class FCFC(nn.Module):
                          for j in self.input_idxs]
 
         self.out_size = self.args.state_sizes[layer_idx][1]
-        self.base_fc_layers = nn.ModuleList([spectral_norm(
-            nn.Linear(in_size, self.out_size)) for in_size in self.in_sizes])
+        self.base_fc_layers = nn.ModuleList([
+            spectral_norm(nn.Linear(in_size, self.out_size), bound=True)
+            for in_size in self.in_sizes])
         self.energy_fc_layer = nn.Sequential(
             spectral_norm(nn.Linear(self.out_size * len(self.in_sizes),
-                                    self.out_size)),
+                                    self.out_size), bound=True),
             self.act,
-            spectral_norm(nn.Linear(self.out_size, self.out_size)),
+            spectral_norm(nn.Linear(self.out_size, self.out_size), bound=True),
             self.act)
 
     def forward(self, inputs, class_id=None):
@@ -359,112 +360,137 @@ class DeepAttractorNetwork(nn.Module):
                 device=self.device)  # TODO still don't know if these ever change value in training
             self.energy_weight_masks.append(energy_weight_mask)
 
+class Reshape(nn.Module):
+    def __init__(self, *args):
+        super(Reshape, self).__init__()
+        self.shape = args
+
+    def forward(self, x):
+        return x.view(self.shape)
+
 
 class InitializerNetwork(torch.nn.Module):
     def __init__(self, args, writer, device):
         super(InitializerNetwork, self).__init__()
-        self.args = args
-        self.writer = writer
-        self.device = device
-        self.input_size = self.args.state_sizes[0]
-        self.output_sizes = args.state_sizes[1:]
-        self.swish = get_swish()
-        self.criterion = nn.MSELoss()
-        self.criteria = []
-        self.encs = []
-        self.sides = []
-        self.in_channels = self.args.state_sizes[0][1]
-
-        self.enc_base = nn.Sequential(nn.BatchNorm2d(self.in_channels),#TODO consider removing
-                                  cust_actv.Swish_module(),
-                                  nn.Conv2d(in_channels=self.in_channels,
-                                            out_channels=64,
-                                            kernel_size=3,
-                                            padding=1,
-                                            bias=True))
-        for i in range(1, len(self.args.state_sizes)):
-            # encs should take as input the image size and output the statesize for that statelayer
-            self.encs.append(
-                            nn.Sequential(
-                                      nn.BatchNorm2d(64),
-                                      cust_actv.Swish_module(),
-                                      nn.Conv2d(in_channels=64,
-                                                out_channels=64,
-                                                kernel_size=3,
-                                                padding=1,
-                                                bias=True),
-                                      Interpolate(size=self.args.state_sizes[i][2:],
-                                                  mode='bilinear')).to(self.device))
-
-            # Sides should output the statesize for that statelayer and input is same size as output.
-            # so long as the input to the side is the same as the size of the
-            # base conv (i.e. the statesize), I can just use the same settings
-            # as for the base+energy convs
-            self.sides.append(
-                            nn.Sequential(nn.BatchNorm2d(64),
-                                      cust_actv.Swish_module(),
-                                      nn.Conv2d(in_channels=64,
-                                                 out_channels=64,
-                                                 kernel_size=3,
-                                                 padding=1, bias=True),
-                                      nn.BatchNorm2d(64),
-                                      cust_actv.Swish_module(),
-                                      nn.Conv2d(in_channels=64,
-                                                 out_channels=64,
-                                                 kernel_size=3,
-                                                 padding=1, bias=True),
-                                      nn.Conv2d(in_channels=64,
-                                                 out_channels=self.args.state_sizes[i][1],
-                                                 kernel_size=3,
-                                                 padding=1, bias=True)).to(self.device))#adjust kernel size so that output is b,9,16,16
-
-
-        self.optimizer = optim.Adam(self.parameters(),
-                                    lr=self.args.initter_network_lr)
-
-
-        self.lh_sig = get_leaky_hard_sigmoid()
-
-    # def forward(self, x):
-    #     # x is input image
-    #     x = x.permute(1,0)
-    #     x = self.swish_bn_layer(x, self.first_ff, self.first_bn).detach()
-    #     side_outs = [None] * (len(self.args.size_layers)-1)
-    #     for i in range(len(self.args.size_layers)-1):
-    #         x = self.swish_bn_layer(x, self.ffs[i], self.bnorms[i])
-    #         side_outs[i] = self.hardsig_layer(x, self.sides[i])
-    #     side_outs = [so.permute(1, 0) for so in side_outs]
-    #     return side_outs
-
-    def forward(self, x, x_id):
-        print("Initializing with FF net")
-        hids = []
-        inp = self.enc_base(x)
-        for enc_i in self.encs:
-            hid_i = enc_i(inp)
-            hids.append(hid_i)
-            inp = hid_i
-
-        outs = []
-        for side_i, hid_i in zip(self.sides, hids):
-            out_i = side_i(hid_i)
-
-            # (Leakily) Clamp the outputs to (approximately) [0,1]
-            outs.append(self.lh_sig(out_i))
-
-        return outs
-
-    def update_weights(self, outs, targets, step):
-        self.optimizer.zero_grad()
-        self.criteria = [self.criterion(o, t) for o,t in zip(outs,targets)]
-        loss = torch.sum(torch.stack(self.criteria))
-        loss.backward(retain_graph=True)
-        self.optimizer.step()
-        if step % self.args.scalar_logging_interval == 0:
-            print("\nInitializer loss: " + '%.4g' % loss.item())
-            self.writer.add_scalar('train/initter_loss', loss.item(),
-                                   step)
-        return loss
+    #     self.args = args
+    #     self.writer = writer
+    #     self.device = device
+    #     self.input_size = self.args.state_sizes[0]
+    #     self.output_sizes = args.state_sizes[1:]
+    #     self.swish = get_swish()
+    #     self.criterion = nn.MSELoss()
+    #     self.criteria = []
+    #     self.encs = []
+    #     self.sides = []
+    #     self.in_channels = self.args.state_sizes[0][1]
+    #
+    #     self.enc_base = nn.Sequential(nn.BatchNorm2d(self.in_channels),#TODO consider removing
+    #                               cust_actv.Swish_module(),
+    #                               nn.Conv2d(in_channels=self.in_channels,
+    #                                         out_channels=64,
+    #                                         kernel_size=3,
+    #                                         padding=1,
+    #                                         bias=True))
+    #     for i in range(1, len(self.args.state_sizes)):
+    #         # encs should take as input the image size and output the statesize for that statelayer
+    #         if len(self.args.state_sizes[i]) == 4:
+    #             self.encs.append(
+    #                             nn.Sequential(
+    #                                       nn.BatchNorm2d(64),
+    #                                       cust_actv.Swish_module(),
+    #                                       nn.Conv2d(in_channels=64,
+    #                                                 out_channels=64,
+    #                                                 kernel_size=3,
+    #                                                 padding=1,
+    #                                                 bias=True),
+    #                                       Interpolate(size=self.args.state_sizes[i][2:],
+    #                                                   mode='bilinear')).to(self.device))
+    #         elif len(self.args.state_sizes[i]) == 2:
+    #             new_size = [-1]
+    #             new_size.extend(self.args.state_sizes[i][1:])
+    #             self.encs.append(
+    #                 nn.Sequential(
+    #                     Reshape(self.args.state_sizes[i][1:])
+    #                     nn.BatchNorm2d(64),
+    #                     cust_actv.Swish_module(),
+    #
+    #             # Sides should output the statesize for that statelayer and input is same size as output.
+    #         # so long as the input to the side is the same as the size of the
+    #         # base conv (i.e. the statesize), I can just use the same settings
+    #         # as for the base+energy convs
+    #         if len(self.args.state_sizes[i]) == 4:
+    #             self.sides.append(
+    #                             nn.Sequential(nn.BatchNorm2d(64),
+    #                                       cust_actv.Swish_module(),
+    #                                       nn.Conv2d(in_channels=64,
+    #                                                  out_channels=64,
+    #                                                  kernel_size=3,
+    #                                                  padding=1, bias=True),
+    #                                       nn.BatchNorm2d(64),
+    #                                       cust_actv.Swish_module(),
+    #                                       nn.Conv2d(in_channels=64,
+    #                                                  out_channels=64,
+    #                                                  kernel_size=3,
+    #                                                  padding=1, bias=True),
+    #                                       nn.Conv2d(in_channels=64,
+    #                                                  out_channels=self.args.state_sizes[i][1],
+    #                                                  kernel_size=3,
+    #                                                  padding=1, bias=True)).to(self.device))#adjust kernel size so that output is b,9,16,16
+    #         elif len(self.args.state_sizes[i]) == 2:
+    #             self.sides.append(
+    #                 nn.Sequential(
+    #                     Reshape()
+    #                     nn.BatchNorm1d(),
+    #                     nn.Linear(self.args.state_sizes[i])
+    #                 )
+    #             )
+    #
+    #     self.optimizer = optim.Adam(self.parameters(),
+    #                                 lr=self.args.initter_network_lr)
+    #
+    #
+    #     self.lh_sig = get_leaky_hard_sigmoid()
+    #
+    # # def forward(self, x):
+    # #     # x is input image
+    # #     x = x.permute(1,0)
+    # #     x = self.swish_bn_layer(x, self.first_ff, self.first_bn).detach()
+    # #     side_outs = [None] * (len(self.args.size_layers)-1)
+    # #     for i in range(len(self.args.size_layers)-1):
+    # #         x = self.swish_bn_layer(x, self.ffs[i], self.bnorms[i])
+    # #         side_outs[i] = self.hardsig_layer(x, self.sides[i])
+    # #     side_outs = [so.permute(1, 0) for so in side_outs]
+    # #     return side_outs
+    #
+    # def forward(self, x, x_id):
+    #     print("Initializing with FF net")
+    #     hids = []
+    #     inp = self.enc_base(x)
+    #     for enc_i in self.encs:
+    #         hid_i = enc_i(inp)
+    #         hids.append(hid_i)
+    #         inp = hid_i
+    #
+    #     outs = []
+    #     for side_i, hid_i in zip(self.sides, hids):
+    #         out_i = side_i(hid_i)
+    #
+    #         # (Leakily) Clamp the outputs to (approximately) [0,1]
+    #         outs.append(self.lh_sig(out_i))
+    #
+    #     return outs
+    #
+    # def update_weights(self, outs, targets, step):
+    #     self.optimizer.zero_grad()
+    #     self.criteria = [self.criterion(o, t) for o,t in zip(outs,targets)]
+    #     loss = torch.sum(torch.stack(self.criteria))
+    #     loss.backward(retain_graph=True)
+    #     self.optimizer.step()
+    #     if step % self.args.scalar_logging_interval == 0:
+    #         print("\nInitializer loss: " + '%.4g' % loss.item())
+    #         self.writer.add_scalar('train/initter_loss', loss.item(),
+    #                                step)
+    #     return loss
 
 
 ###### Function to help me debug
