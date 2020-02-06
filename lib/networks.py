@@ -324,7 +324,7 @@ class DeepAttractorNetwork(nn.Module):
         for i, (state, net) in enumerate(zip(states, self.nets), start=1):
             inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
             inp_states = [states[j] for j in inp_idxs]
-            out = self.nets[i-1](inp_states)
+            out = self.nets[i-1](inp_states) # i-1 because nets are 0 indexed but start at statelayer1
             outs.append(out)
 
         if self.args.log_histograms and step is not None and \

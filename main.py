@@ -49,7 +49,7 @@ class TrainingManager():
             self.args = checkpoint['args'] #TODO ensure that you don't want to implement something that defines which of the previous args to overwrite
             self.batch_num = checkpoint['batch_num']
             print("Loaded model " + loaded_model_name + ' successfully')
-            lib.utils.save_configs_to_csv(self.args, loaded_model_name)
+            lib.utils.save_configs_to_csv(self.args, loaded_model_name) # TODO why does this throw an error when loading?
         else:
             lib.utils.save_configs_to_csv(self.args, self.model.model_name)
 
@@ -200,16 +200,14 @@ class TrainingManager():
         # Calculate the gradient for the Langevin step
         energies = self.model(states, ids, step)  # Outputs energy of neg sample
         total_energy = energies.sum()
-        if positive_phase:
+        if positive_phase and step % self.args.scalar_logging_interval == 0:
             print('\nPos Energy: ' + str(total_energy.cpu().detach().numpy()))
-            if self.global_step % self.args.scalar_logging_interval == 0:
-                self.writer.add_scalar('train/PosSamplesEnergy', total_energy,
-                                       self.global_step)
-        else:
+            self.writer.add_scalar('train/PosSamplesEnergy', total_energy,
+                                    self.global_step)
+        elif step % self.args.scalar_logging_interval == 0:
             print('\nNeg Energy: ' + str(total_energy.cpu().detach().numpy()))
-            if self.global_step % self.args.scalar_logging_interval == 0:
-                self.writer.add_scalar('train/NegSamplesEnergy', total_energy,
-                                       self.global_step)
+            self.writer.add_scalar('train/NegSamplesEnergy', total_energy,
+                                    self.global_step)
 
         # Take gradient wrt states (before addition of noise)
         total_energy.backward()
@@ -275,7 +273,7 @@ class TrainingManager():
 
         # Ensure energy weights don't go below minimum value
         for energy_weight in self.model.energy_weights.parameters():
-            energy_weight.data.clamp_(self.args.energy_weight_min, 1) #LEE: EXPERIMENTAL MAXIMUM!!!!
+            energy_weight.data.clamp_(self.args.energy_weight_min)
 
         # Print loss
         self.data.loader.set_description(f'loss: {loss.item():.5f}')
