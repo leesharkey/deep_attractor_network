@@ -41,19 +41,16 @@ class SampleBuffer:
         self.num_rand_samples = self.args.batch_size - \
                                 self.num_neg_samples - \
                                 self.num_p_neg_samples
-        self.p = self.args.sample_buffer_prob #TODO change name to neg_sample_buffer_frac and add p_neg_sample_buffer_frac
         self.device = device
         self.neg_buffer = []
         if self.args.cd_mixture:
             self.p_neg_buffer = [] # for 'positive negative buffer'
             self.max_p_neg_samples = 10000
 
-    def __len__(self): #TODO consider removing
-        return len(self.neg_buffer)
+    # def __len__(self): #TODO consider removing
+    #     return len(self.neg_buffer)
 
     def push(self, states, class_ids=None, pos=False):
-        # TODO conditional for if frac of pos is 0, because I expect an error
-        #  to be thrown in at least one place here if frac=0
 
         if pos:
             # During positive phases, we only extend p_neg_buffer
@@ -98,9 +95,6 @@ class SampleBuffer:
                         self.p_neg_buffer.pop(0)
 
     def get(self):
-
-        # TODO conditional for if frac of pos is 0, because I expect an error
-        #  to be thrown in at least one place here if frac=0
         neg_items   = random.choices(self.neg_buffer,
                                      k=self.num_neg_samples)
         neg_samples,   neg_class_ids   = zip(*neg_items)  # Unzips
@@ -139,7 +133,7 @@ class SampleBuffer:
             # Generate all rand states and class_ids when buffers are empty
             rand_states = lib.utils.generate_random_states(self.args.state_sizes,
                                                            self.device)
-            return (rand_states, #TODO check these work okay with convolutions
+            return (rand_states,
                 torch.randint(0, 10, (self.args.batch_size,),
                               device=self.device),
             )

@@ -14,7 +14,8 @@ import lib.utils
 
 
 class TrainingManager():
-    def __init__(self, args, model, data, buffer, writer, device, sample_log_dir):
+    def __init__(self, args, model, data, buffer, writer, device,
+                 sample_log_dir):
         self.args = args
         self.model = model
         self.data = data
@@ -23,17 +24,22 @@ class TrainingManager():
         self.device = device
         self.sample_log_dir = sample_log_dir
         self.parameters = model.parameters()
-        self.optimizer = optim.Adam(self.parameters, lr=args.lr, betas=(0.9, 0.999))
-        self.noises = lib.utils.generate_random_states(self.args.state_sizes, self.device)
+        self.optimizer = optim.Adam(self.parameters,
+                                    lr=args.lr,
+                                    betas=(0.9, 0.999))
+        self.noises = lib.utils.generate_random_states(self.args.state_sizes,
+                                                       self.device)
         self.global_step = 0
         self.batch_num = 0
 
+        # Load initializer network (initter)
         if args.initializer == 'ff_init':
             self.initter = nw.InitializerNetwork(args, writer, device)
             self.initter.to(device)
         else:
             self.initter = None
 
+        # Load old networks and settings if loading an old model
         if self.args.load_model:
             loaded_model_name = str(self.args.load_model)
             path = 'exps/models/' + loaded_model_name + '.pt'
@@ -41,15 +47,24 @@ class TrainingManager():
             self.model.load_state_dict(checkpoint['model'])
             self.optimizer.load_state_dict(checkpoint['model_optimizer'])
 
-            if args.initializer == 'ff_init':
+            # Decide which current settings should override old settings
+            new_args = checkpoint['args']
+            for val in self.args.override_loaded:
+                print('Overriding old value for %s' % val)
+                vars(new_args)[val] = vars(self.args)[val]
+            self.args = new_args
+
+            # Reload initter if it was used during training and currently using
+            if self.args.initializer == 'ff_init':
                 self.initter.load_state_dict(checkpoint['initializer'])
                 self.initter.optimizer.load_state_dict(
                     checkpoint['initializer_optimizer'])
 
-            self.args = checkpoint['args'] #TODO ensure that you don't want to implement something that defines which of the previous args to overwrite
             self.batch_num = checkpoint['batch_num']
             print("Loaded model " + loaded_model_name + ' successfully')
-            lib.utils.save_configs_to_csv(self.args, loaded_model_name) # TODO why does this throw an error when loading?
+
+            # Save new settings (doesn't overwrite old csv values)
+            lib.utils.save_configs_to_csv(self.args, loaded_model_name)
         else:
             lib.utils.save_configs_to_csv(self.args, self.model.model_name)
 
@@ -58,6 +73,8 @@ class TrainingManager():
         path = 'exps/models/' + self.model.model_name + '.pt'
         torch.save(save_dict, path)
         prev_states = None
+
+        # Main training loop
         for batch, (pos_img, pos_id) in self.data.loader:
 
             pos_states, pos_id = self.positive_phase(pos_img, pos_id,
@@ -68,12 +85,20 @@ class TrainingManager():
 
             prev_states = pos_states # In case pos init uses prev states
 
+            # Log images
             if self.batch_num % self.args.img_logging_interval == 0:
-                utils.save_image(neg_states[0].detach().to('cpu'), os.path.join(self.sample_log_dir, str(self.batch_num).zfill(6) + '.png'), nrow=16, normalize=True, range=(0, 1))
+                utils.save_image(neg_states[0].detach().to('cpu'),
+                                 os.path.join(self.sample_log_dir,
+                                      str(self.batch_num).zfill(6) + '.png'),
+                                 nrow=16, normalize=True, range=(0, 1))
                 if self.args.save_pos_images:
-                    utils.save_image(pos_states[0].detach().to('cpu'), os.path.join(self.sample_log_dir, 'p0_' + str(self.batch_num).zfill(6) + '.png'), nrow=16, normalize=True, range=(0, 1))
+                    utils.save_image(pos_states[0].detach().to('cpu'),
+                         os.path.join(self.sample_log_dir,
+                             'p0_' + str(self.batch_num).zfill(6) + '.png'),
+                                     nrow=16, normalize=True, range=(0, 1))
+
+            # Save network(s) and settings
             if self.batch_num % self.args.model_save_interval == 0:
-                # Save
                 save_dict = self.make_save_dict()
                 path = 'exps/models/' + self.model.model_name + '.pt'
                 torch.save(save_dict, path)
@@ -84,7 +109,7 @@ class TrainingManager():
                 # per epoch, so at 1e6 max batches that's 2.56k epochs.
                 break
 
-        # Save when training is complete too
+        # Save network(s) and settings when training is complete too
         save_dict = self.make_save_dict()
         path = 'exps/models/' +self.model.model_name + '.pt'
         torch.save(save_dict, path)
@@ -95,12 +120,11 @@ class TrainingManager():
 
         pos_states = [pos_img]
 
-        if self.args.initializer == 'zeros': # probs don't use this now that you're initting all states
+        if self.args.initializer == 'zeros':
             zero_states = [torch.zeros(size, device=self.device,
                                        requires_grad=True)
                            for size in self.args.state_sizes[1:]]
             pos_states.extend(zero_states)
-        #requires_grad(pos_states, True)
         if self.args.initializer == 'ff_init':
             # Later consider implementing a ff_init that is trained as normal
             # and gives the same output but that only a few (maybe random)
@@ -115,7 +139,7 @@ class TrainingManager():
             raise NotImplementedError
         elif self.args.initializer == 'previous' and prev_states is not None:
             pos_states.extend(prev_states[1:])
-        else:  # self.args.initializer == 'random':
+        else:  # i.e. if self.args.initializer == 'random':
             rand_states = lib.utils.generate_random_states(
                 self.args.state_sizes[1:], self.device)
             pos_states.extend(rand_states)
@@ -131,7 +155,7 @@ class TrainingManager():
         # Gets the values of the pos states by running a short inference phase
         # conditioned on a particular state layer
         pos_states_init = self.initialize_pos_states(pos_img=pos_img,
-                                                prev_states=prev_states) #Maybe remove cond_layer arg if keeping pos_phase0 as initter
+                                                     prev_states=prev_states)
         pos_states = [psi.clone().detach() for psi in pos_states_init]
 
         # Freeze network parameters and take grads w.r.t only the inputs
@@ -146,7 +170,7 @@ class TrainingManager():
                                                                pos_states)
 
         # Positive phase sampling
-        for k in tqdm(range(self.args.num_it_pos)):
+        for _ in tqdm(range(self.args.num_it_pos)):
             self.sampler_step(pos_states, pos_id, positive_phase=True,
                               step=self.global_step)
             self.global_step += 1
@@ -162,6 +186,7 @@ class TrainingManager():
                                                targets=pos_states[1:],
                                                step=self.global_step)
 
+        # Add positive states to positive buffer if using CD mixture
         if self.args.cd_mixture:
             print("Adding pos states to pos buffer")
             self.buffer.push(pos_states, pos_id, pos=True)
@@ -183,7 +208,7 @@ class TrainingManager():
                                                                neg_states)
 
         # Negative phase sampling
-        for k in tqdm(range(self.args.num_it_neg)):
+        for _ in tqdm(range(self.args.num_it_neg)):
             self.sampler_step(neg_states, neg_id, step=self.global_step)
             self.global_step += 1
 
@@ -191,7 +216,7 @@ class TrainingManager():
         for neg_state in neg_states:
             neg_state.detach_()
 
-        # Send negative samples to the buffer (on cpu)
+        # Send negative samples to the negative buffer
         self.buffer.push(neg_states, neg_id)
 
         return neg_states, neg_id
@@ -203,11 +228,11 @@ class TrainingManager():
         if positive_phase and step % self.args.scalar_logging_interval == 0:
             print('\nPos Energy: ' + str(total_energy.cpu().detach().numpy()))
             self.writer.add_scalar('train/PosSamplesEnergy', total_energy,
-                                    self.global_step)
+                                   self.global_step)
         elif step % self.args.scalar_logging_interval == 0:
             print('\nNeg Energy: ' + str(total_energy.cpu().detach().numpy()))
             self.writer.add_scalar('train/NegSamplesEnergy', total_energy,
-                                    self.global_step)
+                                   self.global_step)
 
         # Take gradient wrt states (before addition of noise)
         total_energy.backward()
@@ -258,14 +283,14 @@ class TrainingManager():
         # Calculate gradients for the network params
         loss.backward()
 
-        # Print loss
+        # Log loss to tensorboard
         self.writer.add_scalar('train/loss', loss.item(), self.global_step)
 
         return neg_energy, pos_energy, loss
 
     def update_weights(self, loss):
 
-        # Honestly don't understand what this does or where it came from
+        # Stabilize Adam-optimized weight updates(?)
         clip_grad(self.parameters, self.optimizer)
 
         # Update the network params
@@ -624,15 +649,6 @@ def main():
     tgroup.add_argument('--dataset', type=str, default="CIFAR10",
                         help='The dataset the network will be trained on.' +
                              ' Default: %(default)s.')
-    # tgroup.add_argument('--l2_reg_w_param', type=float, default=0.0,
-    #                     help='Scaling parameter for the L2 regularisation ' +
-    #                          'term placed on the weight values. Default: ' +
-    #                          '%(default)s.'+
-    #                          'When randomizing, the following options define' +
-    #                          'a range of indices and the random value assigned' +
-    #                          'to the argument will be 10 to the power of the' +
-    #                          'float selected from the range. '+
-    #                          'Options: [-6, -2].')
     tgroup.add_argument('--l2_reg_energy_param', type=float, default=1.0,
                         help='Scaling parameter for the L2 regularisation ' +
                              'term placed on the energy values. Default: ' +
@@ -672,7 +688,7 @@ def main():
                              'are used to initialise the negative phase. ' +
                              'Default: %(default)s.')
     parser.set_defaults(cd_mixture=False)
-    tgroup.add_argument('--pos_buffer_frac', type=float, default=0.01,
+    tgroup.add_argument('--pos_buffer_frac', type=float, default=0.0,
                         help='Learning rate to pass to the Adam optimizer ' +
                              'used to train the InitializerNetwork. Default: ' +
                              '%(default)s.')
@@ -732,6 +748,11 @@ def main():
                         help='List of CLI args to pass to the random arg ' +
                              'generator. Default: %(default)s.',
                         required=False)
+    mgroup.add_argument('--override_loaded', type=str, nargs='+', default=[],
+                        help='List of CLI args to that will take the current'+
+                             'values and not the values of the loaded '+
+                             'argument dictionary. Default: %(default)s.',
+                        required=False)
     ngroup.add_argument('--sample_buffer_prob', type=float, default=0.95,
                         help='The probability that the network will be ' +
                              'initialised from the buffer instead of from '+
@@ -769,6 +790,7 @@ def main():
                         help='Whether or not to train the model ')
     parser.set_defaults(no_train_model=False)
 
+
     xgroup = parser.add_argument_group('Options that will be determined ' +
                                        'post hoc')
     xgroup.add_argument('--use_cuda', action='store_true',
@@ -804,9 +826,7 @@ def main():
 
     # Set up dataset
     data = Dataset(args)
-    buffer = SampleBuffer(args,
-
-                          device=device)
+    buffer = SampleBuffer(args, device=device)
 
     if not args.no_train_model:
         # Train the model

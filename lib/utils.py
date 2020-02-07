@@ -13,7 +13,6 @@ def save_configs_to_csv(args, model_name, results_dict=None):
     arg_dict = vars(args).copy()
     arg_dict = {**arg_dict, **{'unique_id': model_name}}
 
-
     # Combine dicts
     if results_dict is not None:
         arg_dict = {**arg_dict, **results_dict}
@@ -22,37 +21,17 @@ def save_configs_to_csv(args, model_name, results_dict=None):
     for k, v in arg_dict.items():
         arg_dict[k] = str(v) if type(v) ==list else v
 
-    # Create a df with a single row with new info
-    new_df = pd.DataFrame(arg_dict, index=[model_name])
-
-    # Check there isn't already a df for this model
+    # Check there isn't already a df for this model; adjust model name if so
     if os.path.isfile("exps/params_and_results_%s.csv" % model_name):
-        # If there is, get the colnames and make sure to include them
-        old_df = pd.read_csv("exps/params_and_results_%s.csv" % model_name,
-                             header=0, index_col=0)
-        full_df = pd.merge(old_df, new_df, how='left')
-        full_df = full_df.set_index(new_df.index)
-    else:
-        full_df = new_df
+        model_name = model_name + '_load' + str(datetimenow())
 
-
-
+    # Create a df with a single row with new info
+    full_df = pd.DataFrame(arg_dict, index=[model_name])
 
     # Create a new csv if one doesn't already exist and save the new data
-    # if not os.path.isfile("exps/params_and_results_%s.csv" % model_name):
     full_df.to_csv("exps/params_and_results_%s.csv" % model_name)
     print("Created new params_and_results csv for %s." % model_name)
 
-    # If a csv already exists, concat the new df to the old df and save
-    # else:
-    #     old_df = pd.read_csv("exps/params_and_results.csv", header=0,
-    #                          index_col=0)
-    #     # If a model by this name already exists in the df, drop it to
-    #     # overwrite it (useful for saving configs early and results later)
-    #     if model_name in old_df.index:
-    #         old_df = old_df.drop(model_name)
-    #     full_df = pd.concat([old_df, new_df], axis=0, sort=True)
-    #     full_df.to_csv("exps/params_and_results.csv")
     print("Saved params and results csv.")
 
 def combine_all_csvs(directory_str, base_csv_name='params_and_results.csv',
@@ -89,7 +68,6 @@ def combine_all_csvs(directory_str, base_csv_name='params_and_results.csv',
         raise FileNotFoundError("No CSVs in the list to be merged. Check" +
                                 " that your path names are correct and that" +
                                 " the folder contains CSVs to merge.")
-    # full_df = pd.concat(dfs, axis=0, sort=True)
     full_df = full_df.drop_duplicates()
     full_df.to_csv(os.path.join(directory_str, base_csv_name))
 
@@ -126,7 +104,6 @@ def random_arg_generator(parser, args):
         when the arguments are being randomized. To implement them as a choice
         would mean that we'd always have to select from those choices even when
         not randomizing. """
-    # all_arg_names = list(parser._option_string_actions.keys())
     rand_args = args.randomize_args  # A list of arg names to randomize
     search_str = "Options: "
 
