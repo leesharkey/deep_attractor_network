@@ -526,6 +526,25 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict}
             vars(args)['energy_weight_mask'] = [0.06, 1.0, 2.5]
 
+        elif args.architecture == 'mnist_3_layers_small_fc_top1_scl_UandD':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],  # 25088
+                                         [args.batch_size, 32, 12, 12],  # 4608
+                                         [args.batch_size, 256]]
+
+            mod_connect_dict = {0: [],
+                                1: [0,1],
+                                2: [1,2],
+                                3: [2,3]}
+
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = [0.184, 1.0, 18.0]
+
         elif args.architecture == 'mnist_4_layers_med_fc_top1_upim':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size, 16, 48, 48],  # 36864
