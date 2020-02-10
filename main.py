@@ -439,7 +439,6 @@ class VisualizationManager(TrainingManager):
         # self.hooked_energies.extend([GetEnergies(net, self.device)
         #                       for net in list(self.model.children())[2]])
         self.viz_batch_sizes = self.calc_viz_batch_sizes()
-        self.args.num_it_viz = 1
 
     def calc_viz_batch_sizes(self):
         """The batch size is now the number of pixels in the image, and
