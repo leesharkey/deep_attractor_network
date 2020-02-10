@@ -280,7 +280,7 @@ class FCFC(nn.Module):
             self.act)
 
     def forward(self, inputs, class_id=None):
-        reshaped_inps = [inp.view(self.args.batch_size, -1) for inp in inputs]
+        reshaped_inps = [inp.view(inp.shape[0], -1) for inp in inputs]
         base_outs = [self.act(base_fc(inp))
                      for base_fc, inp in zip(self.base_fc_layers,
                                              reshaped_inps)]
@@ -335,17 +335,15 @@ class DeepAttractorNetwork(nn.Module):
             for i, enrg in enumerate(outs):
                 layer_string = 'train/energies_%s' % i
                 self.writer.add_histogram(layer_string, enrg, step)
-
-        outs = [out.view(self.args.batch_size, -1) for out in outs]
-        # TODO consider placing a hook here
-        outs = [out * mask.view(self.args.batch_size, -1)
-                for out, mask in zip(outs, self.energy_weight_masks)]
+        reshaped_outs = [out.view(out.shape[0], -1) for out in outs]
+        reshaped_outs = [out * mask.view(out.shape[0], -1)
+                for out, mask in zip(reshaped_outs, self.energy_weight_masks)]
         #print(self.energy_weight_masks[0])
-        outs = torch.cat(outs, dim=1)
+        reshaped_outs = torch.cat(reshaped_outs, dim=1)
         #print(outs)
-        energy = self.energy_weights(outs)
+        energy = self.energy_weights(reshaped_outs)
         #print(list(self.energy_weights.parameters()))
-        return energy
+        return energy, outs
 
 
     def calc_energy_weight_masks(self):
@@ -362,6 +360,7 @@ class DeepAttractorNetwork(nn.Module):
                 requires_grad=False,
                 device=self.device)
             self.energy_weight_masks.append(energy_weight_mask)
+
 
 class Reshape(nn.Module):
     def __init__(self, *args):

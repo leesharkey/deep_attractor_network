@@ -223,7 +223,7 @@ class TrainingManager():
 
     def sampler_step(self, states, ids, positive_phase=False, step=None):
         # Calculate the gradient for the Langevin step
-        energies = self.model(states, ids, step)  # Outputs energy of neg sample
+        energies, _ = self.model(states, ids, step)  # Outputs energy of neg sample
         total_energy = energies.sum()
         if positive_phase and step % self.args.scalar_logging_interval == 0:
             print('\nPos Energy: ' + str(total_energy.cpu().detach().numpy()))
@@ -269,8 +269,8 @@ class TrainingManager():
     def calc_energ_and_loss(self, neg_states, neg_id, pos_states, pos_id):
 
         # Get energies of positive and negative samples
-        pos_energy = self.model(pos_states, pos_id)
-        neg_energy = self.model(neg_states, neg_id)
+        pos_energy, _ = self.model(pos_states, pos_id)
+        neg_energy, _ = self.model(neg_states, neg_id)
 
         # Calculate the loss
         ## L2 penalty on energy magnitudes
@@ -347,6 +347,308 @@ class TrainingManager():
             if i > self.args.num_pretraining_batches:
                 break
         print("\nPretraining of initializer complete")
+
+# class GetEnergies():
+#     def __init__(self, module, device):
+#         self.device = device
+#         self.hook = module.register_forward_hook(self.hook_fn)
+#     def hook_fn(self, module, input, output):
+#         print('module: ', module)
+#         print('input: ', input)
+#         print('output: ', output)
+#         self.features = torch.tensor(output,requires_grad=True).cuda()
+#     def close(self):
+#         self.hook.remove()
+
+# class Hook():
+#     def __init__(self, module, device, backward=False):
+#         self.device = device
+#         if backward==False:
+#             self.hook = module.register_forward_hook(self.hook_fn)
+#         else:
+#             self.hook = module.register_backward_hook(self.hook_fn)
+#     def hook_fn(self, module, input, output):
+#         self.input = input
+#         self.output = output
+#     def close(self):
+#         self.hook.remove()
+
+
+class VisualizationManager(TrainingManager):
+    """A new class because I need to redefine sampler step to clamp certain
+    neurons, and need to define a new type of sampling phase."""
+    def __init__(self, args, model, data, buffer, writer, device, sample_log_dir):
+        super(TrainingManager, self).__init__()
+        self.args = args
+        self.model = model
+        self.data = data
+        self.writer = writer
+        self.buffer = buffer
+        self.device = device
+        self.sample_log_dir = sample_log_dir
+        self.parameters = model.parameters()
+        self.optimizer = optim.Adam(self.parameters,
+                                    lr=args.lr,
+                                    betas=(0.9, 0.999))
+        self.noises = lib.utils.generate_random_states(self.args.state_sizes,
+                                                       self.device)
+        self.global_step = 0
+        self.batch_num = 0
+
+        # Load initializer network (initter)
+        if args.initializer == 'ff_init':
+            self.initter = nw.InitializerNetwork(args, writer, device)
+            self.initter.to(device)
+        else:
+            self.initter = None
+
+        # Load old networks and settings if loading an old model
+        if self.args.load_model:
+            loaded_model_name = str(self.args.load_model)
+            path = 'exps/models/' + loaded_model_name + '.pt'
+            checkpoint = torch.load(path)
+            self.model.load_state_dict(checkpoint['model'])
+            self.optimizer.load_state_dict(checkpoint['model_optimizer'])
+
+            # Decide which current settings should override old settings
+            new_args = checkpoint['args']
+            for val in self.args.override_loaded:
+                print('Overriding old value for %s' % val)
+                vars(new_args)[val] = vars(self.args)[val]
+            self.args = new_args
+
+            # Turn off training
+            vars(self.args)['no_train_model'] = True
+
+            # Reload initter if it was used during training and currently using
+            if self.args.initializer == 'ff_init':
+                self.initter.load_state_dict(checkpoint['initializer'])
+                self.initter.optimizer.load_state_dict(
+                    checkpoint['initializer_optimizer'])
+
+            self.batch_num = checkpoint['batch_num']
+            print("Loaded model " + loaded_model_name + ' successfully')
+
+            # Save new settings (doesn't overwrite old csv values)
+            lib.utils.save_configs_to_csv(self.args, loaded_model_name+'viz')
+        else:
+            lib.utils.save_configs_to_csv(self.args, self.model.model_name)
+
+        # Add forward hooks to each of the energy nets in the DAN
+        # self.hooked_energies = []
+        # self.hooked_energies.extend([GetEnergies(net, self.device)
+        #                       for net in list(self.model.children())[2]])
+        self.viz_batch_sizes = self.calc_viz_batch_sizes()
+        self.args.num_it_viz = 1
+
+    def calc_viz_batch_sizes(self):
+        """The batch size is now the number of pixels in the image, and
+        there is only one channel because we only visualize one at a time."""
+        batch_sizes = []
+        for size in self.args.state_sizes:
+            if len(size) == 4:
+                batch_sizes.append(size[2] * size[3])
+            if len(size) == 2:
+                batch_sizes.append(size[1])
+        return batch_sizes
+
+    def update_state_size_bs(self, sl_idx):
+        self.model.batch_size = self.viz_batch_sizes[sl_idx]
+        new_state_sizes = []
+        for size in self.args.state_sizes:
+            if len(size) == 4:
+                new_state_sizes += [[self.viz_batch_sizes[sl_idx],
+                                   size[1],
+                                   size[2],
+                                   size[3]]]
+            if len(size) == 2:
+                new_state_sizes += [[self.viz_batch_sizes[sl_idx],
+                                   size[1]]]
+        self.args.state_sizes = new_state_sizes
+        self.model.args.state_sizes = new_state_sizes
+        self.model.calc_energy_weight_masks()
+
+    def visualize(self):
+        """Clamps each neuron while sampling the others
+
+        Goes through each of the state layers, and each of the channels a kind
+        of negative phase where it settles for a long time and clamps a
+        different neuron for each image."""
+
+        for state_layer_idx, size in enumerate(self.args.state_sizes[1:], start=1):
+            if len(size) == 4:
+                for channel_idx in range(self.args.state_sizes[state_layer_idx][1]): #[1] for num of channels
+                    print("Visualizing channel %s of state layer %s" % \
+                          (str(channel_idx), state_layer_idx))
+                    self.update_state_size_bs(state_layer_idx)
+                    self.noises = lib.utils.generate_random_states(
+                        self.args.state_sizes,
+                        self.device)
+
+                    # Sets to 1 the next pixel in each batch element
+                    clamp_array = torch.zeros(size=self.args.state_sizes[state_layer_idx],
+                                              dtype=torch.uint8,
+                                              device=self.device)
+                    mg = np.meshgrid(np.arange(0,self.args.state_sizes[state_layer_idx][2]),
+                                     np.arange(0,self.args.state_sizes[state_layer_idx][3]))
+                    idxs = list(zip(mg[1].flatten(), mg[0].flatten()))
+
+                    print("Setting indices")
+                    for i0 in range(self.args.state_sizes[state_layer_idx][0]):
+                        clamp_array[i0, 0][idxs[i0]] = 1.0
+                    self.visualization_phase(state_layer_idx,
+                                             channel_idx,
+                                             clamp_array)
+            elif len(size) == 2:
+                self.update_state_size_bs(state_layer_idx)
+                self.noises = lib.utils.generate_random_states(
+                    self.args.state_sizes,
+                    self.device)
+                assert self.args.state_sizes[state_layer_idx][0] == self.args.state_sizes[state_layer_idx][1]
+                clamp_array = torch.eye(
+                    n=self.args.state_sizes[state_layer_idx][0],
+                    m=self.args.state_sizes[state_layer_idx][1],
+                    dtype=torch.uint8,
+                    device=self.device)
+                self.visualization_phase(state_layer_idx,
+                                         channel_idx=None,
+                                         clamp_array=clamp_array)
+
+    def visualization_phase(self, state_layer_idx, channel_idx, clamp_array,
+                            clamp_value=1.):
+        states = lib.utils.generate_random_states(self.args.state_sizes,
+                                                  self.device)
+        id = None
+        # Freeze network parameters and take grads w.r.t only the inputs
+        lib.utils.requires_grad(states, True)
+        lib.utils.requires_grad(self.parameters, False)
+        self.model.eval()
+
+        # Set up state optimizer if approp
+        self.state_optimizers = lib.utils.get_state_optimizers(self.args,
+                                                               states)
+
+        # Viz phase sampling
+        for k in tqdm(range(self.args.num_it_viz)):
+            self.viz_sampler_step(states, id, state_layer_idx,
+                                  clamp_array, clamp_value)
+            if k % self.args.viz_img_logging_step_interval == 0:
+                size = self.args.state_sizes[state_layer_idx]
+                if len(size)==4:
+                    nrow = self.args.state_sizes[state_layer_idx][2]
+                    ch_str = str(channel_idx)
+                elif len(size)==2:
+                    nrow = int(round(np.sqrt(self.args.state_sizes[state_layer_idx][1])))
+                    ch_str = 'fc'
+                utils.save_image(
+                    states[0].detach().to('cpu'),
+                    os.path.join(self.sample_log_dir,
+                                 str(state_layer_idx) + '_' +
+                                 ch_str     + '_' +
+                                 str(k).zfill(6)      + '.png'),
+                    nrow=nrow,
+                    normalize=True,
+                    range=(0, 1))
+            self.global_step += 1
+
+        # Stop calculting grads w.r.t. images
+        for neg_state in states:
+            neg_state.detach_()
+
+        return states, id
+
+    def viz_sampler_step(self, states, ids, state_layer_idx,
+                         clamp_array, clamp_value):
+        """In the state layer that's being visualized, the gradients come
+        from the channel neuron that's being visualized. The gradients for
+        other layers come from the energy gradient."""
+
+        # TODO consider multiplying the feature energy by
+        #  the appropriate self.model.energy_weight_masks so that it does not
+        #  have a completely abnormal gradient. Do this if it doesn't
+        #  appear to be visualizing properly otherwise.
+
+        # TODO If this doesn't work, consider running total_energy.backward()
+        #  first, then zeroing (or scaling down) the gradients of the state
+        #  layer(s) you want to control, then calculate the gradients that
+        #  maximize the energy of the selected neuron, then run .step()
+
+
+        energies, outs = self.model(states, ids)  # Outputs energy of neg sample
+        total_energy = energies.sum()
+
+        # Get the energy of the specific neuron you want to viz and get the
+        # gradient that maximises its value
+        feature_energy = outs[state_layer_idx-1] # -1 because energies is 0-indexed while the layers we want to visualize are 1-indexed
+        selected_feature_energy = torch.where(clamp_array,
+                                              feature_energy,
+                                              torch.zeros_like(feature_energy))
+        selected_feature_energy = -selected_feature_energy.sum()
+        selected_feature_energy.backward(retain_graph=True)
+
+        # Take gradient wrt states (before addition of noise)
+        total_energy.backward()
+        torch.nn.utils.clip_grad_norm_(states,
+                                       self.args.clip_state_grad_norm,
+                                       norm_type=2)
+
+        # Adding noise in the Langevin step (only for non conditional
+        # layers in positive phase)
+        for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
+            noise.normal_(0, self.args.sigma)
+            state.data.add_(noise.data)
+
+
+        # The gradient step in the Langevin/SGHMC step
+        # It goes through each statelayer and steps back using its associated
+        # optimizer. The gradients may pass through any network unless
+        # you're using an appropriate energy mask that zeroes the grad through
+        # that network in particular.
+        for layer_idx, state in enumerate(states):
+                self.state_optimizers[layer_idx].step()
+
+        # Prepare gradients and sample for next sampling step
+        for state in states:
+            state.grad.detach_()
+            state.grad.zero_()
+            state.data.clamp_(0, 1)
+        # ######################################################################
+        # # The gradient step in the Langevin step (only for upper layers)
+        # for i, state in enumerate(states):
+        #     if self.args.state_optimizer != 'langevin':
+        #         if i == state_layer_idx:
+        #             # Zero the momentum of the optimizer, if exists
+        #             # This is the momentum buffer (difficult to access because the key is the tensor of params)
+        #             state_key = self.state_optimizers[
+        #                 state_layer_idx].param_groups[0]['params'][0]
+        #             if state_key in self.state_optimizers[state_layer_idx].state:
+        #                 mom_buffer = self.state_optimizers[state_layer_idx].state[state_key]['momentum_buffer']
+        #                 mom_buffer = torch.where(clamp_array, torch.zeros_like(mom_buffer), mom_buffer)
+        #
+        #             # Zero the gradient of selected neurons # TODO Check that the neurons are actually staying clamped clamped
+        #             state.grad.data = torch.where(clamp_array,
+        #                                           torch.zeros_like(state.grad.data),
+        #                                           state.grad.data)
+        #
+        #             # Finally, make sure the state value is at the clamp value
+        #             # TBH zeroing the grad is probs unnecessary
+        #             state.data = torch.where(clamp_array,
+        #                                      torch.ones_like(state.data) * \
+        #                                      torch.tensor(clamp_value),
+        #                                      state.data)
+        #         self.state_optimizers[i].step()
+        #     else:
+        #         state.data.add_(-self.args.sampling_step_size,
+        #                     state.grad.data)
+        #
+        #
+        #
+        #     # Prepare gradients and sample for next sampling step
+        #     state.grad.detach_()
+        #     state.grad.zero_()
+        #     state.data.clamp_(0, 1)
+
+
 
 
 def clip_grad(parameters, optimizer):
@@ -649,7 +951,7 @@ def main():
 
     tgroup = parser.add_argument_group('Training options')
     tgroup.add_argument('--require_special_name', action='store_true',
-                        help='If true, asks for a description of what is '+
+                        help='If true, asks for a description of what is ' +
                              'special about the '+
                              'experiment, if anything. Default: %(default)s.')
     parser.set_defaults(require_special_name=False)
@@ -856,10 +1158,10 @@ def main():
             tm.pre_train_initializer()
 
         tm.train()
-    # if args.viz_neurons:
-    #     vm = VisualizationManager(args, model, data, buffer, writer, device,
-    #                               sample_log_dir)
-    #     vm.visualize()
+    if args.viz_neurons:
+        vm = VisualizationManager(args, model, data, buffer, writer, device,
+                                  sample_log_dir)
+        vm.visualize()
 
 shapes = lambda x : [y.shape for y in x]
 nancheck = lambda x : (x != x).any()
@@ -876,190 +1178,4 @@ if __name__ == '__main__':
 ###########################################################################
 ###########################################################################
 ###########################################################################
-
-# class VisualizationManager(TrainingManager):
-#
-#     """A new class because I need to redefine sampler step to clamp certain
-#     neurons, and need to define a new type of sampling phase."""
-#     def __init__(self, args, model, data, buffer, writer, device, sample_log_dir):
-#         super(TrainingManager, self).__init__()
-#         self.args = args
-#         self.model = model
-#         self.data = data
-#         self.writer = writer
-#         self.buffer = buffer
-#         self.device = device
-#         self.sample_log_dir = os.path.join(sample_log_dir, 'viz')
-#         if not os.path.isdir(self.sample_log_dir):
-#             os.mkdir(self.sample_log_dir)
-#         self.parameters = model.parameters()
-#         self.optimizer = optim.Adam(self.parameters, lr=args.lr,
-#                                     betas=(0.9, 0.999))
-#         self.viz_batch_sizes = self.calc_viz_batch_sizes()
-#
-#         self.global_step = 0
-#         self.batch_num = 0
-#         if args.initializer == 'ff_init':
-#             self.initter = nw.InitializerNetwork(args, writer, device)
-#             self.initter.to(device)
-#         else:
-#             self.initter = None
-#
-#         if self.args.load_model:
-#             path = 'exps/models/' + self.args.load_model + '.pt'
-#             model_name = str(self.args.load_model)
-#             checkpoint = torch.load(path)
-#             self.model.load_state_dict(checkpoint['model'])
-#             self.optimizer.load_state_dict(checkpoint['model_optimizer'])
-#             if args.initializer == 'ff_init':
-#                 self.initter.load_state_dict(checkpoint['initializer'])
-#                 self.initter.optimizer.load_state_dict(
-#                     checkpoint['initializer_optimizer'])
-#
-#             # Update args dict correctly
-#             curr_num_it_viz = self.args.num_it_viz # collect the current arg for num_it_viz, because it would be overwritten by the value that was given during training
-#             vars(self.args).update(vars(checkpoint['args']))
-#             vars(self.args)['num_it_viz'] = curr_num_it_viz
-#
-#             self.batch_num = checkpoint['batch_num']
-#             print("Loaded model " + model_name + ' successfully')
-#
-#         # self.args.num_it_viz = 13
-#
-#     def calc_viz_batch_sizes(self):
-#         """The batch size is now the number of pixels in the image, and
-#         there is only one channel because we only visualize one at a time."""
-#         return [self.args.state_sizes[i][-1] * self.args.state_sizes[i][-2]
-#                  for i in range(len(self.args.state_sizes))]
-#
-#     def update_state_size_bs(self, sl_idx):
-#         self.model.batch_size = self.viz_batch_sizes[sl_idx]
-#         new_state_sizes = [(self.viz_batch_sizes[sl_idx],
-#                  self.args.state_sizes[i][1],
-#                  self.args.state_sizes[i][2],
-#                  self.args.state_sizes[i][3])
-#                  for i in range(len(self.args.state_sizes))]
-#         self.args.state_sizes = new_state_sizes
-#         self.model.state_sizes = new_state_sizes
-#         self.model.calc_energy_weight_masks()
-#         return
-#
-#     def visualize(self):
-#         """Clamps each neuron while sampling the others
-#
-#         Goes through each of the state layers, and each of the channels"""
-#         for state_layer_idx in range(len(self.args.state_sizes)):
-#             for channel_idx in range(self.args.state_sizes[state_layer_idx][1]): #[1] for num of channels
-#                 print("Visualizing channel %s of state layer %s" % \
-#                       (str(channel_idx), state_layer_idx))
-#                 self.update_state_size_bs(state_layer_idx)
-#                 self.noises = lib.utils.generate_random_states(
-#                     self.args.state_sizes,
-#                     self.device)
-#                 # a kind of negative phase where it settles for a long time
-#                 # and clamps a different neuron for each image
-#                 clamp_array = torch.zeros(size=self.args.state_sizes[state_layer_idx],
-#                                           dtype=torch.uint8,
-#                                           device=self.device)
-#                 mg = np.meshgrid(np.arange(0,self.args.state_sizes[state_layer_idx][2]),
-#                                  np.arange(0,self.args.state_sizes[state_layer_idx][3]))
-#                 idxs = list(zip(mg[1].flatten(), mg[0].flatten()))
-#                 # Sets to 1 the next pixel in each batch element
-#                 print("Setting indices")
-#                 for i0 in range(self.args.state_sizes[state_layer_idx][0]):
-#                     clamp_array[i0, 0][idxs[i0]] = 1.0
-#                 self.visualization_phase(state_layer_idx,
-#                                          channel_idx,
-#                                          clamp_array)
-#
-#     def visualization_phase(self, state_layer_idx, channel_idx, clamp_array,
-#                             clamp_value=1.):
-#         states = lib.utils.generate_random_states(self.args.state_sizes,
-#                                                   self.device)
-#         id = None
-#         # Freeze network parameters and take grads w.r.t only the inputs
-#         requires_grad(states, True)
-#         requires_grad(self.parameters, False)
-#         self.model.eval()
-#
-#         # Set up state optimizer if approp
-#         if self.args.state_optimizer is not 'langevin':
-#             self.state_optimizers = get_state_optimizers(self.args, states)
-#
-#         # Viz phase sampling
-#         for k in tqdm(range(self.args.num_it_viz)):
-#             self.viz_sampler_step(states, id, state_layer_idx, channel_idx,
-#                                   clamp_array, clamp_value)
-#             if k % self.args.viz_img_logging_step_interval == 0:
-#                 utils.save_image(
-#                     states[0].detach().to('cpu'),
-#                     os.path.join(self.sample_log_dir,
-#                                  str(channel_idx) + '_' +
-#                                  str(state_layer_idx) + '_' +
-#                                  str(k).zfill(6)  + '.png'),
-#                     nrow=self.args.state_sizes[state_layer_idx][2],
-#                     normalize=True,
-#                     range=(0, 1))
-#             self.global_step += 1
-#
-#         # Stop calculting grads w.r.t. images
-#         for neg_state in states:
-#             neg_state.detach_()
-#
-#         return states, id
-#
-#     def viz_sampler_step(self, states, ids, state_layer_idx, channel_idx,
-#                          clamp_array, clamp_value):
-#         energies = self.model(states, ids)  # Outputs energy of neg sample
-#         total_energy = energies.sum()
-#
-#         total_energy.backward()
-#         torch.nn.utils.clip_grad_norm_(states,
-#                                        self.args.clip_state_grad_norm,
-#                                        norm_type=2)
-#
-#         for i, noise in enumerate(self.noises):
-#             noise.normal_(0, self.args.sigma)
-#             if i == state_layer_idx:
-#                 noise = torch.where(clamp_array,
-#                                                   torch.zeros_like(noise),
-#                                                   noise)
-#         for i, (noise, state) in enumerate(zip(self.noises, states)):
-#             state.data.add_(noise.data)
-#
-#
-#         # The gradient step in the Langevin step (only for upper layers)
-#         for i, state in enumerate(states):
-#             if self.args.state_optimizer != 'langevin':
-#                 if i == state_layer_idx:
-#                     # Zero the momentum of the optimizer, if exists
-#                     # This is the momentum buffer (difficult to access because the key is the tensor of params)
-#                     state_key = self.state_optimizers[
-#                         state_layer_idx].param_groups[0]['params'][0]
-#                     if state_key in self.state_optimizers[state_layer_idx].state:
-#                         mom_buffer = self.state_optimizers[state_layer_idx].state[state_key]['momentum_buffer']
-#                         mom_buffer = torch.where(clamp_array, torch.zeros_like(mom_buffer), mom_buffer)
-#
-#                     # Zero the gradient of selected neurons # TODO Check that the neurons are actually staying clamped clamped
-#                     state.grad.data = torch.where(clamp_array,
-#                                                   torch.zeros_like(state.grad.data),
-#                                                   state.grad.data)
-#
-#                     # Finally, make sure the state value is at the clamp value
-#                     # TBH zeroing the grad is probs unnecessary
-#                     state.data = torch.where(clamp_array,
-#                                              torch.ones_like(state.data) * \
-#                                              torch.tensor(clamp_value),
-#                                              state.data)
-#                 self.state_optimizers[i].step()
-#             else:
-#                 state.data.add_(-self.args.sampling_step_size,
-#                             state.grad.data)
-#
-#
-#
-#             # Prepare gradients and sample for next sampling step
-#             state.grad.detach_()
-#             state.grad.zero_()
-#             state.data.clamp_(0, 1)
 
