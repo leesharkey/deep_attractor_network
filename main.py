@@ -434,21 +434,27 @@ class VisualizationManager(TrainingManager):
         else:
             lib.utils.save_configs_to_csv(self.args, self.model.model_name)
 
-        # Add forward hooks to each of the energy nets in the DAN
-        # self.hooked_energies = []
-        # self.hooked_energies.extend([GetEnergies(net, self.device)
-        #                       for net in list(self.model.children())[2]])
         self.viz_batch_sizes = self.calc_viz_batch_sizes()
 
     def calc_viz_batch_sizes(self):
         """The batch size is now the number of pixels in the image, and
         there is only one channel because we only visualize one at a time."""
-        batch_sizes = []
-        for size in self.args.state_sizes:
-            if len(size) == 4:
-                batch_sizes.append(size[2] * size[3])
-            if len(size) == 2:
-                batch_sizes.append(size[1])
+        if self.args.viz_type == 'standard':
+            batch_sizes = self.args.state_sizes
+        elif self.args.viz_type == 'neurons':
+            batch_sizes = []
+            for size in self.args.state_sizes:
+                if len(size) == 4:
+                    batch_sizes.append(size[2] * size[3])
+                if len(size) == 2:
+                    batch_sizes.append(size[1])
+        elif self.args.viz_type == 'channels':
+            batch_sizes = []
+            for size in self.args.state_sizes:
+                if len(size) == 4:
+                    batch_sizes.append(size[1])
+                if len(size) == 2:
+                    batch_sizes.append(size[1])
         return batch_sizes
 
     def update_state_size_bs(self, sl_idx):
@@ -467,6 +473,33 @@ class VisualizationManager(TrainingManager):
         self.model.args.state_sizes = new_state_sizes
         self.model.calc_energy_weight_masks()
 
+    def calc_clamp_array_conv(self, state_layer_idx=None):
+
+        if state_layer_idx is not None:
+            size = self.args.state_sizes[state_layer_idx]
+            clamp_array = torch.zeros(
+                size=size,
+                dtype=torch.uint8,
+                device=self.device)
+        else:
+            size = None
+            clamp_array = None
+
+        if self.args.viz_type == 'neurons':
+            # Sets to 1 the next pixel in each batch element
+            mg = np.meshgrid(np.arange(0, size[2]),
+                             np.arange(0, size[3]))
+            idxs = list(zip(mg[1].flatten(), mg[0].flatten()))
+            for i0 in range(size[0]):
+                clamp_array[i0, 0][idxs[i0]] = 1.0
+        elif self.args.viz_type == 'channels':
+            # In batch i, sets the ith channel to 1.0
+            for i in range(size[0]):
+                clamp_array[i,i,:,:] = 1.0
+
+        return clamp_array
+
+
     def visualize(self):
         """Clamps each neuron while sampling the others
 
@@ -474,50 +507,64 @@ class VisualizationManager(TrainingManager):
         of negative phase where it settles for a long time and clamps a
         different neuron for each image."""
 
-        for state_layer_idx, size in enumerate(self.args.state_sizes[1:], start=1):
-            if len(size) == 4:
-                for channel_idx in range(self.args.state_sizes[state_layer_idx][1]): #[1] for num of channels
-                    print("Visualizing channel %s of state layer %s" % \
-                          (str(channel_idx), state_layer_idx))
+        if self.args.viz_type == 'standard':
+            self.noises = lib.utils.generate_random_states(
+                self.args.state_sizes,
+                self.device)
+            clamp_array = None
+            self.visualization_phase()
+        elif self.args.viz_type == 'channels':
+            for state_layer_idx, size in enumerate(self.args.state_sizes[1:], start=1):
+                if len(size) == 4:
+                    print("Visualizing channels in state layer %s" % \
+                          (state_layer_idx))
                     self.update_state_size_bs(state_layer_idx)
                     self.noises = lib.utils.generate_random_states(
                         self.args.state_sizes,
                         self.device)
-
-                    # Sets to 1 the next pixel in each batch element
-                    clamp_array = torch.zeros(size=self.args.state_sizes[state_layer_idx],
-                                              dtype=torch.uint8,
-                                              device=self.device)
-                    mg = np.meshgrid(np.arange(0,self.args.state_sizes[state_layer_idx][2]),
-                                     np.arange(0,self.args.state_sizes[state_layer_idx][3]))
-                    idxs = list(zip(mg[1].flatten(), mg[0].flatten()))
-
-                    print("Setting indices")
-                    for i0 in range(self.args.state_sizes[state_layer_idx][0]):
-                        clamp_array[i0, 0][idxs[i0]] = 1.0
+                    clamp_array = self.calc_clamp_array_conv(state_layer_idx)
                     self.visualization_phase(state_layer_idx,
-                                             channel_idx,
-                                             clamp_array)
-            elif len(size) == 2:
-                self.update_state_size_bs(state_layer_idx)
-                self.noises = lib.utils.generate_random_states(
-                    self.args.state_sizes,
-                    self.device)
-                assert self.args.state_sizes[state_layer_idx][0] == self.args.state_sizes[state_layer_idx][1]
-                clamp_array = torch.eye(
-                    n=self.args.state_sizes[state_layer_idx][0],
-                    m=self.args.state_sizes[state_layer_idx][1],
-                    dtype=torch.uint8,
-                    device=self.device)
-                self.visualization_phase(state_layer_idx,
-                                         channel_idx=None,
-                                         clamp_array=clamp_array)
+                                             channel_idx=None,
+                                             clamp_array=clamp_array)
+        elif self.args.viz_type == 'neurons':
+            for state_layer_idx, size in enumerate(self.args.state_sizes[1:], start=1):
+                if len(size) == 4:
+                    for channel_idx in range(size[1]): #[1] for num of channels
+                        print("Visualizing channel %s of state layer %s" % \
+                              (str(channel_idx), state_layer_idx))
+                        self.update_state_size_bs(state_layer_idx)
+                        self.noises = lib.utils.generate_random_states(
+                            self.args.state_sizes,
+                            self.device)
+                        clamp_array = self.calc_clamp_array_conv(state_layer_idx)
+                        self.visualization_phase(state_layer_idx,
+                                                 channel_idx,
+                                                 clamp_array)
+                elif len(size) == 2:
+                    if self.args.viz_type == 'neurons':
+                        # not if 'channels' because FC layers have no channels
+                        print("Visualizing FC layer %s" % state_layer_idx)
+                        self.update_state_size_bs(state_layer_idx)
+                        self.noises  = lib.utils.generate_random_states(
+                                                 self.args.state_sizes,
+                                                 self.device)
+                        clamp_array  = torch.eye(n=size[0], m=size[1],
+                                                 dtype=torch.uint8,
+                                                 device=self.device)
+                        self.visualization_phase(state_layer_idx,
+                                                 channel_idx=None,
+                                                 clamp_array=clamp_array)
+                    else:
+                        print('Not visualizing FC layer because we\'re '
+                              'visualizing channels')
 
-    def visualization_phase(self, state_layer_idx, channel_idx, clamp_array,
-                            clamp_value=1.):
+    def visualization_phase(self, state_layer_idx=0, channel_idx=None,
+                            clamp_array=None):
+
         states = lib.utils.generate_random_states(self.args.state_sizes,
                                                   self.device)
         id = None
+
         # Freeze network parameters and take grads w.r.t only the inputs
         lib.utils.requires_grad(states, True)
         lib.utils.requires_grad(self.parameters, False)
@@ -530,24 +577,31 @@ class VisualizationManager(TrainingManager):
         # Viz phase sampling
         for k in tqdm(range(self.args.num_it_viz)):
             self.viz_sampler_step(states, id, state_layer_idx,
-                                  clamp_array, clamp_value)
+                                  clamp_array)
             if k % self.args.viz_img_logging_step_interval == 0:
                 size = self.args.state_sizes[state_layer_idx]
-                if len(size)==4:
-                    nrow = self.args.state_sizes[state_layer_idx][2]
-                    ch_str = str(channel_idx)
-                elif len(size)==2:
-                    nrow = int(round(np.sqrt(self.args.state_sizes[state_layer_idx][1])))
-                    ch_str = 'fc'
-                utils.save_image(
-                    states[0].detach().to('cpu'),
-                    os.path.join(self.sample_log_dir,
-                                 str(state_layer_idx) + '_' +
-                                 ch_str     + '_' +
-                                 str(k).zfill(6)      + '.png'),
-                    nrow=nrow,
-                    normalize=True,
-                    range=(0, 1))
+                if clamp_array is None:
+                    # Clamp array should be none during 'standard' viz
+                    nrow = int(round(np.sqrt(size[0])))
+                    ch_str = ''
+                elif len(size) == 2:
+                    nrow = int(round(np.sqrt(size[1])))
+                    ch_str = 'fc' + '_'
+                elif len(size) == 4:
+                    nrow = size[2]
+                    if channel_idx is None:
+                        ch_str = ''
+                    else:
+                        ch_str = str(channel_idx) + '_'
+
+                utils.save_image(states[0].detach().to('cpu'),
+                                 os.path.join(self.sample_log_dir,
+                                              str(state_layer_idx) + '_' +
+                                              ch_str +
+                                              str(k).zfill(6)      + '.png'),
+                                 nrow=nrow,
+                                 normalize=True,
+                                 range=(0, 1))
             self.global_step += 1
 
         # Stop calculting grads w.r.t. images
@@ -557,7 +611,7 @@ class VisualizationManager(TrainingManager):
         return states, id
 
     def viz_sampler_step(self, states, ids, state_layer_idx,
-                         clamp_array, clamp_value):
+                         clamp_array):
         """In the state layer that's being visualized, the gradients come
         from the channel neuron that's being visualized. The gradients for
         other layers come from the energy gradient."""
@@ -576,17 +630,34 @@ class VisualizationManager(TrainingManager):
         energies, outs = self.model(states, ids)  # Outputs energy of neg sample
         total_energy = energies.sum()
 
-        # Get the energy of the specific neuron you want to viz and get the
-        # gradient that maximises its value
-        feature_energy = outs[state_layer_idx-1] # -1 because energies is 0-indexed while the layers we want to visualize are 1-indexed
-        selected_feature_energy = torch.where(clamp_array,
-                                              feature_energy,
-                                              torch.zeros_like(feature_energy))
-        selected_feature_energy = -selected_feature_energy.sum()
-        selected_feature_energy.backward(retain_graph=True)
+        if self.args.viz_type == 'standard':
+            # Take gradient wrt states (before addition of noise)
+            total_energy.backward()
 
-        # Take gradient wrt states (before addition of noise)
-        total_energy.backward()
+        elif self.args.viz_type == 'neurons' or self.args.viz_type == 'channels':
+            # Get the energy of the specific neuron you want to viz and get the
+            # gradient that maximises its value
+            feature_energy = outs[state_layer_idx-1] # -1 because energies is 0-indexed while the layers we want to visualize are 1-indexed
+            feature_energy = feature_energy \
+                             * self.args.energy_weight_mask[state_layer_idx-1]\
+                             * 1. # Scales up the energy of the neuron/channel that we want to viz
+            selected_feature_energy = torch.where(clamp_array,
+                                                  feature_energy,
+                                                  torch.zeros_like(feature_energy))
+            selected_feature_energy = -selected_feature_energy.sum()
+            print(state_layer_idx)
+            print([fe.sum() for fe in outs])
+            #selected_feature_energy.backward(retain_graph=True)
+
+            # Take gradient wrt states (before addition of noise)
+            total_energy.backward()
+
+            # Zero the grads above the layer that we're visualizing
+            for s in states[1:]:
+                s.grad.zero_() #TODO check what this is actually doing
+
+        # The rest of the sampler step function is no different from the
+        # negative step used in training
         torch.nn.utils.clip_grad_norm_(states,
                                        self.args.clip_state_grad_norm,
                                        norm_type=2)
@@ -611,43 +682,6 @@ class VisualizationManager(TrainingManager):
             state.grad.detach_()
             state.grad.zero_()
             state.data.clamp_(0, 1)
-        # ######################################################################
-        # # The gradient step in the Langevin step (only for upper layers)
-        # for i, state in enumerate(states):
-        #     if self.args.state_optimizer != 'langevin':
-        #         if i == state_layer_idx:
-        #             # Zero the momentum of the optimizer, if exists
-        #             # This is the momentum buffer (difficult to access because the key is the tensor of params)
-        #             state_key = self.state_optimizers[
-        #                 state_layer_idx].param_groups[0]['params'][0]
-        #             if state_key in self.state_optimizers[state_layer_idx].state:
-        #                 mom_buffer = self.state_optimizers[state_layer_idx].state[state_key]['momentum_buffer']
-        #                 mom_buffer = torch.where(clamp_array, torch.zeros_like(mom_buffer), mom_buffer)
-        #
-        #             # Zero the gradient of selected neurons # TODO Check that the neurons are actually staying clamped clamped
-        #             state.grad.data = torch.where(clamp_array,
-        #                                           torch.zeros_like(state.grad.data),
-        #                                           state.grad.data)
-        #
-        #             # Finally, make sure the state value is at the clamp value
-        #             # TBH zeroing the grad is probs unnecessary
-        #             state.data = torch.where(clamp_array,
-        #                                      torch.ones_like(state.data) * \
-        #                                      torch.tensor(clamp_value),
-        #                                      state.data)
-        #         self.state_optimizers[i].step()
-        #     else:
-        #         state.data.add_(-self.args.sampling_step_size,
-        #                     state.grad.data)
-        #
-        #
-        #
-        #     # Prepare gradients and sample for next sampling step
-        #     state.grad.detach_()
-        #     state.grad.zero_()
-        #     state.data.clamp_(0, 1)
-
-
 
 
 def clip_grad(parameters, optimizer):
@@ -772,6 +806,25 @@ def finalize_args(parser):
                                        'padding': 1,
                                        'mod_connect_dict': mod_connect_dict}
             vars(args)['energy_weight_mask'] = [1, 2, 4.84, 12.25, 49]
+
+        elif args.architecture == 'mnist_2_layers_small_scl_UandD':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],  # 25088
+                                         [args.batch_size, 32, 12, 12],  # 4608
+                                         ]
+
+            mod_connect_dict = {0: [],
+                                1: [0,1],
+                                2: [1,2]}
+
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = [0.184, 1.0]
+
         elif args.architecture == 'mnist_3_layers_med_fc_top1': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size, 16, 28, 28],  # 12544
@@ -790,6 +843,7 @@ def finalize_args(parser):
                                        'padding': 1,
                                        'mod_connect_dict': mod_connect_dict}
             vars(args)['energy_weight_mask'] = [1, 4.84, 49]
+
         elif args.architecture == 'mnist_3_layers_med_fc_top1_upim_wild':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size, 16, 48, 48],  # 36864
@@ -1030,7 +1084,7 @@ def main():
                              'to the argument will be 10 to the power of the' +
                              'float selected from the range. '+
                              'Options: [-3, 0].')
-    ngroup.add_argument('--energy_weight_min', type=float, default=0.0,
+    ngroup.add_argument('--energy_weight_min', type=float, default=0.001,
                         help='The minimum value that weights in the energy ' +
                              'weights layer may take.')
     ngroup.add_argument('--energy_weight_mask', type=int, nargs='+',
@@ -1052,9 +1106,29 @@ def main():
                         help='')
 
     vgroup = parser.add_argument_group('Visualization options')
-    vgroup.add_argument('--viz_neurons', action='store_true',
-                        help='Whether or not to visualise the neurons.')
-    parser.set_defaults(viz_neurons=False)
+    vgroup.add_argument('--viz', action='store_true',
+                        help='Whether or not to do visualizations. The exact'
+                             'type of visualization is defined in the'
+                             '"viz_type" argument. Default: %(default)s.')
+    parser.set_defaults(viz=False)
+    vgroup.add_argument('--viz_type', type=str, default='standard',
+                        help='The type of visualization you want to perform.'
+                        ' "standard": Generates random samples with no'
+                             'restrictions.\n\n "neurons": Generates samples'
+                             ' where there is an extra gradient that seeks to '
+                             'maximise the energy of a certain neuron while the '
+                             'value of other neurons is free to find a local '
+                             'minimum.\n\n "channels": Generates samples'
+                             ' where there is an extra gradient that seeks to '
+                             'maximise the energy of a certain feature layer in '
+                             'energy functions that are conv nets while the '
+                             'value of other neurons is free to find a local '
+                             'minimum'
+                              )
+    vgroup.add_argument('--num_viz_samples', type=int,
+                        help='The number of samples that should be generated'
+                             'and visualized. ' +
+                             'Default: %(default)s.')
     vgroup.add_argument('--num_it_viz', type=int,
                         help='The number of steps to use to sample images. ' +
                              'Default: %(default)s.')
@@ -1157,7 +1231,7 @@ def main():
             tm.pre_train_initializer()
 
         tm.train()
-    if args.viz_neurons:
+    if args.viz:
         vm = VisualizationManager(args, model, data, buffer, writer, device,
                                   sample_log_dir)
         vm.visualize()

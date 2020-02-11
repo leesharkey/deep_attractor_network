@@ -341,8 +341,9 @@ class DeepAttractorNetwork(nn.Module):
         #print(self.energy_weight_masks[0])
         reshaped_outs = torch.cat(reshaped_outs, dim=1)
         #print(outs)
-        energy = self.energy_weights(reshaped_outs)
+        #BADENERGYWEIGHTSBAD#energy = self.energy_weights(reshaped_outs)
         #print(list(self.energy_weights.parameters()))
+        energy = reshaped_outs.sum()
         return energy, outs
 
 
