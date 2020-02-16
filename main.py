@@ -87,12 +87,14 @@ class TrainingManager():
 
             # Log images
             if self.batch_num % self.args.img_logging_interval == 0:
-                utils.save_image(neg_states[0].detach().to('cpu'),
+                utils.save_image(neg_states[0].reshape(self.args.batch_size, 1, 28, 28).detach().to(
+                    'cpu'),
                                  os.path.join(self.sample_log_dir,
                                       str(self.batch_num).zfill(6) + '.png'),
                                  nrow=16, normalize=True, range=(0, 1))
                 if self.args.save_pos_images:
-                    utils.save_image(pos_states[0].detach().to('cpu'),
+                    utils.save_image(pos_states[0].reshape(self.args.batch_size, 1, 28, 28).detach().to(
+                    'cpu'),
                          os.path.join(self.sample_log_dir,
                              'p0_' + str(self.batch_num).zfill(6) + '.png'),
                                      nrow=16, normalize=True, range=(0, 1))
@@ -243,7 +245,7 @@ class TrainingManager():
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
         for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-            noise.normal_(0, self.args.sigma)
+            noise.normal_(0, self.args.sigma) #TODO for CHN consider how you're going to implement adding no noise
             if positive_phase and layer_idx == 0:
                 pass
             else:
@@ -296,21 +298,10 @@ class TrainingManager():
         # Update the network params
         self.optimizer.step()
 
-        # Ensure energy weights don't go below minimum value
-        for energy_weight in self.model.energy_weights.parameters():
-            energy_weight.data.clamp_(self.args.energy_weight_min)
-
         # Print loss
         self.data.loader.set_description(f'loss: {loss.item():.5f}')
 
     def param_update_phase(self, neg_states, neg_id, pos_states, pos_id):
-
-        # Log energy weight histograms
-        if self.args.log_histograms and \
-        self.batch_num % self.args.histogram_logging_interval == 0:
-            layer_string = 'train/energy_weights'
-            self.writer.add_histogram(layer_string, self.model.energy_weights.weight,
-                                      self.batch_num)
 
         # Put model in training mode and prepare network parameters for updates
         lib.utils.requires_grad(self.parameters, True)
@@ -594,7 +585,7 @@ class VisualizationManager(TrainingManager):
                     else:
                         ch_str = str(channel_idx) + '_'
 
-                utils.save_image(states[0].detach().to('cpu'),
+                utils.save_image(states[0].reshape(self.args.batch_size, 1, 28, 28).detach().to('cpu'), #TODO fix so the size isn't hardcoded
                                  os.path.join(self.sample_log_dir,
                                               str(state_layer_idx) + '_' +
                                               ch_str +
@@ -945,6 +936,23 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict}
             vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 
+        elif args.architecture == 'BFN_small_4_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  784],
+                                         [args.batch_size, 500],  # 36864
+                                         [args.batch_size, 100],  # 4608
+                                         [args.batch_size, 10]]
+
+
+            # mod_connect_dict = {0: []}
+            #
+            # vars(args)['arch_dict'] = {'num_ch': 64,
+            #                            'num_sl': len(args.state_sizes) - 1,
+            #                            'kernel_sizes': [3, 3, 3],
+            #                            'strides': [1,1],
+            #                            'padding': 1,
+            #                            'mod_connect_dict': mod_connect_dict}
+            # vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+
     if args.dataset == "CIFAR10":
         if args.architecture == 'cifar10_2_layers':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
@@ -958,9 +966,9 @@ def finalize_args(parser):
                                        'strides': [1,1],
                                        'padding': 1}
 
-    if len(args.energy_weight_mask) != len(args.state_sizes)-1:
-        raise RuntimeError("Number of energy_weight_mask args is different"+
-                           " from the number of state layers")
+    # if len(args.energy_weight_mask) != len(args.state_sizes)-1:
+    #     raise RuntimeError("Number of energy_weight_mask args is different"+
+    #                        " from the number of state layers")
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
@@ -1214,7 +1222,9 @@ def main():
         os.mkdir(sample_log_dir)
 
     # Set up model
-    model = nw.DeepAttractorNetwork(args, device, model_name, writer).to(device)
+    #model = nw.DeepAttractorNetwork(args, device, model_name, writer).to(device)
+    model = nw.BengioFischerNetwork(args, device, model_name, writer).to(
+        device)
 
 
 

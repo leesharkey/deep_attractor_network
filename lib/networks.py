@@ -7,6 +7,7 @@ from torch.nn import functional as F
 from torch.nn import utils
 import lib.utils
 import lib.custom_swish_activation as cust_actv
+from lib import activations #TODO clean up scripts later
 
 
 def get_swish():
@@ -493,40 +494,73 @@ class InitializerNetwork(torch.nn.Module):
         return loss
 
 
+class BengioFischerNetwork(nn.Module):
+    """Defines the attractor network studied by Bengio and Fischer
+
+    Bengio, Y. and Fischer, A. (2015). Early inference in energy-based models
+    approximates back-propagation. Technical Report arXiv:1510.02777,
+    Universite de Montreal.
+
+    Bengio, Y., Mesnard, T., Fischer, A., Zhang, S., and Wu, Y. (2015).
+    STDP as presynaptic activity times rate of change of postsynaptic activity.
+    arXiv:1509.05936.
+
+    The network is a continuous Hopfield-like network.
+    """
+    def __init__(self, args, device, model_name, writer, n_class=None):
+        super().__init__()
+        self.args = args
+        self.device = device
+        self.writer = writer
+        self.model_name = model_name
+        self.num_state_layers = len(self.args.state_sizes[1:])
+        self.weights = nn.ModuleList([nn.Linear(l1[1], l2[1], bias=False) for l1, l2 in
+                        zip(args.state_sizes[:-1], args.state_sizes[1:])])
+        #TODO consider zeroing the diagonal
+        self.biases = nn.ModuleList([nn.Linear(l[1], 1, bias=False)
+                       for l in args.state_sizes])
+        #TODO consider zero initting
+
+        if self.args.activation == "hardsig":
+            self.actvn = activations.get_hard_sigmoid()
+        elif self.args.activation == "relu":
+            self.actvn = activations.get_relu()
+        elif self.args.activation == "swish":
+            self.actvn = activations.get_swish()
+
+    def forward(self, states, class_id=None, step=None):
+
+        # Squared norm
+        sq_nrm = sum([(0.5 * (layer.view(self.args.batch_size, -1) ** 2)).sum() for layer in states])
+
+        # Linear terms
+        linear_terms = - sum([bias(self.actvn(layer.view(self.args.batch_size, -1))).sum()
+                              for layer, bias in
+                              zip(states, self.biases)])
+
+        quadratic_terms = - sum([0.5 * sum(torch.einsum('ba,ba->b',
+                                                        W(self.actvn(pre.view(self.args.batch_size, -1))),
+                                                        self.actvn(post.view(self.args.batch_size, -1))))
+                                 for pre, W, post in
+                                 zip(states[:-1], self.weights, states[1:])])
+        return sq_nrm + linear_terms + quadratic_terms, None
+#TODO fix pos_buffer_frac for new network1
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ###### Function to help me debug
 shapes = lambda x : [y.shape for y in x]
 nancheck = lambda x : (x != x).any()
 listout = lambda y : [x for x in y]
-
-
-# if self.args.architecture == 'mnist_1_layer_small':
-#     self.num_ch = 32
-#     self.num_sl = 1
-#     self.args.arch_dict['kernel_sizes'] = [3, 3]
-#     self.padding = 1
-# elif self.args.architecture == 'mnist_2_layers_small':
-#     self.num_ch = 32
-#     self.num_sl = 2
-#     self.args.arch_dict['kernel_sizes'] = [3, 3]
-#     self.padding = 1
-# elif args.architecture == 'mnist_2_layers_small_equal':
-#     self.num_ch = 16
-#     self.num_sl = 2
-#     self.args.arch_dict['kernel_sizes'] = [3, 3]
-#     self.padding = 1
-#     self.strides = [1, 0]
-# elif self.args.architecture == 'mnist_3_layers_med':
-#     self.num_ch = 64
-#     self.num_sl = 3
-#     self.args.arch_dict['kernel_sizes'] = [3, 3, 3]
-#     self.padding = 0
-# elif self.args.architecture == 'mnist_3_layers_large':
-#     self.num_ch = 64
-#     self.num_sl = 3
-#     self.args.arch_dict['kernel_sizes'] = [3, 3, 3]
-#     self.padding = 1
-# elif self.args.architecture == 'cifar10_2_layers':
-#     self.num_ch = 64
-#     self.num_sl = 2
-#     self.args.arch_dict['kernel_sizes'] = [3, 3]
-#     self.padding = 1
