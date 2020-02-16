@@ -87,14 +87,15 @@ class TrainingManager():
 
             # Log images
             if self.batch_num % self.args.img_logging_interval == 0:
-                utils.save_image(neg_states[0].reshape(self.args.batch_size, 1, 28, 28).detach().to(
-                    'cpu'),
+                shape = pos_img.shape
+                neg_imgs_save = neg_states[0].reshape(shape).detach().to('cpu')
+                utils.save_image(neg_imgs_save,
                                  os.path.join(self.sample_log_dir,
                                       str(self.batch_num).zfill(6) + '.png'),
                                  nrow=16, normalize=True, range=(0, 1))
                 if self.args.save_pos_images:
-                    utils.save_image(pos_states[0].reshape(self.args.batch_size, 1, 28, 28).detach().to(
-                    'cpu'),
+                    pos_imgs_save = pos_states[0].reshape(shape).detach().to('cpu')
+                    utils.save_image(pos_imgs_save,
                          os.path.join(self.sample_log_dir,
                              'p0_' + str(self.batch_num).zfill(6) + '.png'),
                                      nrow=16, normalize=True, range=(0, 1))
@@ -136,7 +137,9 @@ class TrainingManager():
             pos_states_new = self.initter.forward(pos_img, pos_id)
             pos_states.extend(pos_states_new)
         elif self.args.initializer == 'middle':
-            raise NotImplementedError("You need to find the mean pixel value and then use the value as the value to init all pixels.")
+            raise NotImplementedError("You need to find the mean pixel value" +
+                                      " and then use the value as the value " +
+                                      "to init all pixels.")
         elif self.args.initializer == 'mix_prev_middle':
             raise NotImplementedError
         elif self.args.initializer == 'previous' and prev_states is not None:
@@ -154,8 +157,8 @@ class TrainingManager():
         # Get the loaded pos samples and put them on the correct device
         pos_img, pos_id = pos_img.to(self.device), pos_id.to(self.device)
 
-        # Gets the values of the pos states by running a short inference phase
-        # conditioned on a particular state layer
+        # Gets the values of the pos states by running an inference phase
+        # with the image state_layer clamped
         pos_states_init = self.initialize_pos_states(pos_img=pos_img,
                                                      prev_states=prev_states)
         pos_states = [psi.clone().detach() for psi in pos_states_init]
@@ -184,9 +187,9 @@ class TrainingManager():
         # Update initializer network if present
         if self.args.initializer == 'ff_init':
             lib.utils.requires_grad(self.initter.parameters(), True)
-            loss = self.initter.update_weights(outs=pos_states_init[1:],
-                                               targets=pos_states[1:],
-                                               step=self.global_step)
+            initr_loss = self.initter.update_weights(outs=pos_states_init[1:],
+                                                     targets=pos_states[1:],
+                                                     step=self.global_step)
 
         # Add positive states to positive buffer if using CD mixture
         if self.args.cd_mixture:
@@ -224,20 +227,21 @@ class TrainingManager():
         return neg_states, neg_id
 
     def sampler_step(self, states, ids, positive_phase=False, step=None):
+
         # Calculate the gradient for the Langevin step
-        energies, _ = self.model(states, ids, step)  # Outputs energy of neg sample
-        total_energy = energies.sum()
+        energy, _ = self.model(states, ids, step)  # Outputs energy of states
+
         if positive_phase and step % self.args.scalar_logging_interval == 0:
-            print('\nPos Energy: ' + str(total_energy.cpu().detach().numpy()))
-            self.writer.add_scalar('train/PosSamplesEnergy', total_energy,
+            print('\nPos Energy: ' + str(energy.cpu().detach().numpy()))
+            self.writer.add_scalar('train/PosSamplesEnergy', energy,
                                    self.global_step)
         elif step % self.args.scalar_logging_interval == 0:
-            print('\nNeg Energy: ' + str(total_energy.cpu().detach().numpy()))
-            self.writer.add_scalar('train/NegSamplesEnergy', total_energy,
+            print('\nNeg Energy: ' + str(energy.cpu().detach().numpy()))
+            self.writer.add_scalar('train/NegSamplesEnergy', energy,
                                    self.global_step)
 
         # Take gradient wrt states (before addition of noise)
-        total_energy.backward()
+        energy.backward()
         torch.nn.utils.clip_grad_norm_(states,
                                        self.args.clip_state_grad_norm,
                                        norm_type=2)
@@ -245,7 +249,10 @@ class TrainingManager():
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
         for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-            noise.normal_(0, self.args.sigma) #TODO for CHN consider how you're going to implement adding no noise
+            noise.normal_(0, self.args.sigma)
+            # Note: Just set sigma to a very small value if you don't want to
+            # add noise. It's so inconsequential that it's not worth the
+            # if-statements to accommodate sigma==0.0
             if positive_phase and layer_idx == 0:
                 pass
             else:
@@ -253,14 +260,12 @@ class TrainingManager():
 
         # The gradient step in the Langevin/SGHMC step
         # It goes through each statelayer and steps back using its associated
-        # optimizer. The gradients may pass through any network unless
-        # you're using an appropriate energy mask that zeroes the grad through
-        # that network in particular.
-        for layer_idx, state in enumerate(states):
+        # optimizer.
+        for layer_idx, optimizer in enumerate(self.state_optimizers):
             if positive_phase and layer_idx == 0:
                 pass
             else:
-                self.state_optimizers[layer_idx].step()
+                optimizer.step()
 
         # Prepare gradients and sample for next sampling step
         for state in states:
@@ -338,32 +343,6 @@ class TrainingManager():
             if i > self.args.num_pretraining_batches:
                 break
         print("\nPretraining of initializer complete")
-
-# class GetEnergies():
-#     def __init__(self, module, device):
-#         self.device = device
-#         self.hook = module.register_forward_hook(self.hook_fn)
-#     def hook_fn(self, module, input, output):
-#         print('module: ', module)
-#         print('input: ', input)
-#         print('output: ', output)
-#         self.features = torch.tensor(output,requires_grad=True).cuda()
-#     def close(self):
-#         self.hook.remove()
-
-# class Hook():
-#     def __init__(self, module, device, backward=False):
-#         self.device = device
-#         if backward==False:
-#             self.hook = module.register_forward_hook(self.hook_fn)
-#         else:
-#             self.hook = module.register_backward_hook(self.hook_fn)
-#     def hook_fn(self, module, input, output):
-#         self.input = input
-#         self.output = output
-#     def close(self):
-#         self.hook.remove()
-
 
 class VisualizationManager(TrainingManager):
     """A new class because I need to redefine sampler step to clamp certain
@@ -446,6 +425,8 @@ class VisualizationManager(TrainingManager):
                     batch_sizes.append(size[1])
                 if len(size) == 2:
                     batch_sizes.append(size[1])
+        else:
+            ValueError("Invalid CLI argument 'viz type'.")
         return batch_sizes
 
     def update_state_size_bs(self, sl_idx):
@@ -489,7 +470,6 @@ class VisualizationManager(TrainingManager):
                 clamp_array[i,i,:,:] = 1.0
 
         return clamp_array
-
 
     def visualize(self):
         """Clamps each neuron while sampling the others
@@ -607,17 +587,6 @@ class VisualizationManager(TrainingManager):
         from the channel neuron that's being visualized. The gradients for
         other layers come from the energy gradient."""
 
-        # TODO consider multiplying the feature energy by
-        #  the appropriate self.model.energy_weight_masks so that it does not
-        #  have a completely abnormal gradient. Do this if it doesn't
-        #  appear to be visualizing properly otherwise.
-
-        # TODO If this doesn't work, consider running total_energy.backward()
-        #  first, then zeroing (or scaling down) the gradients of the state
-        #  layer(s) you want to control, then calculate the gradients that
-        #  maximize the energy of the selected neuron, then run .step()
-
-
         energies, outs = self.model(states, ids)  # Outputs energy of neg sample
         total_energy = energies.sum()
 
@@ -708,273 +677,96 @@ def finalize_args(parser):
         vars(args)['special_name'] = input("Special name: ") or "None"
 
     # Set architecture-specific hyperparams
-    if args.dataset == 'MNIST':
-        if args.architecture == 'mnist_1_layer_small':
-            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 3, 3, 3]]
-            vars(args)['arch_dict'] = {'num_ch': 32,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1}
-        elif args.architecture == 'mnist_2_layers_small':
-            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 9, 28, 28],
-                                         [args.batch_size, 9, 3, 3]]
-            vars(args)['arch_dict'] = {'num_ch': 16,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1}
-        elif args.architecture == 'mnist_2_layers_small_equal':
-            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 6, 16, 16],
-                                         [args.batch_size, 256, 3, 3]]
-            vars(args)['arch_dict'] = {'num_ch': 16,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3],
-                                       'strides': [1, 0],
-                                       'padding': 1}
-        elif args.architecture == 'mnist_3_layers_small':
-            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 9, 28, 28], #scale 1
-                                         [args.batch_size, 9, 3, 3], # scale 87.1
-                                         [args.batch_size, 9, 1, 1]] # scale 784
-            vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 1],
-                                       'strides': [1,1,1],
-                                       'padding': 1}
-        elif args.architecture == 'mnist_3_layers_med':
-            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 64, 28, 28],
-                                         [args.batch_size, 32, 9, 9],
-                                         [args.batch_size, 10, 3, 3]]
-            vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1,1],
-                                       'padding': 0}
-        elif args.architecture == 'mnist_3_layers_large': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
-            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                         [args.batch_size, 8, 28, 28],  # 6272
-                                         [args.batch_size, 24, 16, 16], # 6144
-                                         [args.batch_size, 180, 6, 6]]  # 4608
-            vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1}
-        elif args.architecture == 'mnist_4_layers_med': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+    if args.architecture == 'BFN_small_4_layers':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 16, 28, 28],  # 12544
-                                         [args.batch_size, 24, 16, 16],  # 6144
-                                         [args.batch_size, 32,  9,  9],  # 2592
-                                         [args.batch_size, 180, 3,  3]]  # 1620
-            vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1}
-            vars(args)['energy_weight_mask'] = [1, 2, 4.84, 7.743]
-        elif args.architecture == 'mnist_5_layers_med_fc_top2': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
-            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 16, 28, 28],  # 12544
-                                         [args.batch_size, 24, 16, 16],  # 6144
-                                         [args.batch_size, 32,  9,  9],  # 2592
-                                         [args.batch_size, 1024],
-                                         [args.batch_size, 256]]
-            mod_connect_dict = {0: [],
-                                1: [0,1],
-                                2: [1,2],
-                                3: [2,3],
-                                4: [3,4],
-                                5: [4,5]}
-            vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1,
-                                       'mod_connect_dict': mod_connect_dict}
-            vars(args)['energy_weight_mask'] = [1, 2, 4.84, 12.25, 49]
-
-        elif args.architecture == 'mnist_2_layers_small_scl_UandD':
-            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 32, 28, 28],  # 25088
-                                         [args.batch_size, 32, 12, 12],  # 4608
-                                         ]
-
-            mod_connect_dict = {0: [],
-                                1: [0,1],
-                                2: [1,2]}
-
-            vars(args)['arch_dict'] = {'num_ch': 32,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1,
-                                       'mod_connect_dict': mod_connect_dict}
-            vars(args)['energy_weight_mask'] = [0.184, 1.0]
-
-        elif args.architecture == 'mnist_3_layers_med_fc_top1': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
-            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 16, 28, 28],  # 12544
-                                         [args.batch_size, 32,  9,  9],  # 2592
-                                         [args.batch_size, 256]]
-
-            mod_connect_dict = {0: [],
-                                1: [0,1],
-                                2: [1,2],
-                                3: [2,3]}
-
-            vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1,
-                                       'mod_connect_dict': mod_connect_dict}
-            vars(args)['energy_weight_mask'] = [1, 4.84, 49]
-
-        elif args.architecture == 'mnist_3_layers_med_fc_top1_upim_wild':
-            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 16, 48, 48],  # 36864
-                                         [args.batch_size, 32, 12, 12],  # 4608
-                                         [args.batch_size, 256]]
-
-            mod_connect_dict = {0: [],
-                                1: [0,1],
-                                2: [1,2],
-                                3: [2,3]}
-
-            vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1,
-                                       'mod_connect_dict': mod_connect_dict}
-            vars(args)['energy_weight_mask'] = [1.0, 8.0, 144.0]
-        elif args.architecture == 'mnist_3_layers_large_fc_top1_upim_scl_UandD':
-            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 32, 48, 48],  # 73728
-                                         [args.batch_size, 32, 12, 12],  # 4608
-                                         [args.batch_size, 1024]]
-
-            mod_connect_dict = {0: [],
-                                1: [0,1],
-                                2: [1,2],
-                                3: [2,3]}
-
-            vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1,
-                                       'mod_connect_dict': mod_connect_dict}
-            vars(args)['energy_weight_mask'] = [0.06, 1.0, 2.5]
-
-        elif args.architecture == 'mnist_3_layers_small_fc_top1_scl_UandD':
-            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 32, 28, 28],  # 25088
-                                         [args.batch_size, 32, 12, 12],  # 4608
-                                         [args.batch_size, 256]]
-
-            mod_connect_dict = {0: [],
-                                1: [0,1],
-                                2: [1,2],
-                                3: [2,3]}
-
-            vars(args)['arch_dict'] = {'num_ch': 32,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1,
-                                       'mod_connect_dict': mod_connect_dict}
-            vars(args)['energy_weight_mask'] = [0.184, 1.0, 18.0]
-
-        elif args.architecture == 'mnist_4_layers_med_fc_top1_upim':
-            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 16, 48, 48],  # 36864
-                                         [args.batch_size, 32, 12, 12],  # 4608
-                                         [args.batch_size, 1024],
-                                         [args.batch_size, 256]]
-
-            mod_connect_dict = {0: [],
-                                1: [0,1],
-                                2: [1,2],
-                                3: [2,3],
-                                4: [3,4]}
-
-            vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1,
-                                       'mod_connect_dict': mod_connect_dict}
-            vars(args)['energy_weight_mask'] = [1.0, 8.0, 36, 144.0]
-
-        elif args.architecture == 'mnist_5_layers_med_fc_top1_upim':
-            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 16, 48, 48],  # 36864
-                                         [args.batch_size, 32, 12, 12],  # 4608
-                                         [args.batch_size, 32, 6, 6],    # 1152
-                                         [args.batch_size, 1024],
-                                         [args.batch_size, 256]]
-
-
-            mod_connect_dict = {0: [],
-                                1: [0,1],
-                                2: [1,2],
-                                3: [2,3],
-                                4: [3,4],
-                                5: [4,5]}
-
-            vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1,
-                                       'mod_connect_dict': mod_connect_dict}
-            vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
-
-        elif args.architecture == 'BFN_small_4_layers':
-            vars(args)['state_sizes'] = [[args.batch_size,  784],
-                                         [args.batch_size, 500],  # 36864
-                                         [args.batch_size, 100],  # 4608
+                                         [args.batch_size, 500],
+                                         [args.batch_size, 100],
                                          [args.batch_size, 10]]
 
-        elif args.architecture == 'BFN_med_4_layers':
-            vars(args)['state_sizes'] = [[args.batch_size, 784],
-                                         [args.batch_size, 500],  # 36864
-                                         [args.batch_size, 500],  # 4608
-                                         [args.batch_size, 200]]
+    elif args.architecture == 'BFN_med_4_layers':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 500],
+                                     [args.batch_size, 500],
+                                     [args.batch_size, 200]]
 
-            # mod_connect_dict = {0: []}
-            #
-            # vars(args)['arch_dict'] = {'num_ch': 64,
-            #                            'num_sl': len(args.state_sizes) - 1,
-            #                            'kernel_sizes': [3, 3, 3],
-            #                            'strides': [1,1],
-            #                            'padding': 1,
-            #                            'mod_connect_dict': mod_connect_dict}
-            # vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+    elif args.architecture == 'BFN_large_5_layers':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 1000],
+                                     [args.batch_size, 1000],
+                                     [args.batch_size, 300],
+                                     [args.batch_size, 300]]
 
-        elif args.architecture == 'BFN_large_5_layers':
-            vars(args)['state_sizes'] = [[args.batch_size,  784],
-                                         [args.batch_size, 1000],  # 36864
-                                         [args.batch_size, 1000],  # 4608
-                                         [args.batch_size, 300],
-                                         [args.batch_size, 300]]
+    elif args.architecture == 'VF_small_2_layers_toy':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 2]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0]}
+
+        vars(args)['arch_dict'] = {'num_ch': 64,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict}
+        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+
+    elif args.architecture == 'VF_small_3_layers':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,2],
+                            2: [1]} # no self connections, just a FF-like net
+
+        vars(args)['arch_dict'] = {'num_ch': 64,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict}
+        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+
+    elif args.architecture == 'VF_small_4_layers':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 300],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,2],
+                            2: [1,3],
+                            3: [2]} # no self connections, just a FF-like net
+
+        vars(args)['arch_dict'] = {'num_ch': 64,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict}
+        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+
+    elif args.architecture == 'VF_small_4_layers_self':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 300],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,1,2],
+                            2: [1,2,3],
+                            3: [2,3]} #worked first time. Beautiful.
+
+        vars(args)['arch_dict'] = {'num_ch': 64,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict}
+        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 
 
-            # mod_connect_dict = {0: []}
-            #
-            # vars(args)['arch_dict'] = {'num_ch': 64,
-            #                            'num_sl': len(args.state_sizes) - 1,
-            #                            'kernel_sizes': [3, 3, 3],
-            #                            'strides': [1,1],
-            #                            'padding': 1,
-            #                            'mod_connect_dict': mod_connect_dict}
-            # vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 
     if args.dataset == "CIFAR10":
         if args.architecture == 'cifar10_2_layers':
@@ -988,10 +780,6 @@ def finalize_args(parser):
                                        'kernel_sizes': [3, 3],
                                        'strides': [1,1],
                                        'padding': 1}
-
-    # if len(args.energy_weight_mask) != len(args.state_sizes)-1:
-    #     raise RuntimeError("Number of energy_weight_mask args is different"+
-    #                        " from the number of state layers")
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
@@ -1099,6 +887,10 @@ def main():
                              '%(default)s.')
 
     ngroup = parser.add_argument_group('Network and states options')
+    ngroup.add_argument('--network_type', type=str, default="BengioFischer",
+                        help='The type of network that will be used. Options: ' +
+                             '[BengioFischer, VectorField, DAN]'
+                             'Default: %(default)s.')
     ngroup.add_argument('--architecture', type=str, default="cifar10_2_layers",
                         help='The type of architecture that will be built. Options: ' +
                              '[mnist_2_layers_small, cifar10_2_layers, mnist_1_layer_small]'
@@ -1135,6 +927,11 @@ def main():
                         help='')
     ngroup.add_argument('--dampening_param', type=float, default=0.0,
                         help='')
+    ngroup.add_argument('--spec_norm_reg_lin', action='store_true',
+                        help='If true, linear layers are subjected to ' +
+                             'spectral norm regularisation. ' +
+                             'Default: %(default)s.')
+    parser.set_defaults(spec_norm_reg_lin=False)
 
     vgroup = parser.add_argument_group('Visualization options')
     vgroup.add_argument('--viz', action='store_true',
@@ -1245,11 +1042,17 @@ def main():
         os.mkdir(sample_log_dir)
 
     # Set up model
-    #model = nw.DeepAttractorNetwork(args, device, model_name, writer).to(device)
-    model = nw.BengioFischerNetwork(args, device, model_name, writer).to(
+    if args.network_type == 'BengioFischer':
+        model = nw.BengioFischerNetwork(args, device, model_name, writer).to(
         device)
-
-
+    elif args.network_type == 'VectorField':
+        model = nw.VectorFieldNetwork(args, device, model_name, writer).to(
+            device)
+    elif args.network_type == 'DAN':
+        model = nw.DeepAttractorNetwork(args, device, model_name, writer).to(
+            device)
+    else:
+        raise ValueError("Invalid CLI argument for argument 'network_type'. ")
 
     # Set up dataset
     data = Dataset(args)
@@ -1259,10 +1062,6 @@ def main():
         # Train the model
         tm = TrainingManager(args, model, data, buffer, writer, device,
                              sample_log_dir)
-
-        if args.initializer == 'ff_init' and args.pretrain_initializer:
-            tm.pre_train_initializer()
-
         tm.train()
     if args.viz:
         vm = VisualizationManager(args, model, data, buffer, writer, device,
@@ -1284,4 +1083,237 @@ if __name__ == '__main__':
 ###########################################################################
 ###########################################################################
 ###########################################################################
+
+
+
+
+# if args.dataset == 'MNIST':
+#         if args.architecture == 'mnist_1_layer_small':
+#             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+#                                          [args.batch_size, 3, 3, 3]]
+#             vars(args)['arch_dict'] = {'num_ch': 32,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1}
+#         elif args.architecture == 'mnist_2_layers_small':
+#             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+#                                          [args.batch_size, 9, 28, 28],
+#                                          [args.batch_size, 9, 3, 3]]
+#             vars(args)['arch_dict'] = {'num_ch': 16,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1}
+#         elif args.architecture == 'mnist_2_layers_small_equal':
+#             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+#                                          [args.batch_size, 6, 16, 16],
+#                                          [args.batch_size, 256, 3, 3]]
+#             vars(args)['arch_dict'] = {'num_ch': 16,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3],
+#                                        'strides': [1, 0],
+#                                        'padding': 1}
+#         elif args.architecture == 'mnist_3_layers_small':
+#             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+#                                          [args.batch_size, 9, 28, 28], #scale 1
+#                                          [args.batch_size, 9, 3, 3], # scale 87.1
+#                                          [args.batch_size, 9, 1, 1]] # scale 784
+#             vars(args)['arch_dict'] = {'num_ch': 64,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 1],
+#                                        'strides': [1,1,1],
+#                                        'padding': 1}
+#         elif args.architecture == 'mnist_3_layers_med':
+#             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+#                                          [args.batch_size, 64, 28, 28],
+#                                          [args.batch_size, 32, 9, 9],
+#                                          [args.batch_size, 10, 3, 3]]
+#             vars(args)['arch_dict'] = {'num_ch': 64,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1,1],
+#                                        'padding': 0}
+#         elif args.architecture == 'mnist_3_layers_large': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+#             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+#                                          [args.batch_size, 8, 28, 28],  # 6272
+#                                          [args.batch_size, 24, 16, 16], # 6144
+#                                          [args.batch_size, 180, 6, 6]]  # 4608
+#             vars(args)['arch_dict'] = {'num_ch': 64,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1}
+#         elif args.architecture == 'mnist_4_layers_med': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+#             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+#                                          [args.batch_size, 16, 28, 28],  # 12544
+#                                          [args.batch_size, 24, 16, 16],  # 6144
+#                                          [args.batch_size, 32,  9,  9],  # 2592
+#                                          [args.batch_size, 180, 3,  3]]  # 1620
+#             vars(args)['arch_dict'] = {'num_ch': 64,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1}
+#             vars(args)['energy_weight_mask'] = [1, 2, 4.84, 7.743]
+#         elif args.architecture == 'mnist_5_layers_med_fc_top2': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+#             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+#                                          [args.batch_size, 16, 28, 28],  # 12544
+#                                          [args.batch_size, 24, 16, 16],  # 6144
+#                                          [args.batch_size, 32,  9,  9],  # 2592
+#                                          [args.batch_size, 1024],
+#                                          [args.batch_size, 256]]
+#             mod_connect_dict = {0: [],
+#                                 1: [0,1],
+#                                 2: [1,2],
+#                                 3: [2,3],
+#                                 4: [3,4],
+#                                 5: [4,5]}
+#             vars(args)['arch_dict'] = {'num_ch': 64,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1,
+#                                        'mod_connect_dict': mod_connect_dict}
+#             vars(args)['energy_weight_mask'] = [1, 2, 4.84, 12.25, 49]
+#
+#         elif args.architecture == 'mnist_2_layers_small_scl_UandD':
+#             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+#                                          [args.batch_size, 32, 28, 28],  # 25088
+#                                          [args.batch_size, 32, 12, 12],  # 4608
+#                                          ]
+#
+#             mod_connect_dict = {0: [],
+#                                 1: [0,1],
+#                                 2: [1,2]}
+#
+#             vars(args)['arch_dict'] = {'num_ch': 32,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1,
+#                                        'mod_connect_dict': mod_connect_dict}
+#             vars(args)['energy_weight_mask'] = [0.184, 1.0]
+#
+#         elif args.architecture == 'mnist_3_layers_med_fc_top1': # Have roughly equal amount of 'potential energy' (i.e. neurons) in each layer
+#             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+#                                          [args.batch_size, 16, 28, 28],  # 12544
+#                                          [args.batch_size, 32,  9,  9],  # 2592
+#                                          [args.batch_size, 256]]
+#
+#             mod_connect_dict = {0: [],
+#                                 1: [0,1],
+#                                 2: [1,2],
+#                                 3: [2,3]}
+#
+#             vars(args)['arch_dict'] = {'num_ch': 64,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1,
+#                                        'mod_connect_dict': mod_connect_dict}
+#             vars(args)['energy_weight_mask'] = [1, 4.84, 49]
+#
+#         elif args.architecture == 'mnist_3_layers_med_fc_top1_upim_wild':
+#             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+#                                          [args.batch_size, 16, 48, 48],  # 36864
+#                                          [args.batch_size, 32, 12, 12],  # 4608
+#                                          [args.batch_size, 256]]
+#
+#             mod_connect_dict = {0: [],
+#                                 1: [0,1],
+#                                 2: [1,2],
+#                                 3: [2,3]}
+#
+#             vars(args)['arch_dict'] = {'num_ch': 64,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1,
+#                                        'mod_connect_dict': mod_connect_dict}
+#             vars(args)['energy_weight_mask'] = [1.0, 8.0, 144.0]
+#         elif args.architecture == 'mnist_3_layers_large_fc_top1_upim_scl_UandD':
+#             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+#                                          [args.batch_size, 32, 48, 48],  # 73728
+#                                          [args.batch_size, 32, 12, 12],  # 4608
+#                                          [args.batch_size, 1024]]
+#
+#             mod_connect_dict = {0: [],
+#                                 1: [0,1],
+#                                 2: [1,2],
+#                                 3: [2,3]}
+#
+#             vars(args)['arch_dict'] = {'num_ch': 64,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1,
+#                                        'mod_connect_dict': mod_connect_dict}
+#             vars(args)['energy_weight_mask'] = [0.06, 1.0, 2.5]
+#
+#         elif args.architecture == 'mnist_3_layers_small_fc_top1_scl_UandD':
+#             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+#                                          [args.batch_size, 32, 28, 28],  # 25088
+#                                          [args.batch_size, 32, 12, 12],  # 4608
+#                                          [args.batch_size, 256]]
+#
+#             mod_connect_dict = {0: [],
+#                                 1: [0,1],
+#                                 2: [1,2],
+#                                 3: [2,3]}
+#
+#             vars(args)['arch_dict'] = {'num_ch': 32,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1,
+#                                        'mod_connect_dict': mod_connect_dict}
+#             vars(args)['energy_weight_mask'] = [0.184, 1.0, 18.0]
+#
+#         elif args.architecture == 'mnist_4_layers_med_fc_top1_upim':
+#             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+#                                          [args.batch_size, 16, 48, 48],  # 36864
+#                                          [args.batch_size, 32, 12, 12],  # 4608
+#                                          [args.batch_size, 1024],
+#                                          [args.batch_size, 256]]
+#
+#             mod_connect_dict = {0: [],
+#                                 1: [0,1],
+#                                 2: [1,2],
+#                                 3: [2,3],
+#                                 4: [3,4]}
+#
+#             vars(args)['arch_dict'] = {'num_ch': 64,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1,
+#                                        'mod_connect_dict': mod_connect_dict}
+#             vars(args)['energy_weight_mask'] = [1.0, 8.0, 36, 144.0]
+#
+#         elif args.architecture == 'mnist_5_layers_med_fc_top1_upim':
+#             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+#                                          [args.batch_size, 16, 48, 48],  # 36864
+#                                          [args.batch_size, 32, 12, 12],  # 4608
+#                                          [args.batch_size, 32, 6, 6],    # 1152
+#                                          [args.batch_size, 1024],
+#                                          [args.batch_size, 256]]
+#
+#
+#             mod_connect_dict = {0: [],
+#                                 1: [0,1],
+#                                 2: [1,2],
+#                                 3: [2,3],
+#                                 4: [3,4],
+#                                 5: [4,5]}
+#
+#             vars(args)['arch_dict'] = {'num_ch': 64,
+#                                        'num_sl': len(args.state_sizes) - 1,
+#                                        'kernel_sizes': [3, 3, 3],
+#                                        'strides': [1,1],
+#                                        'padding': 1,
+#                                        'mod_connect_dict': mod_connect_dict}
+#             vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+#
+#         elif
 

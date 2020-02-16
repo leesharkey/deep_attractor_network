@@ -146,15 +146,12 @@ class ResBlock(nn.Module):
             out = weight1 * out + bias1
 
         out = F.leaky_relu(out, negative_slope=0.2)
-
         out = self.conv2(out)
-
         if self.class_embed is not None:
             out = weight2 * out + bias2
 
         if self.skip is not None:
             skip = self.skip(input)
-
         else:
             skip = input
 
@@ -164,48 +161,8 @@ class ResBlock(nn.Module):
             out = F.avg_pool2d(out, 2)
 
         out = F.leaky_relu(out, negative_slope=0.2)
-
         return out
 
-
-class IGEBM(nn.Module):
-    def __init__(self, args, device, model_name, n_class=None):
-        super().__init__()
-        self.args = args
-        self.device = device
-        self.model_name = model_name
-
-        # Template conv params:
-        #  torch.nn.Conv2d(in_channels, out_channels, kernel_size, stride=1,
-        #  padding=0, dilation=1, groups=1, bias=True, padding_mode='zeros')
-        self.conv1 = spectral_norm(nn.Conv2d(3, 128, 3, padding=1), std=1)
-
-        self.blocks = nn.ModuleList(
-            [     #in_channel, out_channel, n_class
-                ResBlock(128, 128, n_class, downsample=True),
-                ResBlock(128, 128, n_class),
-                ResBlock(128, 256, n_class, downsample=True),
-                ResBlock(256, 256, n_class),
-                ResBlock(256, 256, n_class, downsample=True),
-                ResBlock(256, 256, n_class),
-            ]
-        )
-
-        self.linear = nn.Linear(256, 1)
-
-    def forward(self, input, class_id=None):
-        out = self.conv1(input)
-
-        out = F.leaky_relu(out, negative_slope=0.2)
-
-        for block in self.blocks:
-            out = block(out, class_id)
-
-        out = F.relu(out)
-        out = out.view(out.shape[0], out.shape[1], -1).sum(2)
-        out = self.linear(out)
-
-        return out
 
 class DenseConv(nn.Module):
     def __init__(self, args, layer_idx):
@@ -215,7 +172,7 @@ class DenseConv(nn.Module):
         self.layer_idx = layer_idx
         self.act = lib.utils.get_activation_function(args)
 
-        # The indices of the state_layers that will be input to this net.
+        # Gets the indices of the state_layers that will be input to this net.
         self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
 
         # The summed number of channels of all the input state_layers
@@ -263,8 +220,8 @@ class FCFC(nn.Module):
         self.act = lib.utils.get_activation_function(args)
         self.layer_idx = layer_idx
 
-        # The indices of the state_layers that will be input to this net and
-        # their sizes. They may be flattened conv outputs.
+        # Get the indices of the state_layers that will be input to this net
+        # and their sizes. They may be flattened conv outputs.
         self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
         self.in_sizes = [torch.prod(torch.tensor(self.args.state_sizes[j][1:]))
                          for j in self.input_idxs]
@@ -288,6 +245,187 @@ class FCFC(nn.Module):
         energy_input = torch.cat(base_outs, dim=1)
         out = self.energy_fc_layer(energy_input)
         return out
+
+
+class LinearLayer(nn.Module):
+    def __init__(self, args, layer_idx):
+        super().__init__()
+        self.args = args
+        self.layer_idx = layer_idx
+
+        # Get the indices of the state_layers that will be input to this net
+        # and their sizes. They may be flattened conv outputs.
+        self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
+        self.in_sizes = [torch.prod(torch.tensor(self.args.state_sizes[j][1:]))
+                         for j in self.input_idxs]
+
+        self.out_size = int(torch.prod(torch.tensor(
+            self.args.state_sizes[layer_idx][1:]))) # Size of current statelayer
+        self.layers = nn.ModuleList([
+            nn.Linear(in_size, self.out_size, bias=False)
+            for in_size in self.in_sizes])
+        if self.args.spec_norm_reg_lin:
+            for layer in self.layers:
+                layer = spectral_norm(layer, bound=True)
+
+    def forward(self, pre_states, actv_post_states, class_id=None):
+        reshaped_inps = [inp.view(inp.shape[0], -1) for inp in actv_post_states]
+        outs = [lin_layer(inp) for lin_layer, inp in zip(self.layers,
+                                                         reshaped_inps)]
+        new_outs = sum([0.5 * torch.einsum('ba,ba->b', out,
+                               pre_states.view(self.args.batch_size, -1))
+                    for out in outs])
+        return new_outs
+
+
+class VectorFieldNetwork(nn.Module):
+    """Defines the vector field studied by Scellier et al. (2018)
+
+    @misc{scellier2018generalization,
+        title={Generalization of Equilibrium Propagation to Vector Field Dynamics},
+        author={Benjamin Scellier and Anirudh Goyal and Jonathan Binas and Thomas Mesnard and Yoshua Bengio},
+        year={2018},
+        eprint={1808.04873},
+        archivePrefix={arXiv},
+        primaryClass={cs.LG}
+    }
+    https://arxiv.org/abs/1808.04873
+
+    The network is a relaxation of the continuous Hopfield-like network (CHN)
+    studied by Bengio and Fischer (2015) and later in
+    Equilibrium Propagation (Scellier et al. 2017) and other works. It
+    no longer required symmetric weights as in the CHN.
+    """
+    def __init__(self, args, device, model_name, writer, n_class=None):
+        super().__init__()
+        self.args = args
+        self.device = device
+        self.writer = writer
+        self.model_name = model_name
+        self.num_state_layers = len(self.args.state_sizes[1:])
+
+        self.quadratic_nets = nn.ModuleList([
+            LinearLayer(args, i) for i in range(len(self.args.state_sizes))
+        ])
+        # self.weights = nn.ModuleList(
+        #     [nn.Linear(torch.prod(torch.tensor(l1[1:])),
+        #                torch.prod(torch.tensor(l2[1:])), bias=False)
+        #      for l1, l2 in zip(args.state_sizes[:-1], args.state_sizes[1:])])
+        self.biases = nn.ModuleList([nn.Linear(torch.prod(torch.tensor(l[1:])),
+                                               1, bias=False)
+                       for l in args.state_sizes])
+        for bias in self.biases:
+            torch.nn.init.zeros_(bias.weight)
+
+        if self.args.activation == "hardsig":
+            self.actvn = activations.get_hard_sigmoid()
+        elif self.args.activation == "relu":
+            self.actvn = activations.get_relu()
+        elif self.args.activation == "swish":
+            self.actvn = activations.get_swish()
+
+    def forward(self, states, class_id=None, step=None):
+
+        # Squared norm
+        sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in states])
+
+        # Linear terms
+        linear_terms = - sum([bias(self.actvn(layer.view(layer.shape[0], -1))).sum()
+                              for layer, bias in
+                              zip(states, self.biases)])
+        #TODO consider putting spectral norm on the linear layers because it might help settling time. Would be worth checking that!
+        # Quadratic terms
+        outs = []
+        for i, (pre_state, net) in enumerate(zip(states, self.quadratic_nets)):
+            post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            pos_inp_states = [states[j] for j in post_inp_idxs]
+            out = net(pre_state, pos_inp_states) # i-1 because nets are 0 indexed but start at statelayer1
+            outs.append(out)
+
+        # if self.args.log_histograms and step is not None and \
+        #     step % self.args.histogram_logging_interval == 0:
+        #     for i, enrg in enumerate(outs):
+        #         layer_string = 'train/energies_%s' % i
+        #         self.writer.add_histogram(layer_string, enrg, step)
+        # reshaped_outs = [out.view(out.shape[0], -1) for out in outs]
+        # reshaped_outs = [out * mask.view(out.shape[0], -1)
+        #         for out, mask in zip(reshaped_outs, self.energy_weight_masks)]
+        quadratic_terms = - sum(sum(outs))
+
+        energy = sq_nrm + linear_terms + quadratic_terms
+
+        return energy, outs
+
+
+
+
+        # quadratic_terms = - sum([0.5 * sum(torch.einsum('ba,ba->b',
+        #                                                 W(self.actvn(pre.view(self.args.batch_size, -1))),
+        #                                                 self.actvn(post.view(self.args.batch_size, -1))))
+        #                          for pre, W, post in
+        #                          zip(states[:-1], self.weights, states[1:])])
+        return sq_nrm + linear_terms + quadratic_terms, None
+
+
+class BengioFischerNetwork(nn.Module):
+    """Defines the attractor network studied by Bengio and Fischer
+
+    Bengio, Y. and Fischer, A. (2015). Early inference in energy-based models
+    approximates back-propagation. Technical Report arXiv:1510.02777,
+    Universite de Montreal.
+
+    Bengio, Y., Mesnard, T., Fischer, A., Zhang, S., and Wu, Y. (2015).
+    STDP as presynaptic activity times rate of change of postsynaptic activity.
+    arXiv:1509.05936.
+
+    The network is a continuous Hopfield-like network. It was first
+    studied by Bengio and Fischer (2015), and has since been used in
+    Equilibrium Propagation (Scellier et al. 2017) and other works.
+    """
+    def __init__(self, args, device, model_name, writer, n_class=None):
+        super().__init__()
+        self.args = args
+        self.device = device
+        self.writer = writer
+        self.model_name = model_name
+        self.num_state_layers = len(self.args.state_sizes[1:])
+
+
+        self.weights = nn.ModuleList(
+            [nn.Linear(torch.prod(torch.tensor(l1[1:])),
+                       torch.prod(torch.tensor(l2[1:])), bias=False)
+             for l1, l2 in zip(args.state_sizes[:-1], args.state_sizes[1:])])
+        self.biases = nn.ModuleList([nn.Linear(torch.prod(torch.tensor(l[1:])),
+                                               1, bias=False)
+                       for l in args.state_sizes])
+        for bias in self.biases:
+            torch.nn.init.zeros_(bias.weight)
+
+        if self.args.activation == "hardsig":
+            self.actvn = activations.get_hard_sigmoid()
+        elif self.args.activation == "relu":
+            self.actvn = activations.get_relu()
+        elif self.args.activation == "swish":
+            self.actvn = activations.get_swish()
+
+    def forward(self, states, class_id=None, step=None):
+
+        # Squared norm
+        sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in states])
+
+        # Linear terms
+        linear_terms = - sum([bias(self.actvn(layer.view(layer.shape[0], -1))).sum()
+                              for layer, bias in
+                              zip(states, self.biases)])
+
+        quadratic_terms = - sum([0.5 * sum(torch.einsum('ba,ba->b',
+                                                        W(self.actvn(pre.view(self.args.batch_size, -1))),
+                                                        self.actvn(post.view(self.args.batch_size, -1))))
+                                 for pre, W, post in
+                                 zip(states[:-1], self.weights, states[1:])])
+        return sq_nrm + linear_terms + quadratic_terms, None
+
+
 
 class DeepAttractorNetwork(nn.Module):
     """Define the attractor network
@@ -389,16 +527,29 @@ class InitializerNetwork(torch.nn.Module):
         self.sides = nn.ModuleList([])
         self.in_channels = self.args.state_sizes[0][1]
 
-        self.enc_base = nn.Sequential(nn.BatchNorm2d(self.in_channels),
-                                  cust_actv.Swish_module(),
-                                  nn.Conv2d(in_channels=self.in_channels,
-                                            out_channels=self.num_ch,
-                                            kernel_size=3,
-                                            padding=1,
-                                            bias=True))
+        # Define the base encoder
+        if len(self.args.state_sizes[1])==4:
+            self.enc_base = nn.Sequential(nn.BatchNorm2d(self.in_channels),
+                                      cust_actv.Swish_module(),
+                                      nn.Conv2d(in_channels=self.in_channels,
+                                                out_channels=self.num_ch,
+                                                kernel_size=3,
+                                                padding=1,
+                                                bias=True))
+        elif len(self.args.state_sizes[1])==2:
+            img_size = int(torch.prod(torch.tensor(self.args.state_sizes[0][1:])))
+            self.enc_base = nn.Sequential(
+                                      Reshape(self.args.batch_size, img_size),
+                                      nn.Linear(in_features=img_size,
+                                                out_features=img_size),
+                                      cust_actv.Swish_module(),
+                                      nn.BatchNorm1d(img_size))
+
+
+        # Define the rest of the encoders
         for i in range(1, len(self.args.state_sizes)):
             # encs should take as input the image size and output the statesize for that statelayer
-            if len(self.args.state_sizes[i]) == 4:
+            if len(self.args.state_sizes[i]) == 4: #TODO this is a hack for the new type of networks with dim4 in sl0
                 self.encs.append(
                                 nn.Sequential(
                                           nn.BatchNorm2d(self.num_ch),
@@ -411,9 +562,8 @@ class InitializerNetwork(torch.nn.Module):
                                           Interpolate(size=self.args.state_sizes[i][2:],
                                                       mode='bilinear')).to(self.device))
             elif len(self.args.state_sizes[i]) == 2:
-                prev_size = [self.num_ch]
-                prev_size.extend(self.args.state_sizes[i - 1][2:])
-                prev_size = torch.prod(torch.tensor(prev_size))
+                prev_size = self.args.state_sizes[i - 1][1:]
+                prev_size = int(torch.prod(torch.tensor(prev_size)))
                 new_size = (self.args.batch_size, prev_size)
                 # new_size.extend(self.args.state_sizes[i][1])
                 self.encs.append(
@@ -424,7 +574,10 @@ class InitializerNetwork(torch.nn.Module):
                         cust_actv.Swish_module(),
                         nn.BatchNorm1d(self.args.state_sizes[i][1])))
 
-                # Sides should output the statesize for that statelayer and input is same size as output.
+            # Define the side branches that split off from the encoder and
+            # output the state layer initializations at each statelayer
+
+            # Sides should output the statesize for that statelayer and input is same size as output.
             # so long as the input to the side is the same as the size of the
             # base conv (i.e. the statesize), I can just use the same settings
             # as for the base+energy convs
@@ -492,63 +645,6 @@ class InitializerNetwork(torch.nn.Module):
             self.writer.add_scalar('train/initter_loss', loss.item(),
                                    step)
         return loss
-
-
-class BengioFischerNetwork(nn.Module):
-    """Defines the attractor network studied by Bengio and Fischer
-
-    Bengio, Y. and Fischer, A. (2015). Early inference in energy-based models
-    approximates back-propagation. Technical Report arXiv:1510.02777,
-    Universite de Montreal.
-
-    Bengio, Y., Mesnard, T., Fischer, A., Zhang, S., and Wu, Y. (2015).
-    STDP as presynaptic activity times rate of change of postsynaptic activity.
-    arXiv:1509.05936.
-
-    The network is a continuous Hopfield-like network.
-    """
-    def __init__(self, args, device, model_name, writer, n_class=None):
-        super().__init__()
-        self.args = args
-        self.device = device
-        self.writer = writer
-        self.model_name = model_name
-        self.num_state_layers = len(self.args.state_sizes[1:])
-        self.weights = nn.ModuleList([nn.Linear(l1[1], l2[1], bias=False) for l1, l2 in
-                        zip(args.state_sizes[:-1], args.state_sizes[1:])])
-        #TODO consider zeroing the diagonal
-        self.biases = nn.ModuleList([nn.Linear(l[1], 1, bias=False)
-                       for l in args.state_sizes])
-        #TODO consider zero initting
-
-        if self.args.activation == "hardsig":
-            self.actvn = activations.get_hard_sigmoid()
-        elif self.args.activation == "relu":
-            self.actvn = activations.get_relu()
-        elif self.args.activation == "swish":
-            self.actvn = activations.get_swish()
-
-    def forward(self, states, class_id=None, step=None):
-
-        # Squared norm
-        sq_nrm = sum([(0.5 * (layer.view(self.args.batch_size, -1) ** 2)).sum() for layer in states])
-
-        # Linear terms
-        linear_terms = - sum([bias(self.actvn(layer.view(self.args.batch_size, -1))).sum()
-                              for layer, bias in
-                              zip(states, self.biases)])
-
-        quadratic_terms = - sum([0.5 * sum(torch.einsum('ba,ba->b',
-                                                        W(self.actvn(pre.view(self.args.batch_size, -1))),
-                                                        self.actvn(post.view(self.args.batch_size, -1))))
-                                 for pre, W, post in
-                                 zip(states[:-1], self.weights, states[1:])])
-        return sq_nrm + linear_terms + quadratic_terms, None
-#TODO fix pos_buffer_frac for new network1
-
-
-
-
 
 
 
