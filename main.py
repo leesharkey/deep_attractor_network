@@ -942,6 +942,29 @@ def finalize_args(parser):
                                          [args.batch_size, 100],  # 4608
                                          [args.batch_size, 10]]
 
+        elif args.architecture == 'BFN_med_4_layers':
+            vars(args)['state_sizes'] = [[args.batch_size, 784],
+                                         [args.batch_size, 500],  # 36864
+                                         [args.batch_size, 500],  # 4608
+                                         [args.batch_size, 200]]
+
+            # mod_connect_dict = {0: []}
+            #
+            # vars(args)['arch_dict'] = {'num_ch': 64,
+            #                            'num_sl': len(args.state_sizes) - 1,
+            #                            'kernel_sizes': [3, 3, 3],
+            #                            'strides': [1,1],
+            #                            'padding': 1,
+            #                            'mod_connect_dict': mod_connect_dict}
+            # vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+
+        elif args.architecture == 'BFN_large_5_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  784],
+                                         [args.batch_size, 1000],  # 36864
+                                         [args.batch_size, 1000],  # 4608
+                                         [args.batch_size, 300],
+                                         [args.batch_size, 300]]
+
 
             # mod_connect_dict = {0: []}
             #
