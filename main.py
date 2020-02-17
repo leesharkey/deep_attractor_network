@@ -766,6 +766,67 @@ def finalize_args(parser):
                                    'mod_connect_dict': mod_connect_dict}
         vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 
+    elif args.architecture == 'DAN_small_4_layers_experimental':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 1, 56, 56],
+                                     [args.batch_size, 16, 16, 16],
+                                     [args.batch_size, 32, 8, 8],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,1,2],
+                            2: [1,2,3],
+                            3: [1, 2, 4],
+                            4: [2, 4],
+                            5: [0,1,2,3,4]} # no self connections, just a FF-like net
+
+        vars(args)['arch_dict'] = {'num_ch': 64,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict}
+        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+
+    elif args.architecture == 'DAN_small_4_layers':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 32, 16, 16],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,2],
+                            2: [1,3],
+                            3: [2]} # no self connections, just a FF-like net
+
+        vars(args)['arch_dict'] = {'num_ch': 32,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict}
+        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+
+    elif args.architecture == 'DAN_small_4_layers_self':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 32, 16, 16],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,1,2],
+                            2: [1,2,3],
+                            3: [2,3]} # no self connections, just a FF-like net
+
+        vars(args)['arch_dict'] = {'num_ch': 32,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict}
+        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+
 
 
     if args.dataset == "CIFAR10":
@@ -894,6 +955,10 @@ def main():
     ngroup.add_argument('--architecture', type=str, default="cifar10_2_layers",
                         help='The type of architecture that will be built. Options: ' +
                              '[mnist_2_layers_small, cifar10_2_layers, mnist_1_layer_small]'
+                             'Default: %(default)s.')
+    ngroup.add_argument('--states_activation', type=str, default="hardsig",
+                        help='The activation function. Options: ' +
+                             '[hardsig, relu, swish]'
                              'Default: %(default)s.')
     ngroup.add_argument('--activation', type=str, default="leaky_relu",
                         help='The activation function. Options: ' +
