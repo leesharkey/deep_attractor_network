@@ -9,6 +9,9 @@ import lib.utils
 import lib.custom_swish_activation as cust_actv
 from lib import activations #TODO clean up scripts later
 
+#SGHMC
+#https://pysgmcmc.readthedocs.io/en/pytorch/_modules/pysgmcmc/optimizers/sghmc.html
+
 
 def get_swish():
     sigmoid = torch.nn.Sigmoid()
@@ -275,9 +278,9 @@ class ConvFCMixturetoTwoDim(nn.Module):
         energy_input = torch.cat([resized_base_conv_out, fc_outs_cat], dim=1) #Unsure about dim
         out = self.act(self.energy_layer(energy_input))
         new_out = 0.5 * torch.einsum('ba,ba->b', out.view(
-                                         self.args.batch_size, -1),
+                                         out.shape[0], -1),
                                      pre_states.view(
-                                         self.args.batch_size, -1))
+                                         pre_states.shape[0], -1))
         return new_out
 
 
@@ -291,7 +294,7 @@ class ConvFCMixturetoFourDim(nn.Module):
         self.pad_mode = 'zeros'
         self.layer_idx = layer_idx
         self.act = lib.utils.get_activation_function(args)
-        self.num_fc_channels = 516
+        self.num_fc_channels = self.args.arch_dict['num_fc_channels']
 
         # Gets the indices of the state_layers that will be input to this net.
         self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
@@ -333,7 +336,7 @@ class ConvFCMixturetoFourDim(nn.Module):
                                         spectral_norm(nn.Linear(in_size, out_size),
                                                                bound=True),
                                         self.act,
-                                        Reshape(self.args.batch_size, out_size, 1, 1), # makes each neuron a 'channel'
+                                        Reshape(-1, out_size, 1, 1), # makes each neuron a 'channel'
                                         self.interp) # Spreads each 1D channel across the whole sheet of latent neurons
             )
 
@@ -361,8 +364,8 @@ class ConvFCMixturetoFourDim(nn.Module):
         fc_outs = torch.cat(fc_outs, dim=1)
         energy_input = torch.cat([reshaped_inps, base_conv_out, fc_outs],dim=1)
         out = self.act(self.energy_conv(energy_input))
-        new_out = 0.5 * torch.einsum('ba,ba->b', out.view(self.args.batch_size, -1),
-                                     pre_states.view(self.args.batch_size, -1))
+        new_out = 0.5 * torch.einsum('ba,ba->b', out.view(int(out.shape[0]), -1),
+                                     pre_states.view(int(pre_states.shape[0]), -1))
         return new_out
 
 
@@ -413,8 +416,8 @@ class DenseConv(nn.Module):
         base_out = self.act(self.base_conv(reshaped_inps))
         energy_input = torch.cat([reshaped_inps, base_out], dim=1)
         out = self.act(self.energy_conv(energy_input))
-        new_out = 0.5 * torch.einsum('ba,ba->b', out.view(self.args.batch_size, -1),
-                                                 pre_states.view(self.args.batch_size, -1))
+        new_out = 0.5 * torch.einsum('ba,ba->b', out.view(int(out.shape[0]), -1),
+                                     pre_states.view(int(pre_states.shape[0]), -1))
         return new_out
 
 
@@ -451,8 +454,7 @@ class FCFC(nn.Module):
         energy_input = torch.cat(base_outs, dim=1)
         out = self.energy_actv_fc_layer(energy_input)
         new_out = 0.5 * torch.einsum('ba,ba->b', out,
-                                           pre_states.view(
-                                               self.args.batch_size, -1))
+                                     pre_states.view(pre_states.shape[0], -1))
         return new_out
 
 
@@ -482,7 +484,7 @@ class LinearLayer(nn.Module):
         outs = [lin_layer(inp) for lin_layer, inp in zip(self.layers,
                                                          reshaped_inps)]
         new_outs = sum([0.5 * torch.einsum('ba,ba->b', out,
-                               pre_states.view(self.args.batch_size, -1))
+                               pre_states.view(pre_states.shape[0], -1))
                     for out in outs])
         return new_outs
 
@@ -564,7 +566,8 @@ class DeepAttractorNetwork(nn.Module):
         # reshaped_outs = [out.view(out.shape[0], -1) for out in outs]
         # reshaped_outs = [out * mask.view(out.shape[0], -1)
         #         for out, mask in zip(reshaped_outs, self.energy_weight_masks)]
-        quadratic_terms = - sum(sum(outs))
+        outs = sum(outs)
+        quadratic_terms = - sum(outs)
 
         energy = sq_nrm + linear_terms + quadratic_terms
 
@@ -703,8 +706,8 @@ class BengioFischerNetwork(nn.Module):
                               zip(states, self.biases)])
 
         quadratic_terms = - sum([0.5 * sum(torch.einsum('ba,ba->b',
-                                                        W(self.actvn(pre.view(self.args.batch_size, -1))),
-                                                        self.actvn(post.view(self.args.batch_size, -1))))
+                                                        W(self.actvn(pre.view(pre.shape[0], -1))),
+                                                        self.actvn(post.view(post.shape[0], -1))))
                                  for pre, W, post in
                                  zip(states[:-1], self.weights, states[1:])])
         return sq_nrm + linear_terms + quadratic_terms, None
@@ -729,7 +732,7 @@ class InitializerNetwork(torch.nn.Module):
         self.swish = get_swish()
         self.criterion = nn.MSELoss()
         self.criteria = []
-        self.num_ch = 16
+        self.num_ch = self.args.arch_dict['num_ch_initter']
         self.encs = nn.ModuleList([])
         self.sides = nn.ModuleList([])
         self.in_channels = self.args.state_sizes[0][1]
@@ -769,8 +772,14 @@ class InitializerNetwork(torch.nn.Module):
                                           Interpolate(size=self.args.state_sizes[i][2:],
                                                       mode='bilinear')).to(self.device))
             elif len(self.args.state_sizes[i]) == 2:
-                prev_size = self.args.state_sizes[i - 1][1:]
-                prev_size = int(torch.prod(torch.tensor(prev_size)))
+                prev_sl_shape = self.args.state_sizes[i - 1]
+                if len(prev_sl_shape) == 4:
+                    prev_size = self.args.state_sizes[i - 1][2:]
+                    prev_size.append(self.num_ch)
+                    prev_size = int(torch.prod(torch.tensor(prev_size)))
+                elif len(prev_sl_shape) == 2:
+                    prev_size = self.args.state_sizes[i - 1][1]
+
                 new_size = (self.args.batch_size, prev_size)
                 # new_size.extend(self.args.state_sizes[i][1])
                 self.encs.append(

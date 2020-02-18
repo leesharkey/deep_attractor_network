@@ -443,7 +443,6 @@ class VisualizationManager(TrainingManager):
                                    size[1]]]
         self.args.state_sizes = new_state_sizes
         self.model.args.state_sizes = new_state_sizes
-        self.model.calc_energy_weight_masks()
 
     def calc_clamp_array_conv(self, state_layer_idx=None):
 
@@ -565,7 +564,7 @@ class VisualizationManager(TrainingManager):
                     else:
                         ch_str = str(channel_idx) + '_'
 
-                utils.save_image(states[0].reshape(self.args.batch_size, 1, 28, 28).detach().to('cpu'), #TODO fix so the size isn't hardcoded
+                utils.save_image(states[0].detach().to('cpu'), #TODO fix so the size isn't hardcoded
                                  os.path.join(self.sample_log_dir,
                                               str(state_layer_idx) + '_' +
                                               ch_str +
@@ -801,11 +800,13 @@ def finalize_args(parser):
                             3: [2]} # no self connections, just a FF-like net
 
         vars(args)['arch_dict'] = {'num_ch': 32,
+                                   'num_ch_initter': 16,
                                    'num_sl': len(args.state_sizes) - 1,
                                    'kernel_sizes': [3, 3, 3],
                                    'strides': [1,1],
                                    'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict}
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 64}
         vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 
     elif args.architecture == 'DAN_small_4_layers_self':
@@ -824,7 +825,8 @@ def finalize_args(parser):
                                    'kernel_sizes': [3, 3, 3],
                                    'strides': [1,1],
                                    'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict}
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 128}
         vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 
 
@@ -1039,7 +1041,7 @@ def main():
                         help='List of CLI args to that will take the current'+
                              'values and not the values of the loaded '+
                              'argument dictionary. Default: %(default)s.',
-                        required=False)
+                        required=False) # when viz, must use: num_it_viz viz_img_logging_step_interval viz_type
     ngroup.add_argument('--sample_buffer_prob', type=float, default=0.95,
                         help='The probability that the network will be ' +
                              'initialised from the buffer instead of from '+
