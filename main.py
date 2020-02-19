@@ -794,7 +794,7 @@ def finalize_args(parser):
                                      [args.batch_size, 100],
                                      [args.batch_size, 50]]
 
-        mod_connect_dict = {0: [1],
+        mod_connect_dict = {0: [0],
                             1: [0,2],
                             2: [1,3],
                             3: [2]} # no self connections, just a FF-like net
@@ -807,7 +807,7 @@ def finalize_args(parser):
                                    'padding': 1,
                                    'mod_connect_dict': mod_connect_dict,
                                    'num_fc_channels': 64}
-        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+        vars(args)['energy_weight_mask'] = [10.45, 1.0, 81.92, 163.84]
 
     elif args.architecture == 'DAN_small_4_layers_self':
         vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],

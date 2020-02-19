@@ -556,6 +556,7 @@ class DeepAttractorNetwork(nn.Module):
             pos_inp_states = [self.state_actv(state)
                               for state in pos_inp_states]
             out = net(pre_state, pos_inp_states) # i-1 because nets are 0 indexed but start at statelayer1
+            out = self.args.energy_weight_mask[i] * out
             outs.append(out)
 
         # if self.args.log_histograms and step is not None and \
