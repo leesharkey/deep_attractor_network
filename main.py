@@ -959,7 +959,7 @@ def finalize_args(parser):
         mod_connect_dict = {0: [1],
                             1: [0,1,2],
                             2: [1,2,3],
-                            3: [2,3]} # no self connections, just a FF-like net
+                            3: [2,3]}
 
         vars(args)['arch_dict'] = {'num_ch': 32,
                                    'num_sl': len(args.state_sizes) - 1,
@@ -973,17 +973,27 @@ def finalize_args(parser):
 
 
     if args.dataset == "CIFAR10":
-        if args.architecture == 'cifar10_2_layers':
-            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
-                                         [args.batch_size, 3, 32, 32],
-                                         [args.batch_size, 9, 16, 16],
-                                         [args.batch_size, 9, 8, 8],
-                                         [args.batch_size, 9, 2, 2]]  # ,#[args.batch_size, 18, 8, 8]]
+        if args.architecture == 'DAN_cifar10_large_5_layers_self':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
+                                         [args.batch_size, 64, 16, 16], # 16384
+                                         [args.batch_size, 64, 10, 10], # 6400
+                                         [args.batch_size, 516],
+                                         [args.batch_size, 128]]
+
+            mod_connect_dict = {0: [0, 1],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3, 4],
+                                4: [3, 4]}
+
             vars(args)['arch_dict'] = {'num_ch': 64,
                                        'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3],
-                                       'strides': [1,1],
-                                       'padding': 1}
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1, 1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 128}
+            vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
