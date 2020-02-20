@@ -993,7 +993,7 @@ def finalize_args(parser):
                                        'padding': 1,
                                        'mod_connect_dict': mod_connect_dict,
                                        'num_fc_channels': 128}
-            vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+            vars(args)['energy_weight_mask'] = [1.0, 0.18, 0.48, 5.95, 24.0]
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
