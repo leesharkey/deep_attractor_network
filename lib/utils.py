@@ -19,7 +19,7 @@ def save_configs_to_csv(args, model_name, results_dict=None):
 
     # Convert any lists into string so csvs can take them
     for k, v in arg_dict.items():
-        arg_dict[k] = str(v) if type(v) ==list else v
+        arg_dict[k] = str(v) if type(v) ==list or type(v) ==dict else v
 
     # Check there isn't already a df for this model; adjust model name if so
     if os.path.isfile("exps/params_and_results_%s.csv" % model_name):

@@ -9,7 +9,7 @@ from torchvision import datasets, transforms, utils
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import lib.networks as nw
-from lib.data import SampleBuffer, sample_data, Dataset
+from lib.data import SampleBuffer, Dataset #sample_data
 import lib.utils
 
 
@@ -27,11 +27,14 @@ class TrainingManager():
         self.optimizer = optim.Adam(self.parameters,
                                     lr=args.lr,
                                     betas=(0.9, 0.999))
+        lmbda = lambda epoch: 0.95
+        self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizer,
+                                                     lr_lambda=lmbda)
         self.noises = lib.utils.generate_random_states(self.args.state_sizes,
                                                        self.device)
         self.global_step = 0
         self.batch_num = 0
-
+        self.epoch = 0
         # Load initializer network (initter)
         if args.initializer == 'ff_init':
             self.initter = nw.InitializerNetwork(args, writer, device)
@@ -75,47 +78,58 @@ class TrainingManager():
         prev_states = None
 
         # Main training loop
-        for batch, (pos_img, pos_id) in self.data.loader:
+        #for batch, (pos_img, pos_id) in self.data.loader:
+        for e in range(10000):
+            for pos_img, pos_id in self.data.loader:
+                #print("Batch:       %i" % batch)
+                print("Global step: %s" % str(self.global_step))
+                pos_states, pos_id = self.positive_phase(pos_img, pos_id,
+                                                         prev_states)
 
-            pos_states, pos_id = self.positive_phase(pos_img, pos_id,
-                                                     prev_states)
+                neg_states, neg_id = self.negative_phase()
+                self.param_update_phase(neg_states, neg_id, pos_states, pos_id)
 
-            neg_states, neg_id = self.negative_phase()
-            self.param_update_phase(neg_states, neg_id, pos_states, pos_id)
+                prev_states = pos_states # In case pos init uses prev states
 
-            prev_states = pos_states # In case pos init uses prev states
-
-            # Log images
-            if self.batch_num % self.args.img_logging_interval == 0:
-                shape = pos_img.shape
-                neg_imgs_save = neg_states[0].reshape(shape).detach().to('cpu')
-                utils.save_image(neg_imgs_save,
-                                 os.path.join(self.sample_log_dir,
-                                      str(self.batch_num).zfill(6) + '.png'),
-                                 nrow=16, normalize=True, range=(0, 1))
-                if self.args.save_pos_images:
-                    pos_imgs_save = pos_states[0].reshape(shape).detach().to('cpu')
-                    utils.save_image(pos_imgs_save,
-                         os.path.join(self.sample_log_dir,
-                             'p0_' + str(self.batch_num).zfill(6) + '.png'),
+                # Log images
+                if self.batch_num % self.args.img_logging_interval == 0:
+                    shape = pos_img.shape
+                    neg_imgs_save = neg_states[0].reshape(shape).detach().to('cpu')
+                    utils.save_image(neg_imgs_save,
+                                     os.path.join(self.sample_log_dir,
+                                          str(self.batch_num).zfill(6) + '.png'),
                                      nrow=16, normalize=True, range=(0, 1))
+                    if self.args.save_pos_images:
+                        pos_imgs_save = pos_states[0].reshape(shape).detach().to('cpu')
+                        utils.save_image(pos_imgs_save,
+                             os.path.join(self.sample_log_dir,
+                                 'p0_' + str(self.batch_num).zfill(6) + '.png'),
+                                         nrow=16, normalize=True, range=(0, 1))
 
-            # Save network(s) and settings
-            if self.batch_num % self.args.model_save_interval == 0:
-                save_dict = self.make_save_dict()
-                path = 'exps/models/' + self.model.model_name + '.pt'
-                torch.save(save_dict, path)
+                # Save network(s) and settings
+                if self.batch_num % self.args.model_save_interval == 0:
+                    save_dict = self.make_save_dict()
+                    path = 'exps/models/' + self.model.model_name + '.pt'
+                    torch.save(save_dict, path)
 
-            self.batch_num += 1
-            if self.batch_num >= 1e6:
-                # at batchsize=128 there are 390 batches
-                # per epoch, so at 1e6 max batches that's 2.56k epochs.
-                break
+                self.batch_num += 1
+                if self.batch_num >= 1e6:
+                    # at batchsize=128 there are 390 batches
+                    # per epoch, so at 1e6 max batches that's 2.56k epochs.
+                    break
+
+            print("End of epoch %i" % self.epoch)
+            self.epoch += 1
+            self.scheduler.step()
+            print("Decrementing learning rate")
 
         # Save network(s) and settings when training is complete too
         save_dict = self.make_save_dict()
         path = 'exps/models/' +self.model.model_name + '.pt'
         torch.save(save_dict, path)
+
+
+
 
     def initialize_pos_states(self, pos_img=None, pos_id=None,
                               prev_states=None):
@@ -228,19 +242,11 @@ class TrainingManager():
 
     def sampler_step(self, states, ids, positive_phase=False, step=None):
 
-        # Calculate the gradient for the Langevin step
-        energy, _ = self.model(states, ids, step)  # Outputs energy of states
+        # Get total energy and energy outputs for indvdual neurons
+        energy, outs = self.model(states, ids, step)
 
-        if positive_phase and step % self.args.scalar_logging_interval == 0:
-            print('\nPos Energy: ' + str(energy.cpu().detach().numpy()))
-            self.writer.add_scalar('train/PosSamplesEnergy', energy,
-                                   self.global_step)
-        elif step % self.args.scalar_logging_interval == 0:
-            print('\nNeg Energy: ' + str(energy.cpu().detach().numpy()))
-            self.writer.add_scalar('train/NegSamplesEnergy', energy,
-                                   self.global_step)
-
-        # Take gradient wrt states (before addition of noise)
+        # Calculate the gradient wrt states for the Langevin step (before
+        # addition of noise)
         energy.backward()
         torch.nn.utils.clip_grad_norm_(states,
                                        self.args.clip_state_grad_norm,
@@ -267,11 +273,81 @@ class TrainingManager():
             else:
                 optimizer.step()
 
+        # Log data to tensorboard
+        ## Energies for layers (mean scalar and all histogram)
+        if step % self.args.scalar_logging_interval == 0 and step is not None:
+            for i, enrg in enumerate(outs):
+                mean_layer_string = 'layers/mean_energies_%s' % i
+                #print("Logging mean energies")
+                self.writer.add_scalar(mean_layer_string, enrg.mean(), step)
+                if self.args.log_histograms  and \
+                        step % self.args.histogram_logging_interval == 0:
+                    hist_layer_string = 'layers/hist_energies_%s' % i
+                    #print("Logging energy histograms")
+                    self.writer.add_histogram(hist_layer_string, enrg, step)
+
+        ## Pos or Neg total energies
+        if positive_phase and step % self.args.scalar_logging_interval == 0:
+            print('\nPos Energy: ' + str(energy.cpu().detach().numpy()))
+            self.writer.add_scalar('train/PosSamplesEnergy', energy,
+                                   self.global_step)
+        elif step % self.args.scalar_logging_interval == 0: #i.e. if negative phase and appropriate step
+            print('\nNeg Energy: ' + str(energy.cpu().detach().numpy()))
+            self.writer.add_scalar('train/NegSamplesEnergy', energy,
+                                   self.global_step)
+
+        ## States and momenta (mean and histograms)
+        if step % self.args.scalar_logging_interval == 0:
+            for i, state in enumerate(states):
+                mean_layer_string = 'layers/mean_states_%s' % i
+                #print("Logging mean energies")
+                self.writer.add_scalar(mean_layer_string, state.mean(), step)
+                if self.args.log_histograms  and \
+                        step % self.args.histogram_logging_interval == 0:
+                    hist_layer_string = 'layers/hist_states_%s' % i
+                    #print("Logging energy histograms")
+                    self.writer.add_histogram(hist_layer_string, state, step)
+        ## States and momenta (specific)
+        if step % self.args.scalar_logging_interval == 0:
+            idxss = [[(0,0,0,0)], [(0,0,0,0)], [None], [None]]
+            self.log_specific_states_and_momenta(states, outs, idxss, step)
+        # End of data logging
+
+
         # Prepare gradients and sample for next sampling step
         for state in states:
             state.grad.detach_()
             state.grad.zero_()
             state.data.clamp_(0, 1)
+
+    def log_specific_states_and_momenta(self, states, outs, idxss, step):
+        for j, (state, out, idxs, opt) in enumerate(zip(states, outs, idxss,
+                                                  self.state_optimizers)):
+            for idx in idxs:
+                if idx is None:
+                    break
+                neuron_label = str(j)+'_'+str(idx)[:-1]
+                print("Logging specific state %s" % str(j)+'_'+str(idx))
+
+                spec_state_val_string = 'spec/state_%s' % neuron_label
+                spec_state_grad_string = 'spec/state_grad_%s' % neuron_label
+                spec_state_enrg_string = 'spec/state_enrg_%s' % neuron_label
+
+                state_value = state[idx]
+                state_grad  = state.grad[idx]
+                state_enrg  = out[idx]
+
+                self.writer.add_scalar(spec_state_val_string, state_value, step)
+                self.writer.add_scalar(spec_state_grad_string, state_grad, step)
+                self.writer.add_scalar(spec_state_enrg_string, state_enrg, step)
+
+                if opt.state_dict()['state']: # i.e. if momentum exists isn't empty, because it's only instantiated after 4 steps I think
+                    spec_state_mom_string = 'spec/state_mom_%s' % neuron_label
+                    key = list(opt.state_dict()['state'].keys())[0]
+                    state_mom = opt.state_dict()['state'][key]['momentum_buffer']
+                    state_mom = state_mom[idx]
+                    self.writer.add_scalar(spec_state_mom_string, state_mom,
+                                           step)
 
     def calc_energ_and_loss(self, neg_states, neg_id, pos_states, pos_id):
 
@@ -300,11 +376,15 @@ class TrainingManager():
         # Stabilize Adam-optimized weight updates(?)
         clip_grad(self.parameters, self.optimizer)
 
+        # # Update learning rate
+        # if self.batch_num == 0 and not self.global_step == 0:
+
+
         # Update the network params
         self.optimizer.step()
 
         # Print loss
-        self.data.loader.set_description(f'loss: {loss.item():.5f}')
+        print(f'Loss: {loss.item():.5g}')
 
     def param_update_phase(self, neg_states, neg_id, pos_states, pos_id):
 
@@ -763,7 +843,7 @@ def finalize_args(parser):
                                    'strides': [1,1],
                                    'padding': 1,
                                    'mod_connect_dict': mod_connect_dict}
-        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+        vars(args)['energy_weight_mask'] = [10.45, 1.0, 81.92, 163.84] #incorrect
 
     elif args.architecture == 'DAN_small_4_layers_experimental':
         vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
@@ -788,13 +868,52 @@ def finalize_args(parser):
                                    'mod_connect_dict': mod_connect_dict}
         vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 
+    elif args.architecture == 'DAN_very_small_3_layers':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,2],
+                            2: [1,3]}
+
+        vars(args)['arch_dict'] = {'num_ch': 16,
+                                   'num_ch_initter': 16,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 64}
+        vars(args)['energy_weight_mask'] = [1.0, 7.84, 15.68]
+
+    elif args.architecture == 'DAN_very_small_4_layers_selftop':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 16, 8, 8],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,2],
+                            2: [1,3],
+                            3: [2,3]}
+
+        vars(args)['arch_dict'] = {'num_ch': 16,
+                                   'num_ch_initter': 16,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 16}
+        vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
     elif args.architecture == 'DAN_small_4_layers':
         vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                      [args.batch_size, 32, 16, 16],
                                      [args.batch_size, 100],
                                      [args.batch_size, 50]]
 
-        mod_connect_dict = {0: [0],
+        mod_connect_dict = {0: [1],
                             1: [0,2],
                             2: [1,3],
                             3: [2]} # no self connections, just a FF-like net
@@ -945,9 +1064,8 @@ def main():
                              'Default: %(default)s.')
     parser.set_defaults(cd_mixture=False)
     tgroup.add_argument('--pos_buffer_frac', type=float, default=0.0,
-                        help='Learning rate to pass to the Adam optimizer ' +
-                             'used to train the InitializerNetwork. Default: ' +
-                             '%(default)s.')
+                        help='The fraction of images from the positive buffer to use to initialize negative samples.'
+                             'Default: %(default)s.')
 
     ngroup = parser.add_argument_group('Network and states options')
     ngroup.add_argument('--network_type', type=str, default="BengioFischer",
