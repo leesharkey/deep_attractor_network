@@ -27,7 +27,7 @@ class Dataset():
                                  drop_last=True
                                  )
                             #num_workers=4) #this makes debugging very very slow
-        self.loader = tqdm(enumerate(sample_data(self.loader)))
+        #self.loader = tqdm(enumerate(sample_data(self.loader)))
 
 class SampleBuffer:
     def __init__(self, args, device, max_samples=10000):
@@ -44,7 +44,7 @@ class SampleBuffer:
         self.device = device
         self.neg_buffer = []
         if self.args.cd_mixture:
-            self.p_neg_buffer = [] # for 'positive negative buffer'
+            self.p_neg_buffer = []  # for 'positive negative buffer'
             self.max_p_neg_samples = 10000
 
     # def __len__(self): #TODO consider removing
@@ -151,17 +151,17 @@ class SampleBuffer:
         )
 
 
-def sample_data(loader):
-    loader_iter = iter(loader)
-
-    while True:
-        try:
-            yield next(loader_iter)
-
-        except StopIteration:
-            loader_iter = iter(loader)
-
-            yield next(loader_iter)
+# def sample_data(loader):
+#     loader_iter = iter(loader)
+#
+#     while True:
+#         try:
+#             yield next(loader_iter)
+#
+#         except StopIteration:
+#             loader_iter = iter(loader)
+#
+#             yield next(loader_iter)
 
 listdetach = lambda y : [x.detach() for x in y]
 listtodevice = lambda y, device: [x.to(device) for x in y]
