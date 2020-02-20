@@ -211,7 +211,7 @@ class ConvFCMixturetoTwoDim(nn.Module):
         self.mean_4dim_size = [self.mean_4dim_size, self.mean_4dim_size] #TODO inclined to change this to max
         self.interp = Interpolate(size=self.mean_4dim_size, mode='bilinear')
 
-        # Define base convs (includes avg pooling to downsample) #TODO Du and Mordatch 2019 advise against using [max] pooling and prefer down sampling using strides and kernel size. Consider changing if griddiness is an issue
+        # Define base convs (includes avg pooling to downsample)
         self.base_conv = nn.Sequential(
             spectral_norm(nn.Conv2d(
             in_channels=self.num_in_conv_channels,

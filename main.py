@@ -564,7 +564,7 @@ class VisualizationManager(TrainingManager):
             clamp_array = None
             self.visualization_phase()
         elif self.args.viz_type == 'channels':
-            for state_layer_idx, size in enumerate(self.args.state_sizes[1:], start=1):
+            for state_layer_idx, size in enumerate(self.args.state_sizes[0:]):#, start=1):Lee
                 if len(size) == 4:
                     print("Visualizing channels in state layer %s" % \
                           (state_layer_idx))
@@ -577,7 +577,7 @@ class VisualizationManager(TrainingManager):
                                              channel_idx=None,
                                              clamp_array=clamp_array)
         elif self.args.viz_type == 'neurons':
-            for state_layer_idx, size in enumerate(self.args.state_sizes[1:], start=1):
+            for state_layer_idx, size in enumerate(self.args.state_sizes[1:]):#, start=1):Lee
                 if len(size) == 4:
                     for channel_idx in range(size[1]): #[1] for num of channels
                         print("Visualizing channel %s of state layer %s" % \
@@ -676,23 +676,23 @@ class VisualizationManager(TrainingManager):
         elif self.args.viz_type == 'neurons' or self.args.viz_type == 'channels':
             # Get the energy of the specific neuron you want to viz and get the
             # gradient that maximises its value
-            feature_energy = outs[state_layer_idx-1] # -1 because energies is 0-indexed while the layers we want to visualize are 1-indexed
+            feature_energy = outs[state_layer_idx] # -1 because energies is 0-indexed while the layers we want to visualize are 1-indexed
             feature_energy = feature_energy \
-                             * self.args.energy_weight_mask[state_layer_idx-1]\
+                             * self.args.energy_weight_mask[state_layer_idx]\
                              * 1. # Scales up the energy of the neuron/channel that we want to viz
             selected_feature_energy = torch.where(clamp_array,
                                                   feature_energy,
                                                   torch.zeros_like(feature_energy))
             selected_feature_energy = -selected_feature_energy.sum()
-            print(state_layer_idx)
-            print([fe.sum() for fe in outs])
+            # print(state_layer_idx)
+            # print([fe.sum() for fe in outs])
             #selected_feature_energy.backward(retain_graph=True)
 
             # Take gradient wrt states (before addition of noise)
             total_energy.backward()
 
             # Zero the grads above the layer that we're visualizing
-            for s in states[1:]:
+            for s in states[state_layer_idx:]:
                 s.grad.zero_() #TODO check what this is actually doing
 
         # The rest of the sampler step function is no different from the
@@ -969,7 +969,7 @@ def finalize_args(parser):
                                    'padding': 1,
                                    'mod_connect_dict': mod_connect_dict,
                                    'num_fc_channels': 32}
-        vars(args)['energy_weight_mask'] = [10.45, 1.0, 4.0, 81.92, 163.84]
+        vars(args)['energy_weight_mask'] = [1.0, 0.09, 0.383, 7.84, 15.68]
 
 
     if args.dataset == "CIFAR10":
