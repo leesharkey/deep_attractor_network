@@ -859,8 +859,12 @@ class InitializerNetwork(torch.nn.Module):
         loss.backward(retain_graph=True)
         self.optimizer.step()
         print("\nInitializer loss: " + '%.4g' % loss.item())
-        if step % self.args.scalar_logging_interval == 0:
-            self.writer.add_scalar('train/initter_loss', loss.item(),
+        # if step % self.args.scalar_logging_interval == 0:
+        self.writer.add_scalar('Initializer/total_loss', loss.item(),
+                               step)
+        for i, l in enumerate(self.criteria):
+            name = 'Initializer/loss_layer_%i' % i
+            self.writer.add_scalar(name, l.item(),
                                    step)
         return loss
 
