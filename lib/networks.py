@@ -862,7 +862,7 @@ class InitializerNetwork(torch.nn.Module):
         # if step % self.args.scalar_logging_interval == 0:
         self.writer.add_scalar('Initializer/total_loss', loss.item(),
                                step)
-        for i, l in enumerate(self.criteria):
+        for i, l in enumerate(self.criteria, start=1):
             name = 'Initializer/loss_layer_%i' % i
             self.writer.add_scalar(name, l.item(),
                                    step)

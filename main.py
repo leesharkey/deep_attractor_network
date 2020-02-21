@@ -908,6 +908,27 @@ def finalize_args(parser):
                                    'num_fc_channels': 16}
         vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
 
+    elif args.architecture == 'DAN_very_small_4_layers_selftop_larger_initr':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 16, 8, 8],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,2],
+                            2: [1,3],
+                            3: [2,3]}
+
+        vars(args)['arch_dict'] = {'num_ch': 16,
+                                   'num_ch_initter': 64,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 16}
+        vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
+
     elif args.architecture == 'DAN_very_small_4_layers_selftop2':
         vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                      [args.batch_size, 16, 8, 8],
