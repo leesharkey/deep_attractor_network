@@ -35,6 +35,14 @@ class TrainingManager():
         self.global_step = 0
         self.batch_num = 0
         self.epoch = 0
+        self.pos_history = []
+        self.neg_history = []
+        self.max_history_len = 3
+        self.neg_it_schedule_cooldown = 0
+        self.num_it_neg = self.args.num_it_neg
+        self.latest_pos_enrg = None
+        self.latest_neg_enrg = None
+
         # Load initializer network (initter)
         if args.initializer == 'ff_init':
             self.initter = nw.InitializerNetwork(args, writer, device)
@@ -88,6 +96,7 @@ class TrainingManager():
 
                 neg_states, neg_id = self.negative_phase()
                 self.param_update_phase(neg_states, neg_id, pos_states, pos_id)
+                stop = self.neg_iterations_schedule_update()
 
                 prev_states = pos_states # In case pos init uses prev states
 
@@ -113,15 +122,17 @@ class TrainingManager():
                     torch.save(save_dict, path)
 
                 self.batch_num += 1
-                if self.batch_num >= 1e6:
+                if self.batch_num >= 1e6 or stop:
                     # at batchsize=128 there are 390 batches
                     # per epoch, so at 1e6 max batches that's 2.56k epochs.
                     break
-
             print("End of epoch %i" % self.epoch)
             self.epoch += 1
             self.scheduler.step()
             print("Decrementing learning rate")
+
+            if stop:
+                break
 
         # Save network(s) and settings when training is complete too
         save_dict = self.make_save_dict()
@@ -227,7 +238,7 @@ class TrainingManager():
                                                                neg_states)
 
         # Negative phase sampling
-        for _ in tqdm(range(self.args.num_it_neg)):
+        for _ in tqdm(range(self.num_it_neg)):
             self.sampler_step(neg_states, neg_id, step=self.global_step)
             self.global_step += 1
 
@@ -312,6 +323,12 @@ class TrainingManager():
             idxss = [[(0,0,0,0)], [(0,0,0,0)], [None], [None]]
             self.log_specific_states_and_momenta(states, outs, idxss, step)
         # End of data logging
+
+        # Save latest energy outputs so you can schedule the phase lengths
+        if positive_phase:
+            self.latest_pos_enrg = energy
+        else:
+            self.latest_neg_enrg = energy
 
 
         # Prepare gradients and sample for next sampling step
@@ -423,6 +440,46 @@ class TrainingManager():
             if i > self.args.num_pretraining_batches:
                 break
         print("\nPretraining of initializer complete")
+
+    def neg_iterations_schedule_update(self):
+
+        if len(self.pos_history) > self.max_history_len:
+            self.pos_history.pop(0)
+        self.pos_history.append(self.latest_pos_enrg)
+
+        if len(self.neg_history) > self.max_history_len:
+            self.neg_history.pop(0)
+        self.neg_history.append(self.latest_neg_enrg)
+
+        print("Num it neg: " + str(self.num_it_neg))
+        if self.global_step % self.args.scalar_logging_interval == 0:
+            self.writer.add_scalar('train/num_it_neg', self.num_it_neg,
+                                   self.global_step)
+
+        if len(self.pos_history) < self.max_history_len or \
+                len(self.neg_history) < self.max_history_len:
+            pass
+        elif self.neg_it_schedule_cooldown > 0:
+            self.neg_it_schedule_cooldown -= 1
+        else:
+            mean_pos = sum(self.pos_history)/len(self.pos_history)
+            mean_neg = sum(self.neg_history)/len(self.neg_history)
+            if mean_neg > mean_pos:
+                self.writer.add_scalar('train/num_it_neg', self.num_it_neg,
+                                       self.global_step)
+                self.num_it_neg = int(self.num_it_neg * 1.1)
+                self.neg_it_schedule_cooldown = self.max_history_len * 5
+                self.writer.add_scalar('train/num_it_neg', self.num_it_neg,
+                                       self.global_step)
+
+        if self.num_it_neg > 500:
+            stop_training = True
+        else:
+            stop_training = False
+        return stop_training
+
+
+
 
 class VisualizationManager(TrainingManager):
     """A new class because I need to redefine sampler step to clamp certain
