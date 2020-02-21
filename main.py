@@ -37,7 +37,7 @@ class TrainingManager():
         self.epoch = 0
         self.pos_history = []
         self.neg_history = []
-        self.max_history_len = 3
+        self.max_history_len = 50
         self.neg_it_schedule_cooldown = 0
         self.num_it_neg = self.args.num_it_neg
         self.latest_pos_enrg = None
