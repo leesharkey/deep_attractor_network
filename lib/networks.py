@@ -830,7 +830,8 @@ class InitializerNetwork(torch.nn.Module):
                 )
 
         self.optimizer = optim.SGD(self.parameters(),
-                                    lr=self.args.initter_network_lr)
+                                   momentum=0.4,
+                                   lr=self.args.initter_network_lr)
         self.lh_sig = get_leaky_hard_sigmoid()
 
     def forward(self, x, x_id):
