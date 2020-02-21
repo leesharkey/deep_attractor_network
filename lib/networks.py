@@ -829,7 +829,7 @@ class InitializerNetwork(torch.nn.Module):
                     )
                 )
 
-        self.optimizer = optim.Adam(self.parameters(),
+        self.optimizer = optim.SGD(self.parameters(),
                                     lr=self.args.initter_network_lr)
         self.lh_sig = get_leaky_hard_sigmoid()
 

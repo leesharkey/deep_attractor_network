@@ -26,7 +26,7 @@ class TrainingManager():
         self.parameters = model.parameters()
         self.optimizer = optim.Adam(self.parameters,
                                     lr=args.lr,
-                                    betas=(0.9, 0.999))
+                                    betas=(0.0, 0.999)) # betas=(0.9, 0.999))
         lmbda = lambda epoch: 0.95
         self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizer,
                                                      lr_lambda=lmbda)
@@ -327,7 +327,7 @@ class TrainingManager():
                 if idx is None:
                     break
                 neuron_label = str(j)+'_'+str(idx)[:-1]
-                print("Logging specific state %s" % str(j)+'_'+str(idx))
+                #print("Logging specific state %s" % str(j)+'_'+str(idx))
 
                 spec_state_val_string = 'spec/state_%s' % neuron_label
                 spec_state_grad_string = 'spec/state_grad_%s' % neuron_label
@@ -341,7 +341,7 @@ class TrainingManager():
                 self.writer.add_scalar(spec_state_grad_string, state_grad, step)
                 self.writer.add_scalar(spec_state_enrg_string, state_enrg, step)
 
-                if opt.state_dict()['state']: # i.e. if momentum exists isn't empty, because it's only instantiated after 4 steps I think
+                if opt.state_dict()['state']: # i.e. if momentum exists isn't empty, because it's only instantiated after 1 steps I think
                     spec_state_mom_string = 'spec/state_mom_%s' % neuron_label
                     key = list(opt.state_dict()['state'].keys())[0]
                     state_mom = opt.state_dict()['state'][key]['momentum_buffer']
@@ -908,6 +908,27 @@ def finalize_args(parser):
                                    'num_fc_channels': 16}
         vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
 
+    elif args.architecture == 'DAN_very_small_4_layers_selftop2':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 16, 8, 8],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,2],
+                            2: [1,2,3],
+                            3: [2,3]}
+
+        vars(args)['arch_dict'] = {'num_ch': 16,
+                                   'num_ch_initter': 16,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1,1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 16}
+        vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
+
     elif args.architecture == 'DAN_small_4_layers':
         vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                      [args.batch_size, 32, 16, 16],
@@ -928,6 +949,27 @@ def finalize_args(parser):
                                    'mod_connect_dict': mod_connect_dict,
                                    'num_fc_channels': 64}
         vars(args)['energy_weight_mask'] = [10.45, 1.0, 81.92, 163.84]
+
+    elif args.architecture == 'DAN_small_4_layers_self':
+        vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                     [args.batch_size, 32, 16, 16],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0, 1, 2],
+                            2: [1, 2, 3],
+                            3: [2, 3]}
+
+        vars(args)['arch_dict'] = {'num_ch': 32,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [3, 3, 3],
+                                   'strides': [1, 1],
+                                   'padding': 1,
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 128}
+        vars(args)['energy_weight_mask'] = [1.0, 1.4, 32.0, 36,
+                                            144.0]  # WRONG NEEDS FIXING BEFORE USE
 
     elif args.architecture == 'DAN_very_small_5_layers_selftop':
         vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
@@ -952,25 +994,6 @@ def finalize_args(parser):
                                    'num_fc_channels': 16}
         vars(args)['energy_weight_mask'] = [1.0, 0.784, 0.784, 7.84, 15.68]
 
-    elif args.architecture == 'DAN_small_4_layers_self':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 32, 16, 16],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
-
-        mod_connect_dict = {0: [1],
-                            1: [0,1,2],
-                            2: [1,2,3],
-                            3: [2,3]}
-
-        vars(args)['arch_dict'] = {'num_ch': 32,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 128}
-        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
     elif args.architecture == 'DAN_med_5_layers_selftop':
         vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                      [args.batch_size, 32, 16, 16],
@@ -1344,7 +1367,7 @@ if __name__ == '__main__':
 #             vars(args)['arch_dict'] = {'num_ch': 16,
 #                                        'num_sl': len(args.state_sizes) - 1,
 #                                        'kernel_sizes': [3, 3],
-#                                        'strides': [1,1],
+#                                        'strides'3: [1,1],
 #                                        'padding': 1}
 #         elif args.architecture == 'mnist_2_layers_small_equal':
 #             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
