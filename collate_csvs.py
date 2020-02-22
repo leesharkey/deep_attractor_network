@@ -25,7 +25,7 @@ from lib import utils
 def collate_CSVs():
     parser = argparse.ArgumentParser(description='Collates all CSVs containing'+
                                      'experimental settings and results into' +
-                                     'one CSV file.'
+                                     ' one CSV file.'
                                      )
     cgroup = parser.add_argument_group('CSV collation settings')
     cgroup.add_argument('--directory_str', type=str, default='exps',
@@ -38,8 +38,8 @@ def collate_CSVs():
                         'combined CSVs. Default: %(default)s.',
                         required=False)
     cgroup.add_argument('--remove_old_csvs', action='store_true',
-                        help='When a neuron hits a threshold, the momentum' +
-                             'automatically inverts.')
+                        help='Moves all the old csvs to the archive folder ' +
+                             'when they\'ve been added to the main csv.')
     parser.set_defaults(remove_old_csvs=False)
 
     args = parser.parse_args()
