@@ -1188,6 +1188,31 @@ def finalize_args(parser):
                                        'num_fc_channels': 128}
             vars(args)['energy_weight_mask'] = [1.0, 0.18, 0.48, 5.95, 24.0]
 
+        if args.architecture == 'DAN_cifar10_very_large_6_layers_top2self':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
+                                         [args.batch_size, 64, 32, 32], # 65536
+                                         [args.batch_size, 64, 16, 16], # 16384
+                                         [args.batch_size, 64, 10, 10], # 6400
+                                         [args.batch_size, 516],
+                                         [args.batch_size, 128]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0, 2],
+                                2: [1, 3],
+                                3: [2, 4],
+                                4: [3, 4, 5],
+                                5: [4, 5]}
+
+            vars(args)['arch_dict'] = {'num_ch': 128,
+                                       'num_ch_initter': 128,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1, 1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 128}
+            vars(args)['energy_weight_mask'] = [1.0, 0.046875, 0.18, 0.48, 5.95, 24.0]
+
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
         print(str(k) + '\t' * 2 + str(v))
