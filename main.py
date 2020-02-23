@@ -38,6 +38,7 @@ class TrainingManager():
         self.pos_history = []
         self.neg_history = []
         self.max_history_len = 10
+        self.mean_neg_pos_margin = 200
         self.neg_it_schedule_cooldown = 0
         self.num_it_neg = self.args.num_it_neg
         self.latest_pos_enrg = None
@@ -320,7 +321,7 @@ class TrainingManager():
                     self.writer.add_histogram(hist_layer_string, state, step)
         ## States and momenta (specific)
         if step % self.args.scalar_logging_interval == 0:
-            idxss = [[(0,0,0,0)], [(0,0,0,0)], [None], [None]]
+            idxss = [[(0,0,13,13)], [(0,0,5,5)], [None], [None]]
             self.log_specific_states_and_momenta(states, outs, idxss, step)
         # End of data logging
 
@@ -464,15 +465,15 @@ class TrainingManager():
         else:
             mean_pos = sum(self.pos_history)/len(self.pos_history)
             mean_neg = sum(self.neg_history)/len(self.neg_history)
-            if mean_neg > mean_pos:
+            if mean_neg > mean_pos - self.mean_neg_pos_margin:
                 self.writer.add_scalar('train/num_it_neg', self.num_it_neg,
                                        self.global_step)
-                self.num_it_neg = int(self.num_it_neg * 1.1)
+                self.num_it_neg = int(self.num_it_neg * 1.5)
                 self.neg_it_schedule_cooldown = self.max_history_len * 5
                 self.writer.add_scalar('train/num_it_neg', self.num_it_neg,
                                        self.global_step)
 
-        if self.num_it_neg > 500:
+        if self.num_it_neg > 1000:
             stop_training = True
         else:
             stop_training = False
