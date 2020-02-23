@@ -322,8 +322,9 @@ class ConvFCMixturetoFourDim(nn.Module):
                                   for j in self.input_idxs
                                   if len(self.args.state_sizes[j]) == 2]
         self.in_fc_neurons = sum(self.in_fc_sizes)
-        fc_channel_fracs   = [int(self.num_fc_channels*(sz/sum(self.in_fc_sizes)))
-                              for sz in self.in_fc_sizes] #TODO ensure sums to self.num_fc_channels
+        fc_channel_fracs   = \
+            [int(round(self.num_fc_channels*(sz/sum(self.in_fc_sizes))))
+             for sz in self.in_fc_sizes]
 
         # Define base convs (no max pooling)
         self.base_conv = spectral_norm(nn.Conv2d(
@@ -741,12 +742,21 @@ class InitializerNetwork(torch.nn.Module):
         # Define the base encoder
         if len(self.args.state_sizes[1])==4:
             self.enc_base = nn.Sequential(nn.BatchNorm2d(self.in_channels),
-                                      cust_actv.Swish_module(),
-                                      nn.Conv2d(in_channels=self.in_channels,
-                                                out_channels=self.num_ch,
-                                                kernel_size=3,
-                                                padding=1,
-                                                bias=True))
+                                          cust_actv.Swish_module(),
+                                          nn.Conv2d(in_channels=self.in_channels,
+                                                    out_channels=self.num_ch,
+                                                    kernel_size=3,
+                                                    padding=1,
+                                                    bias=True),
+                                          nn.BatchNorm2d(self.num_ch),
+                                          cust_actv.Swish_module(),
+                                          nn.Conv2d(
+                                              in_channels=self.num_ch,
+                                              out_channels=self.num_ch,
+                                              kernel_size=3,
+                                              padding=1,
+                                              bias=True)
+                                          )
         elif len(self.args.state_sizes[1])==2:
             img_size = int(torch.prod(torch.tensor(self.args.state_sizes[0][1:])))
             self.enc_base = nn.Sequential(
