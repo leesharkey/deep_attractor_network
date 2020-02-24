@@ -27,7 +27,7 @@ class TrainingManager():
         self.optimizer = optim.Adam(self.parameters,
                                     lr=args.lr,
                                     betas=(0.0, 0.999)) # betas=(0.9, 0.999))
-        lmbda = lambda epoch: 0.95
+        lmbda = lambda epoch: 0.99
         self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizer,
                                                      lr_lambda=lmbda)
         self.noises = lib.utils.generate_random_states(self.args.state_sizes,
@@ -37,8 +37,8 @@ class TrainingManager():
         self.epoch = 0
         self.pos_history = []
         self.neg_history = []
-        self.max_history_len = 20
-        self.mean_neg_pos_margin = 200
+        self.max_history_len = 50
+        self.mean_neg_pos_margin = 0
         self.neg_it_schedule_cooldown = 0
         self.num_it_neg = self.args.num_it_neg
         self.latest_pos_enrg = None
@@ -129,8 +129,15 @@ class TrainingManager():
                     break
             print("End of epoch %i" % self.epoch)
             self.epoch += 1
+
+            # Schedule lr and log changes
+            print("Decrementing learning rate.")
+            lr = self.optimizer.state_dict()['param_groups'][0]['lr']
+            self.writer.add_scalar('train/lr', lr, self.batch_num)
             self.scheduler.step()
-            print("Decrementing learning rate")
+            new_lr = self.optimizer.state_dict()['param_groups'][0]['lr']
+            self.writer.add_scalar('train/lr', new_lr, self.batch_num)
+
 
             if stop:
                 break
@@ -466,14 +473,14 @@ class TrainingManager():
             mean_pos = sum(self.pos_history)/len(self.pos_history)
             mean_neg = sum(self.neg_history)/len(self.neg_history)
             if mean_neg > mean_pos - self.mean_neg_pos_margin \
-                    and self.batch_num > 100:
+                    and self.batch_num > 10000:
 
                 self.writer.add_scalar('train/num_it_neg', self.num_it_neg,
-                                       self.global_step)
+                                       self.batch_num)
                 self.num_it_neg = int(self.num_it_neg * 1.5)
                 self.neg_it_schedule_cooldown = self.max_history_len * 5
                 self.writer.add_scalar('train/num_it_neg', self.num_it_neg,
-                                       self.global_step)
+                                       self.batch_num)
 
         if self.num_it_neg > 1000:
             stop_training = True
