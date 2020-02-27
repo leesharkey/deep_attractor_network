@@ -1252,7 +1252,38 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict,
                                        'num_fc_channels': 64}
             vars(args)['energy_weight_mask'] = [1.0, 0.18, 0.48, 5.95, 24.0]
+        if args.architecture == 'DAN_cifar10_5layers_all_self_filtermix':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
+                                         [args.batch_size, 32, 32, 32],  # 32768
+                                         [args.batch_size, 32, 16, 16],  # 8192
+                                         [args.batch_size, 32, 8, 8],  # 2048
+                                         [args.batch_size, 256]]
 
+            mod_connect_dict = {0: [0, 1],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3, 4],
+                                3: [2, 3, 4],
+                                4: [3, 4]}
+
+            vars(args)['arch_dict'] = {'num_ch': 128,
+                                       'num_ch_initter': 128,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3,3],
+                                                        [3,3], [7,7],
+                                                        [3,3],
+                                                        [3,3]],
+                                       'strides': [1, 1],
+                                       'padding': [[1,1],
+                                                   [1,1],[3,3],
+                                                   [1,1],[3,3],
+                                                   [1,1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 128}
+            vars(args)['energy_weight_mask'] = [1.0,
+                                                0.09375,  0.09375,
+                                                0.48, 0.48,
+                                                1.5, 1.5,
+                                                12.0] #Fails due to memory issues...
 
         if args.architecture == 'DAN_cifar10_8layers_huge_filtermix':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
@@ -1297,7 +1328,7 @@ def finalize_args(parser):
                                                 0.09375,  0.09375,
                                                 0.48, 0.48,
                                                 1.5, 1.5,
-                                                12.0]
+                                                12.0] #Fails due to memory issues...
 
 
         if args.architecture == 'DAN_cifar10_very_large_6_layers_top2self':
