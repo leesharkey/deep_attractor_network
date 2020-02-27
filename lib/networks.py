@@ -216,8 +216,8 @@ class ConvFCMixturetoTwoDim(nn.Module):
             spectral_norm(nn.Conv2d(
             in_channels=self.num_in_conv_channels,
             out_channels=self.args.arch_dict['num_ch'],
-            kernel_size=self.args.arch_dict['kernel_sizes'][0],
-            padding=self.args.arch_dict['padding'],
+            kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
+            padding=self.args.arch_dict['padding'][layer_idx][0],
             stride=self.args.arch_dict['strides'][0],
             padding_mode=self.pad_mode,
             bias=True)),
@@ -226,14 +226,14 @@ class ConvFCMixturetoTwoDim(nn.Module):
         self.base_conv_outshapes = []
         outshape0, outshape1 = \
             conv_output_shape(self.mean_4dim_size,
-                             kernel_size= self.args.arch_dict['kernel_sizes'][0],
-                             padding=self.args.arch_dict['padding'],
+                             kernel_size= self.args.arch_dict['kernel_sizes'][layer_idx][0],
+                             padding=self.args.arch_dict['padding'][layer_idx][0],
                              stride=self.args.arch_dict['strides'][0])
         outshape = (outshape0, outshape1)
         self.base_conv_outshapes.append([conv_output_shape(outshape,
                                                      kernel_size=2,
                                                      padding=0,
-                                                     stride=2)])
+                                                     stride=2)]) #for avg pool2d
         self.base_conv_outsizes = [torch.prod(torch.tensor(bcos)) * \
                                    self.args.arch_dict['num_ch']
                               for bcos in self.base_conv_outshapes] # TODO this scales poorly with num channels. Consider adding another conv layer with smaller output when network is working
@@ -327,11 +327,13 @@ class ConvFCMixturetoFourDim(nn.Module):
              for sz in self.in_fc_sizes]
 
         # Define base convs (no max pooling)
+        # pad = (self.args.arch_dict['padding'][layer_idx][0],
+        #        self.args.arch_dict['padding'][0])
         self.base_conv = spectral_norm(nn.Conv2d(
             in_channels=self.in_conv_channels,
             out_channels=self.args.arch_dict['num_ch'],
-            kernel_size=self.args.arch_dict['kernel_sizes'][0],
-            padding=self.args.arch_dict['padding'],
+            kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
+            padding=self.args.arch_dict['padding'][layer_idx][0],
             stride=self.args.arch_dict['strides'][0],
             padding_mode=self.pad_mode,
             bias=True))
@@ -354,8 +356,8 @@ class ConvFCMixturetoFourDim(nn.Module):
                         self.in_conv_channels +
                         self.num_fc_channels,
             out_channels=self.state_layer_ch,
-            kernel_size=self.args.arch_dict['kernel_sizes'][0],
-            padding=self.args.arch_dict['padding'],
+            kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][1],
+            padding=self.args.arch_dict['padding'][layer_idx][1],
             padding_mode=self.pad_mode,
             bias=True), std=1e-10, bound=True)
 
@@ -404,16 +406,16 @@ class DenseConv(nn.Module):
         self.base_conv = spectral_norm(nn.Conv2d(
                 in_channels=self.in_channels,
                 out_channels=self.args.arch_dict['num_ch'],
-                kernel_size=self.args.arch_dict['kernel_sizes'][0],
-                padding=self.args.arch_dict['padding'],
+                kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
+                padding=self.args.arch_dict['padding'][layer_idx][0],
                 stride=self.args.arch_dict['strides'][0],
                 padding_mode=self.pad_mode,
                 bias=True))
         self.energy_conv = spectral_norm(nn.Conv2d(
                 in_channels=self.args.arch_dict['num_ch'] + self.in_channels,
                 out_channels=self.state_layer_ch,
-                kernel_size=self.args.arch_dict['kernel_sizes'][0],
-                padding=self.args.arch_dict['padding'],
+                kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][1],
+                padding=self.args.arch_dict['padding'][layer_idx][1],
                 padding_mode=self.pad_mode,
                 bias=True), std=1e-10, bound=True)
 

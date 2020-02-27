@@ -27,22 +27,14 @@ class TrainingManager():
         self.optimizer = optim.Adam(self.parameters,
                                     lr=args.lr,
                                     betas=(0.0, 0.999)) # betas=(0.9, 0.999))
-        lmbda = lambda epoch: 0.99
-        self.scheduler = optim.lr_scheduler.LambdaLR(self.optimizer,
-                                                     lr_lambda=lmbda)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
+                                                   step_size=1,
+                                                   gamma=0.99)
         self.noises = lib.utils.generate_random_states(self.args.state_sizes,
                                                        self.device)
         self.global_step = 0
         self.batch_num = 0
         self.epoch = 0
-        self.pos_history = []
-        self.neg_history = []
-        self.max_history_len = 50
-        self.mean_neg_pos_margin = 0
-        self.neg_it_schedule_cooldown = 0
-        self.num_it_neg = self.args.num_it_neg
-        self.latest_pos_enrg = None
-        self.latest_neg_enrg = None
 
         # Load initializer network (initter)
         if args.initializer == 'ff_init':
@@ -80,6 +72,25 @@ class TrainingManager():
         else:
             lib.utils.save_configs_to_csv(self.args, self.model.model_name)
 
+        # Print out param sizes to ensure you aren't using something stupidly
+        # large
+        param_sizes = [torch.prod(torch.tensor(sz)).item() for sz in
+                                   shapes(self.model.parameters())]
+        param_sizes.sort()
+        top10_params = param_sizes[-10:]
+        print("Top 10 network param sizes: \n %s" % str(top10_params))
+
+        # Set the rest of the hyperparams for iteration scheduling
+        self.pos_history = []
+        self.neg_history = []
+        self.max_history_len = 50
+        self.mean_neg_pos_margin = 0
+        self.neg_it_schedule_cooldown = 0
+        self.latest_pos_enrg = None
+        self.latest_neg_enrg = None
+        self.num_it_neg_mean = self.args.num_it_neg
+        self.num_it_neg = self.num_it_neg_mean
+
     def train(self):
         save_dict = self.make_save_dict()
         path = 'exps/models/' + self.model.model_name + '.pt'
@@ -90,8 +101,10 @@ class TrainingManager():
         #for batch, (pos_img, pos_id) in self.data.loader:
         for e in range(10000):
             for pos_img, pos_id in self.data.loader:
-                #print("Batch:       %i" % batch)
-                print("Global step: %s" % str(self.global_step))
+                print("Epoch:        %i" % e)
+                print("Batch num:    %i" % self.batch_num)
+                print("Global step:  %i" % self.global_step)
+
                 pos_states, pos_id = self.positive_phase(pos_img, pos_id,
                                                          prev_states)
 
@@ -99,22 +112,12 @@ class TrainingManager():
                 self.param_update_phase(neg_states, neg_id, pos_states, pos_id)
                 stop = self.neg_iterations_schedule_update()
 
-                prev_states = pos_states # In case pos init uses prev states
+                prev_states = pos_states  # In case pos init uses prev states
 
-                # Log images
                 if self.batch_num % self.args.img_logging_interval == 0:
-                    shape = pos_img.shape
-                    neg_imgs_save = neg_states[0].reshape(shape).detach().to('cpu')
-                    utils.save_image(neg_imgs_save,
-                                     os.path.join(self.sample_log_dir,
-                                          str(self.batch_num).zfill(6) + '.png'),
-                                     nrow=16, normalize=True, range=(0, 1))
-                    if self.args.save_pos_images:
-                        pos_imgs_save = pos_states[0].reshape(shape).detach().to('cpu')
-                        utils.save_image(pos_imgs_save,
-                             os.path.join(self.sample_log_dir,
-                                 'p0_' + str(self.batch_num).zfill(6) + '.png'),
-                                         nrow=16, normalize=True, range=(0, 1))
+                    self.log_images(pos_img, pos_states, neg_states)
+
+                self.log_mean_energies()
 
                 # Save network(s) and settings
                 if self.batch_num % self.args.model_save_interval == 0:
@@ -123,21 +126,17 @@ class TrainingManager():
                     torch.save(save_dict, path)
 
                 self.batch_num += 1
-                if self.batch_num >= 1e6 or stop:
-                    # at batchsize=128 there are 390 batches
-                    # per epoch, so at 1e6 max batches that's 2.56k epochs.
-                    break
+
             print("End of epoch %i" % self.epoch)
             self.epoch += 1
 
             # Schedule lr and log changes
             print("Decrementing learning rate.")
-            lr = self.optimizer.state_dict()['param_groups'][0]['lr']
+            lr = self.scheduler.get_lr()[0]
             self.writer.add_scalar('train/lr', lr, self.batch_num)
             self.scheduler.step()
-            new_lr = self.optimizer.state_dict()['param_groups'][0]['lr']
+            new_lr = self.scheduler.get_lr()[0]
             self.writer.add_scalar('train/lr', new_lr, self.batch_num)
-
 
             if stop:
                 break
@@ -245,6 +244,9 @@ class TrainingManager():
         self.state_optimizers = lib.utils.get_state_optimizers(self.args,
                                                                neg_states)
 
+        if self.args.randomize_neg_its:
+            self.num_it_neg = max(1, np.random.poisson(self.num_it_neg_mean))
+
         # Negative phase sampling
         for _ in tqdm(range(self.num_it_neg)):
             self.sampler_step(neg_states, neg_id, step=self.global_step)
@@ -327,7 +329,7 @@ class TrainingManager():
                     #print("Logging energy histograms")
                     self.writer.add_histogram(hist_layer_string, state, step)
         ## States and momenta (specific)
-        if step % self.args.scalar_logging_interval == 0:
+        if self.args.log_spec_neurons and step % self.args.scalar_logging_interval == 0:
             idxss = [[(0,0,13,13)], [(0,0,5,5)], [None], [None]]
             self.log_specific_states_and_momenta(states, outs, idxss, step)
         # End of data logging
@@ -344,6 +346,31 @@ class TrainingManager():
             state.grad.detach_()
             state.grad.zero_()
             state.data.clamp_(0, 1)
+
+    def log_mean_energies(self):
+        mean_pos = sum(self.pos_history) / len(self.pos_history)
+        mean_neg = sum(self.neg_history) / len(self.neg_history)
+        self.writer.add_scalar('train/mean_neg_energy', mean_neg,
+                               self.batch_num)
+        self.writer.add_scalar('train/mean_pos_energy', mean_neg,
+                               self.batch_num)
+
+    def log_images(self, pos_img, pos_states, neg_states):
+        shape = pos_img.shape
+        neg_imgs_save = neg_states[0].reshape(shape).detach().to('cpu')
+        utils.save_image(neg_imgs_save,
+                         os.path.join(self.sample_log_dir,
+                                      str(self.batch_num).zfill(
+                                          6) + '.png'),
+                         nrow=16, normalize=True, range=(0, 1))
+        if self.args.save_pos_images:
+            pos_imgs_save = pos_states[0].reshape(shape).detach().to('cpu')
+            utils.save_image(pos_imgs_save,
+                             os.path.join(self.sample_log_dir,
+                                          'p0_' + str(
+                                              self.batch_num).zfill(
+                                              6) + '.png'),
+                             nrow=16, normalize=True, range=(0, 1))
 
     def log_specific_states_and_momenta(self, states, outs, idxss, step):
         for j, (state, out, idxs, opt) in enumerate(zip(states, outs, idxss,
@@ -459,9 +486,9 @@ class TrainingManager():
             self.neg_history.pop(0)
         self.neg_history.append(self.latest_neg_enrg)
 
-        print("Num it neg: " + str(self.num_it_neg))
+        print("Num it neg: " + str(self.num_it_neg_mean))
         if self.global_step % self.args.scalar_logging_interval == 0:
-            self.writer.add_scalar('train/num_it_neg', self.num_it_neg,
+            self.writer.add_scalar('train/num_it_neg', self.num_it_neg_mean,
                                    self.global_step)
 
         if len(self.pos_history) < self.max_history_len or \
@@ -473,16 +500,16 @@ class TrainingManager():
             mean_pos = sum(self.pos_history)/len(self.pos_history)
             mean_neg = sum(self.neg_history)/len(self.neg_history)
             if mean_neg > mean_pos - self.mean_neg_pos_margin \
-                    and self.batch_num > 10000:
+                    and self.epoch > 2:
 
-                self.writer.add_scalar('train/num_it_neg', self.num_it_neg,
+                self.writer.add_scalar('train/num_it_neg', self.num_it_neg_mean,
                                        self.batch_num)
-                self.num_it_neg = int(self.num_it_neg * 1.5)
+                self.num_it_neg_mean = int(self.num_it_neg_mean * 1.5)
                 self.neg_it_schedule_cooldown = self.max_history_len * 5
-                self.writer.add_scalar('train/num_it_neg', self.num_it_neg,
+                self.writer.add_scalar('train/num_it_neg', self.num_it_neg_mean,
                                        self.batch_num)
 
-        if self.num_it_neg > 1000:
+        if self.num_it_neg_mean > 1000:
             stop_training = True
         else:
             stop_training = False
@@ -511,6 +538,9 @@ class VisualizationManager(TrainingManager):
                                                        self.device)
         self.global_step = 0
         self.batch_num = 0
+
+        #for state in self.args.state_sizes =
+        #TODO new state sizes with smaller image size vars(args)['state_sizes']
 
         # Load initializer network (initter)
         if args.initializer == 'ff_init':
@@ -644,7 +674,9 @@ class VisualizationManager(TrainingManager):
                                              channel_idx=None,
                                              clamp_array=clamp_array)
         elif self.args.viz_type == 'neurons':
-            for state_layer_idx, size in enumerate(self.args.state_sizes[1:]):#, start=1):Lee
+            for state_layer_idx, size in enumerate(self.args.state_sizes[:]):#, start=1):Lee
+                if state_layer_idx == 0:
+                    continue
                 if len(size) == 4:
                     for channel_idx in range(size[1]): #[1] for num of channels
                         print("Visualizing channel %s of state layer %s" % \
@@ -759,8 +791,8 @@ class VisualizationManager(TrainingManager):
             total_energy.backward()
 
             # Zero the grads above the layer that we're visualizing
-            for s in states[state_layer_idx:]:
-                s.grad.zero_() #TODO check what this is actually doing
+            # for s in states[state_layer_idx+1:]:
+            #     s.grad.zero_() #TODO check what this is actually doing
 
         # The rest of the sampler step function is no different from the
         # negative step used in training
@@ -1213,12 +1245,58 @@ def finalize_args(parser):
             vars(args)['arch_dict'] = {'num_ch': 64,
                                        'num_ch_initter': 64,
                                        'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
+                                       'kernel_sizes': [3, 3, 3, 3],
                                        'strides': [1, 1],
                                        'padding': 1,
                                        'mod_connect_dict': mod_connect_dict,
                                        'num_fc_channels': 64}
             vars(args)['energy_weight_mask'] = [1.0, 0.18, 0.48, 5.95, 24.0]
+
+
+        if args.architecture == 'DAN_cifar10_8layers_huge_filtermix':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
+
+                                         [args.batch_size, 32, 32, 32],  # 32768
+                                         [args.batch_size, 32, 32, 32],  # 32768
+
+                                         [args.batch_size, 32, 16, 16],  # 8192
+                                         [args.batch_size, 32, 16, 16],  # 8192
+
+                                         [args.batch_size, 32, 8, 8],  # 2048
+                                         [args.batch_size, 32, 8, 8],  # 2048
+
+                                         [args.batch_size, 256]]
+
+            mod_connect_dict = {0: [1,2],
+                                1: [0, 1, 2, 3],
+                                2: [0, 1, 2, 4],
+                                3: [1, 3, 4, 5],
+                                4: [2, 3, 4, 6],
+                                5: [4, 5, 6, 7],
+                                6: [5, 5, 6, 7],
+                                7: [5, 6, 7]}
+
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_ch_initter': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3,3],
+                                                        [3,3], [7,7],
+                                                        [3,3], [7,7],
+                                                        [3,3], [7,7],
+                                                        [3,3]],
+                                       'strides': [1, 1],
+                                       'padding': [[1,1],
+                                                   [1,1],[3,3],
+                                                   [1,1],[3,3],
+                                                   [1,1],[3,3],
+                                                   [1,1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 128}
+            vars(args)['energy_weight_mask'] = [1.0,
+                                                0.09375,  0.09375,
+                                                0.48, 0.48,
+                                                1.5, 1.5,
+                                                12.0]
 
 
         if args.architecture == 'DAN_cifar10_very_large_6_layers_top2self':
@@ -1244,7 +1322,7 @@ def finalize_args(parser):
                                        'padding': 1,
                                        'mod_connect_dict': mod_connect_dict,
                                        'num_fc_channels': 128}
-            vars(args)['energy_weight_mask'] = [1.0, 0.046875, 0.18, 0.48, 5.95, 24.0]
+            vars(args)['energy_weight_mask'] = [1.0, 0.046875, 0.18, 0.375, 5.95, 24.0]
 
         if args.architecture == 'DAN_cifar10_large_6_layers_top2self_fcconvconnect':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
@@ -1281,8 +1359,7 @@ def finalize_args(parser):
 
 def main():
     ### Parse CLI arguments.
-    parser = argparse.ArgumentParser(description='MNIST classification with ' +
-                                     'EP-trained Hopfield neural networks.')
+    parser = argparse.ArgumentParser(description='Deep Attractor Network.')
     sgroup = parser.add_argument_group('Sampling options')
     sgroup.add_argument('--sampling_step_size', type=float, default=10,
                         help='The amount that the network is moves forward ' +
@@ -1302,6 +1379,12 @@ def main():
                              'When randomizing, the following options define'+
                              'a range of integers from which the random value'+
                              'will be sampled. Options: [3, 300]. ')
+    sgroup.add_argument('--randomize_neg_its', action='store_true',
+                        help='If true, samples the number of negative  '+
+                             'iterations every batch from a Poisson distrib'
+                             '(but with a minimum of 1) using num_it_neg '+
+                             'as the mean. Default: %(default)s.')
+    parser.set_defaults(randomize_neg_its=False)
     sgroup.add_argument('--num_it_pos', type=int, metavar='N', default=30,
                         help='The default number of iterations the networks' +
                              'runs in the positive (inference) phase when ' +
@@ -1374,6 +1457,9 @@ def main():
     parser.set_defaults(cd_mixture=False)
     tgroup.add_argument('--pos_buffer_frac', type=float, default=0.0,
                         help='The fraction of images from the positive buffer to use to initialize negative samples.'
+                             'Default: %(default)s.')
+    tgroup.add_argument('--shuffle_pos_frac', type=float, default=0.0,
+                        help='The fraction of images from the positive buffer that will be shuffled before initializing negative samples. The motivation for this is for experiments when a new image will initialize the state but the previous values for latent variables will be used, as would happen when an animal is presented with a new image.'
                              'Default: %(default)s.')
 
     ngroup = parser.add_argument_group('Network and states options')
@@ -1479,6 +1565,10 @@ def main():
                              'tensorboard logs are saved. Default:'+
                              ' %(default)s.',
                         required=False)
+    mgroup.add_argument('--log_spec_neurons', action='store_true',
+                        help='Whether or not to log values for specific ' +
+                             'neurons and their momenta.')
+    parser.set_defaults(log_spec_neurons=False)
     mgroup.add_argument('--log_histograms', action='store_true',
                         help='Whether or not to log histograms of weights ' +
                              'and other variables. Warning: Storage intensive.')
