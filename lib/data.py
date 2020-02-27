@@ -114,6 +114,20 @@ class SampleBuffer:
             # of len=N
             p_neg_samples = zip(*p_neg_samples)
             p_neg_samples = listcat(p_neg_samples, dim=0)
+            if self.args.shuffle_pos_frac > 0.0:
+                shuffle_num = round(self.num_p_neg_samples * \
+                                     self.args.shuffle_pos_frac)
+                # Splits the imgs from the pos neg buffer
+                shuff_imgs     = p_neg_samples[0][:shuffle_num]
+                non_shuff_imgs = p_neg_samples[0][shuffle_num:]
+
+                # Shuffles a fraction of the images
+                rand_inds = torch.randperm(shuffle_num)
+                shuff_imgs = shuff_imgs[rand_inds,:,:,:]
+                new_imgs = torch.cat([shuff_imgs, non_shuff_imgs])
+                p_neg_samples[0] = new_imgs
+
+
             p_neg_class_ids = torch.tensor(p_neg_class_ids)
             p_neg_samples = listtodevice(p_neg_samples, self.device)
             p_neg_class_ids = p_neg_class_ids.to(self.device)
