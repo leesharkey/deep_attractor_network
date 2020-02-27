@@ -86,6 +86,7 @@ class TrainingManager():
         self.max_history_len = 50
         self.mean_neg_pos_margin = 0
         self.neg_it_schedule_cooldown = 0
+        self.cooldown_len = 1000 #batches
         self.latest_pos_enrg = None
         self.latest_neg_enrg = None
         self.num_it_neg_mean = self.args.num_it_neg
@@ -505,7 +506,7 @@ class TrainingManager():
                 self.writer.add_scalar('train/num_it_neg', self.num_it_neg_mean,
                                        self.batch_num)
                 self.num_it_neg_mean = int(self.num_it_neg_mean * 1.5)
-                self.neg_it_schedule_cooldown = self.max_history_len * 5
+                self.neg_it_schedule_cooldown = self.cooldown_len
                 self.writer.add_scalar('train/num_it_neg', self.num_it_neg_mean,
                                        self.batch_num)
 
