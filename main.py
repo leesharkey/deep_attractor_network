@@ -86,7 +86,7 @@ class TrainingManager():
         self.max_history_len = 50
         self.mean_neg_pos_margin = 0
         self.neg_it_schedule_cooldown = 0
-        self.cooldown_len = 1000 #batches
+        self.cooldown_len = 10000 #batches
         self.latest_pos_enrg = None
         self.latest_neg_enrg = None
         self.num_it_neg_mean = self.args.num_it_neg
@@ -353,7 +353,7 @@ class TrainingManager():
         mean_neg = sum(self.neg_history) / len(self.neg_history)
         self.writer.add_scalar('train/mean_neg_energy', mean_neg,
                                self.batch_num)
-        self.writer.add_scalar('train/mean_pos_energy', mean_neg,
+        self.writer.add_scalar('train/mean_pos_energy', mean_pos,
                                self.batch_num)
 
     def log_images(self, pos_img, pos_states, neg_states):
@@ -488,9 +488,9 @@ class TrainingManager():
         self.neg_history.append(self.latest_neg_enrg)
 
         print("Num it neg: " + str(self.num_it_neg_mean))
-        if self.global_step % self.args.scalar_logging_interval == 0:
+        if self.batch_num % self.args.scalar_logging_interval == 0:
             self.writer.add_scalar('train/num_it_neg', self.num_it_neg_mean,
-                                   self.global_step)
+                                   self.batch_num)
 
         if len(self.pos_history) < self.max_history_len or \
                 len(self.neg_history) < self.max_history_len:
@@ -980,9 +980,9 @@ def finalize_args(parser):
         vars(args)['arch_dict'] = {'num_ch': 16,
                                    'num_ch_initter': 16,
                                    'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
+                                   'kernel_sizes': [[3, 3], [3, 3]],
+                                   'strides': [[1,1], [1,1]],
+                                   'padding': [[1,1], [1,1]],
                                    'mod_connect_dict': mod_connect_dict,
                                    'num_fc_channels': 64}
         vars(args)['energy_weight_mask'] = [1.0, 7.84, 15.68]
@@ -1001,9 +1001,9 @@ def finalize_args(parser):
         vars(args)['arch_dict'] = {'num_ch': 16,
                                    'num_ch_initter': 16,
                                    'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
+                                   'kernel_sizes': [[3, 3], [3, 3], [3, 3]],
+                                   'strides': [1,1,1],
+                                   'padding': [[1,1], [1,1], [1,1]],
                                    'mod_connect_dict': mod_connect_dict,
                                    'num_fc_channels': 16}
         vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
@@ -1204,6 +1204,50 @@ def finalize_args(parser):
                                    'mod_connect_dict': mod_connect_dict,
                                    'num_fc_channels': 64}
         vars(args)['energy_weight_mask'] = [1.0, 0.09, 0.383, 7.84, 15.68]
+
+    elif args.architecture == 'EBMLV_very_small_4_layers_self':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 16, 8, 8],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [0,1],
+                            1: [0,1,2],
+                            2: [1,2,3],
+                            3: [2,3]}
+
+        vars(args)['arch_dict'] = {'num_ch': 16,
+                                   'num_ch_initter': 16,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [[3, 3], [3, 3], [3, 3]],
+                                   'strides': [1,1,1],
+                                   'padding': [[1,1], [1,1], [1,1]],
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 16}
+        vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
+        #[1.0, 0.784, 7.84, 15.68] [1.0, 1.0, 1.0, 1.0]
+
+    elif args.architecture == 'EBMLV_very_small_4_layers_topnself':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 16, 8, 8],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [1],
+                            1: [0,1,2],
+                            2: [1,2,3],
+                            3: [2,3]}
+
+        vars(args)['arch_dict'] = {'num_ch': 16,
+                                   'num_ch_initter': 16,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [[3, 3], [3, 3], [3, 3]],
+                                   'strides': [1,1,1],
+                                   'padding': [[1,1], [1,1], [1,1]],
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 16}
+        vars(args)['energy_weight_mask'] = [1.0, 1.0, 1.0, 1.0]
+        #[1.0, 0.765, 7.84, 15.68] [1.0, 1.0, 1.0, 1.0]
 
 
     if args.dataset == "CIFAR10":
@@ -1667,6 +1711,9 @@ def main():
     elif args.network_type == 'DAN':
         model = nw.DeepAttractorNetwork(args, device, model_name, writer).to(
             device)
+    elif args.network_type == 'EBMLV':
+        model = nw.EBMLV(args, device, model_name, writer).to(
+            device)
     else:
         raise ValueError("Invalid CLI argument for argument 'network_type'. ")
 
@@ -1931,5 +1978,34 @@ if __name__ == '__main__':
 #                                        'mod_connect_dict': mod_connect_dict}
 #             vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 #
-#         elif
 
+
+# Since changes to network
+
+# elif args.architecture == 'DAN_very_small_3_layers':
+#     vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+#                                  [args.batch_size, 100],
+#                                  [args.batch_size, 50]]
+#
+#     mod_connect_dict = {0: [1],
+#                         1: [0,2],
+#                         2: [1,3]}
+#
+#     vars(args)['arch_dict'] = {'num_ch': 16,
+#                                'num_ch_initter': 16,
+#                                'num_sl': len(args.state_sizes) - 1,
+#                                'kernel_sizes': [3, 3, 3],
+#                                'strides': [1,1],
+#                                'padding': 1,
+#                                'mod_connect_dict': mod_connect_dict,
+#                                'num_fc_channels': 64}
+#     vars(args)['energy_weight_mask'] = [1.0, 7.84, 15.68]
+
+
+
+#
+# --cd_mixture
+# --pos_buffer_frac
+# 0.1
+# --shuffle_pos_frac
+# 0.4
