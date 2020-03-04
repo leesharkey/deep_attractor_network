@@ -1247,7 +1247,7 @@ def finalize_args(parser):
                                                [1, 1], [1, 1],
                                                [1, 1]],
                                    'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 64}
+                                   'num_fc_channels': 32}
 
         vars(args)['energy_weight_mask'] = [1.0, 0.03125, 0.245, 6.125, 12.25]
 
