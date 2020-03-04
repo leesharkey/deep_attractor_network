@@ -1221,6 +1221,35 @@ def finalize_args(parser):
                                    'mod_connect_dict': mod_connect_dict,
                                    'num_fc_channels': 32}
         vars(args)['energy_weight_mask'] = [1.0, 0.09, 0.383, 7.84, 15.68]
+    elif args.architecture == 'DAN_med_5_layers_allself':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 32, 28, 28],
+                                     [args.batch_size, 32, 10, 10],
+                                     [args.batch_size, 128],
+                                     [args.batch_size, 64]]
+
+        mod_connect_dict = {0: [0,1],
+                            1: [0,1,2],
+                            2: [1,2,3],
+                            3: [2,3,4],
+                            4: [3,4]}
+        vars(args)['arch_dict'] = {'num_ch': 32,
+                                   'num_ch_initter': 32,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [[3, 3],
+                                                    [3, 3],
+                                                    [3, 3],
+                                                    [3, 3],
+                                                    [3, 3]],
+                                   'strides': [1, 1],
+                                   'padding': [[1, 1],
+                                               [1, 1], [1, 1],
+                                               [1, 1], [1, 1],
+                                               [1, 1]],
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 64}
+
+        vars(args)['energy_weight_mask'] = [1.0, 0.03125, 0.245, 6.125, 12.25]
 
     elif args.architecture == 'DAN_large_5_layers_selftop': #untested
         vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
