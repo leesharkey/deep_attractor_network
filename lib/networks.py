@@ -455,7 +455,7 @@ class FCFC(nn.Module):
             spectral_norm(nn.Linear(self.out_size, self.out_size), bound=True),
             self.act)
 
-    def forward(self, pre_states, actv_post_states, class_id=None):
+    def forward(self, pre_states, actv_post_states, class_id=None): #I think I might have misnamed the pre and post states.
         inputs = actv_post_states
         reshaped_inps = [inp.view(inp.shape[0], -1) for inp in inputs]
         base_outs = [self.act(base_fc(inp))
@@ -577,6 +577,111 @@ class DeepAttractorNetwork(nn.Module):
 
         return energy, outs
 
+class EBMLV(nn.Module):
+    """Defines the EBM with latent variables (Sharkey 2019)
+
+    The network is a relaxtion of the DAN, which is in turn a generalisation
+     of the vector field network used in
+     Scellier et al. (2018) relaxation of the continuous Hopfield-like network (CHN)
+    studied by Bengio and Fischer (2015) and later in
+    Equilibrium Propagation (Scellier et al. 2017) and other works. It
+    no longer required symmetric weights as in the CHN and the network outputs
+     are also interpreted differently. In the DAN, VFN, and CHN, the nonlinear
+     parts define a target for the state value, and the difference between the
+     target and the state defines the dynamics. In the EBMLV, the outputs of the
+     networks are truly just energy functions.
+    """
+    def __init__(self, args, device, model_name, writer, n_class=None):
+        super().__init__()
+        self.args = args
+        self.device = device
+        self.writer = writer
+        self.model_name = model_name
+        self.num_state_layers = len(self.args.state_sizes[1:])
+
+        self.quadratic_nets = nn.ModuleList([])
+
+        for i, size in enumerate(self.args.state_sizes):
+            inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            state_sizes = [self.args.state_sizes[j] for j in inp_idxs]
+            state_sizes.append(size)
+            all_same_dim = all([len(state_sizes[0])==len(sz) for sz in state_sizes])
+            if len(size) == 4:
+                if all_same_dim:
+                    net = DenseConv(self.args, i)
+                else:
+                    net = ConvFCMixturetoFourDim(self.args, i)
+            elif len(size) == 2:
+                if all_same_dim:
+                    net = FCFC(self.args, i)
+                else:
+                    net = ConvFCMixturetoTwoDim(self.args, i)
+            self.quadratic_nets.append(net)
+
+        # self.biases = nn.ModuleList([nn.Linear(torch.prod(torch.tensor(l[1:])),
+        #                                        1, bias=False)
+        #                for l in args.state_sizes])
+        # for bias in self.biases:
+        #     torch.nn.init.zeros_(bias.weight)
+
+        if self.args.states_activation == "hardsig":
+            self.state_actv = activations.get_hard_sigmoid()
+        elif self.args.states_activation == "relu":
+            self.state_actv = activations.get_relu()
+        elif self.args.states_activation == "swish":
+            self.state_actv = activations.get_swish()
+
+    def forward(self, states, class_id=None, step=None):
+
+        # # Squared norm
+        # sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in states])
+        #
+        # # # Linear terms
+        # # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
+        # #                       for layer, bias in
+        # #                       zip(states, self.biases)])
+        #
+        # # Quadratic terms
+        # enrgs = []
+        # outs = []
+        # for i, (pre_state, net) in enumerate(zip(states, self.quadratic_nets)):
+        #     post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+        #     pos_inp_states = [states[j] for j in post_inp_idxs]
+        #     pos_inp_states = [self.state_actv(state)
+        #                       for state in pos_inp_states]
+        #     enrg, out = net(pre_state, pos_inp_states)
+        #     enrg = self.args.energy_weight_mask[i] * enrg
+        #     enrgs.append(enrg)
+        #     outs.append(out)
+        #
+        # energy = sum(sum(enrgs))  # Note there is no minus sign here where it
+        # # exists in the DAN
+
+        # Squared norm
+        sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in states])
+
+        # # # Linear terms
+        # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
+        #                       for layer, bias in
+        #                       zip(states, self.biases)])
+
+        # Quadratic terms
+        enrgs = []
+        outs = []
+        for i, (pre_state, net) in enumerate(zip(states, self.quadratic_nets)):
+            post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            pos_inp_states = [states[j] for j in post_inp_idxs]
+            pos_inp_states = [self.state_actv(state)
+                              for state in pos_inp_states]
+            enrg, out = net(pre_state, pos_inp_states)
+            enrg = self.args.energy_weight_mask[i] * enrg
+            enrgs.append(enrg)
+            outs.append(out)
+
+        quadratic_terms = - sum(sum(enrgs))  # Note the minus here
+        energy = quadratic_terms #sq_nrm + quadratic_terms #linear_terms +
+
+        return energy, outs
 
 class VectorFieldNetwork(nn.Module):
     """Defines the vector field studied by Scellier et al. (2018)
@@ -655,7 +760,6 @@ class VectorFieldNetwork(nn.Module):
         energy = sq_nrm + linear_terms + quadratic_terms
 
         return energy, outs
-
 
 
 class BengioFischerNetwork(nn.Module):
@@ -869,7 +973,7 @@ class InitializerNetwork(torch.nn.Module):
         self.optimizer.zero_grad()
         self.criteria = [self.criterion(o, t) for o,t in zip(outs,targets)]
         loss = torch.sum(torch.stack(self.criteria))
-        loss.backward(retain_graph=True)
+        loss.backward() #(retain_graph=True)
         self.optimizer.step()
         print("\nInitializer loss: " + '%.4g' % loss.item())
         # if step % self.args.scalar_logging_interval == 0:

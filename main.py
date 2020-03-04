@@ -29,7 +29,7 @@ class TrainingManager():
                                     betas=(0.0, 0.999)) # betas=(0.9, 0.999))
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                    step_size=1,
-                                                   gamma=0.99)
+                                                   gamma=0.999)
         self.noises = lib.utils.generate_random_states(self.args.state_sizes,
                                                        self.device)
         self.global_step = 0
@@ -83,14 +83,14 @@ class TrainingManager():
         # Set the rest of the hyperparams for iteration scheduling
         self.pos_history = []
         self.neg_history = []
-        self.max_history_len = 50
-        self.mean_neg_pos_margin = 0
+        self.max_history_len = 5000
+        self.mean_neg_pos_margin = 100
         self.neg_it_schedule_cooldown = 0
-        self.cooldown_len = 10000 #batches
+        self.cooldown_len = 2 #epochs
         self.latest_pos_enrg = None
         self.latest_neg_enrg = None
         self.num_it_neg_mean = self.args.num_it_neg
-        self.num_it_neg = self.num_it_neg_mean
+        self.num_it_neg = self.args.num_it_neg
 
     def train(self):
         save_dict = self.make_save_dict()
@@ -106,19 +106,24 @@ class TrainingManager():
                 print("Batch num:    %i" % self.batch_num)
                 print("Global step:  %i" % self.global_step)
 
-                pos_states, pos_id = self.positive_phase(pos_img, pos_id,
+                pos_states, pos_id = self.positive_phase(pos_img,
+                                                         pos_id,
                                                          prev_states)
 
                 neg_states, neg_id = self.negative_phase()
-                self.param_update_phase(neg_states, neg_id, pos_states, pos_id)
-                stop = self.neg_iterations_schedule_update()
+
+                self.param_update_phase(neg_states,
+                                        neg_id,
+                                        pos_states,
+                                        pos_id)
 
                 prev_states = pos_states  # In case pos init uses prev states
 
                 if self.batch_num % self.args.img_logging_interval == 0:
                     self.log_images(pos_img, pos_states, neg_states)
 
-                self.log_mean_energies()
+                self.save_energies_to_histories()
+                self.log_mean_energy_histories()
 
                 # Save network(s) and settings
                 if self.batch_num % self.args.model_save_interval == 0:
@@ -128,16 +133,23 @@ class TrainingManager():
 
                 self.batch_num += 1
 
+                if self.num_it_neg_mean > 1000:
+                    stop = True
+                else:
+                    stop = False
+
+            self.neg_iterations_schedule_update()
+
             print("End of epoch %i" % self.epoch)
             self.epoch += 1
 
             # Schedule lr and log changes
             print("Decrementing learning rate.")
             lr = self.scheduler.get_lr()[0]
-            self.writer.add_scalar('train/lr', lr, self.batch_num)
+            self.writer.add_scalar('train/lr', lr, self.epoch)
             self.scheduler.step()
             new_lr = self.scheduler.get_lr()[0]
-            self.writer.add_scalar('train/lr', new_lr, self.batch_num)
+            self.writer.add_scalar('train/lr', new_lr, self.epoch)
 
             if stop:
                 break
@@ -348,7 +360,7 @@ class TrainingManager():
             state.grad.zero_()
             state.data.clamp_(0, 1)
 
-    def log_mean_energies(self):
+    def log_mean_energy_histories(self):
         mean_pos = sum(self.pos_history) / len(self.pos_history)
         mean_neg = sum(self.neg_history) / len(self.neg_history)
         self.writer.add_scalar('train/mean_neg_energy', mean_neg,
@@ -429,10 +441,6 @@ class TrainingManager():
         # Stabilize Adam-optimized weight updates(?)
         clip_grad(self.parameters, self.optimizer)
 
-        # # Update learning rate
-        # if self.batch_num == 0 and not self.global_step == 0:
-
-
         # Update the network params
         self.optimizer.step()
 
@@ -477,8 +485,10 @@ class TrainingManager():
                 break
         print("\nPretraining of initializer complete")
 
-    def neg_iterations_schedule_update(self):
-
+    def save_energies_to_histories(self):
+        """Every training iteration (i.e. every positive-negative phase pair)
+         record the mean negative and positive energies in the histories.
+        """
         if len(self.pos_history) > self.max_history_len:
             self.pos_history.pop(0)
         self.pos_history.append(self.latest_pos_enrg)
@@ -487,10 +497,12 @@ class TrainingManager():
             self.neg_history.pop(0)
         self.neg_history.append(self.latest_neg_enrg)
 
+    def neg_iterations_schedule_update(self):
+        """Called every epoch to see whether the num it neg mean should be
+        increased"""
         print("Num it neg: " + str(self.num_it_neg_mean))
-        if self.batch_num % self.args.scalar_logging_interval == 0:
-            self.writer.add_scalar('train/num_it_neg', self.num_it_neg_mean,
-                                   self.batch_num)
+        self.writer.add_scalar('train/num_it_neg', self.num_it_neg_mean,
+                               self.epoch)
 
         if len(self.pos_history) < self.max_history_len or \
                 len(self.neg_history) < self.max_history_len:
@@ -500,21 +512,25 @@ class TrainingManager():
         else:
             mean_pos = sum(self.pos_history)/len(self.pos_history)
             mean_neg = sum(self.neg_history)/len(self.neg_history)
-            if mean_neg > mean_pos - self.mean_neg_pos_margin \
-                    and self.epoch > 2:
+            if mean_neg > mean_pos + self.mean_neg_pos_margin \
+                    and self.epoch > 10: # so never updates before 11th epoch
 
+                # Scale up num it neg mean
+                self.num_it_neg_mean = int(self.num_it_neg_mean * 1.25)
+
+                # Log new num it neg mean
                 self.writer.add_scalar('train/num_it_neg', self.num_it_neg_mean,
-                                       self.batch_num)
-                self.num_it_neg_mean = int(self.num_it_neg_mean * 1.5)
+                                       self.epoch)
+
+                # Reset cooldown timer and histories
                 self.neg_it_schedule_cooldown = self.cooldown_len
-                self.writer.add_scalar('train/num_it_neg', self.num_it_neg_mean,
-                                       self.batch_num)
+                self.pos_history = []
+                self.neg_history = []
 
-        if self.num_it_neg_mean > 1000:
-            stop_training = True
-        else:
-            stop_training = False
-        return stop_training
+
+
+
+
 
 
 
@@ -1070,6 +1086,30 @@ def finalize_args(parser):
                                    'mod_connect_dict': mod_connect_dict,
                                    'num_fc_channels': 16}
         vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
+
+
+    elif args.architecture == 'DAN_med_5_layers_self':
+        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                     [args.batch_size, 16, 28, 28],
+                                     [args.batch_size, 16, 8, 8],
+                                     [args.batch_size, 100],
+                                     [args.batch_size, 50]]
+
+        mod_connect_dict = {0: [0,1],
+                            1: [0,1,2],
+                            2: [1,2,3],
+                            3: [2,3,4],
+                            4: [3,4]}
+
+        vars(args)['arch_dict'] = {'num_ch': 16,
+                                   'num_ch_initter': 16,
+                                   'num_sl': len(args.state_sizes) - 1,
+                                   'kernel_sizes': [[3, 3], [3, 3], [3, 3], [3, 3]],
+                                   'strides': [1,1,1,1],
+                                   'padding': [[1,1], [1,1], [1,1], [1,1]],
+                                   'mod_connect_dict': mod_connect_dict,
+                                   'num_fc_channels': 16}
+        vars(args)['energy_weight_mask'] = [1.0, 0.0625, 0.784, 7.84, 15.68]
 
     elif args.architecture == 'DAN_very_small_4_layers_selftop_smallworld':
         vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
