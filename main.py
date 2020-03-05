@@ -1428,7 +1428,7 @@ def finalize_args(parser):
                                        'num_fc_channels': 32}
             vars(args)['energy_weight_mask'] = [1.0,
                                                 0.1875,
-                                                0.375,
+                                                0.75,
                                                 1.5,
                                                 12.0]
 
