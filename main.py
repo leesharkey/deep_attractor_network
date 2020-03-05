@@ -1400,7 +1400,7 @@ def finalize_args(parser):
 
         if args.architecture == 'DAN_cifar10_5layers_btself':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
-                                         [args.batch_size, 16, 32, 32],  # 32768
+                                         [args.batch_size, 16, 28, 28],  # 32768
                                          [args.batch_size, 16, 16, 16],  # 8192
                                          [args.batch_size, 16, 8, 8],  # 2048
                                          [args.batch_size, 256]]
@@ -1427,7 +1427,7 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict,
                                        'num_fc_channels': 32}
             vars(args)['energy_weight_mask'] = [1.0,
-                                                0.1875,
+                                                0.2449,
                                                 0.75,
                                                 1.5,
                                                 12.0]
