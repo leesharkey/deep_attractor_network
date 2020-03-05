@@ -1401,8 +1401,8 @@ def finalize_args(parser):
         if args.architecture == 'DAN_cifar10_5layers_btself':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
                                          [args.batch_size, 16, 32, 32],  # 32768
-                                         [args.batch_size, 32, 16, 16],  # 8192
-                                         [args.batch_size, 32, 8, 8],  # 2048
+                                         [args.batch_size, 16, 16, 16],  # 8192
+                                         [args.batch_size, 16, 8, 8],  # 2048
                                          [args.batch_size, 256]]
 
             mod_connect_dict = {0: [0, 1],
