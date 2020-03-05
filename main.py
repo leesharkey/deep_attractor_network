@@ -1233,8 +1233,8 @@ def finalize_args(parser):
                             2: [1,3],
                             3: [2,4],
                             4: [3,4]}
-        vars(args)['arch_dict'] = {'num_ch': 32,
-                                   'num_ch_initter': 32,
+        vars(args)['arch_dict'] = {'num_ch': 16,
+                                   'num_ch_initter': 16,
                                    'num_sl': len(args.state_sizes) - 1,
                                    'kernel_sizes': [[3, 3],
                                                     [3, 3],
@@ -1247,7 +1247,7 @@ def finalize_args(parser):
                                                [1, 1], [1, 1],
                                                [1, 1]],
                                    'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 32}
+                                   'num_fc_channels': 16}
 
         vars(args)['energy_weight_mask'] = [1.0, 0.03125, 0.245, 6.125, 12.25]
 
@@ -1414,7 +1414,7 @@ def finalize_args(parser):
                                 5: [4, 5]}
 
             vars(args)['arch_dict'] = {'num_ch': 64,
-                                       'num_ch_initter': 64,
+                                       'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
                                        'kernel_sizes': [[3,3],
                                                         [3,3],
