@@ -1398,20 +1398,18 @@ def finalize_args(parser):
                                                 1.5,
                                                 12.0]
 
-        if args.architecture == 'DAN_cifar10_6layers_btself':
+        if args.architecture == 'DAN_cifar10_5layers_btself':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
                                          [args.batch_size, 16, 32, 32],  # 32768
                                          [args.batch_size, 32, 16, 16],  # 8192
                                          [args.batch_size, 32, 8, 8],  # 2048
-                                         [args.batch_size, 256],
-                                         [args.batch_size, 64]]
+                                         [args.batch_size, 256]]
 
             mod_connect_dict = {0: [0, 1],
                                 1: [0, 2],
                                 2: [1, 3],
                                 3: [2, 4],
-                                4: [3, 5],
-                                5: [4, 5]}
+                                4: [3, 4]}
 
             vars(args)['arch_dict'] = {'num_ch': 32,
                                        'num_ch_initter': 32,
@@ -1432,8 +1430,7 @@ def finalize_args(parser):
                                                 0.1875,
                                                 0.375,
                                                 1.5,
-                                                12.0,
-                                                48.0]
+                                                12.0]
 
         if args.architecture == 'DAN_cifar10_8layers_huge_filtermix':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
