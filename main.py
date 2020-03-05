@@ -1221,7 +1221,7 @@ def finalize_args(parser):
                                    'mod_connect_dict': mod_connect_dict,
                                    'num_fc_channels': 32}
         vars(args)['energy_weight_mask'] = [1.0, 0.09, 0.383, 7.84, 15.68]
-    elif args.architecture == 'DAN_med_5_layers_allself':
+    elif args.architecture == 'DAN_med_5_layers_btself':
         vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                      [args.batch_size, 32, 28, 28],
                                      [args.batch_size, 32, 10, 10],
@@ -1229,9 +1229,9 @@ def finalize_args(parser):
                                      [args.batch_size, 64]]
 
         mod_connect_dict = {0: [0,1],
-                            1: [0,1,2],
-                            2: [1,2,3],
-                            3: [2,3,4],
+                            1: [0,2],
+                            2: [1,3],
+                            3: [2,4],
                             4: [3,4]}
         vars(args)['arch_dict'] = {'num_ch': 32,
                                    'num_ch_initter': 32,
@@ -1398,7 +1398,7 @@ def finalize_args(parser):
                                                 1.5,
                                                 12.0]
 
-        if args.architecture == 'DAN_cifar10_6layers_all_self':
+        if args.architecture == 'DAN_cifar10_6layers_btself':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
                                          [args.batch_size, 32, 32, 32],  # 32768
                                          [args.batch_size, 32, 16, 16],  # 8192
@@ -1408,8 +1408,8 @@ def finalize_args(parser):
 
             mod_connect_dict = {0: [0, 1],
                                 1: [0, 1, 2],
-                                2: [1, 2, 3, 4],
-                                3: [2, 3, 4],
+                                2: [1, 3],
+                                3: [2, 4],
                                 4: [3, 4, 5],
                                 5: [4, 5]}
 
@@ -1427,7 +1427,7 @@ def finalize_args(parser):
                                                    [1,1],[1,1],
                                                    [1,1]],
                                        'mod_connect_dict': mod_connect_dict,
-                                       'num_fc_channels': 64}
+                                       'num_fc_channels': 32}
             vars(args)['energy_weight_mask'] = [1.0,
                                                 0.09375,
                                                 0.375,
