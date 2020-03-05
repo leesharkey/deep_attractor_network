@@ -349,9 +349,9 @@ class TrainingManager():
 
         # Save latest energy outputs so you can schedule the phase lengths
         if positive_phase:
-            self.latest_pos_enrg = energy.detach()
+            self.latest_pos_enrg = energy.item()
         else:
-            self.latest_neg_enrg = energy.detach()
+            self.latest_neg_enrg = energy.item()
 
 
         # Prepare gradients and sample for next sampling step
@@ -1433,7 +1433,41 @@ def finalize_args(parser):
                                                 1.5,
                                                 12.0]
 
-        if args.architecture == 'DAN_cifar10_6layers_btself':
+        if args.architecture == 'DAN_cifar10_5layers_btself':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
+                                         [args.batch_size, 16, 16, 16],  # 32768
+                                         [args.batch_size, 16, 8, 8],  # 2048
+                                         [args.batch_size, 256],
+                                         [args.batch_size, 64]]
+
+            mod_connect_dict = {0: [0, 1],
+                                1: [0, 2],
+                                2: [1, 3],
+                                3: [2, 3, 4],
+                                4: [3, 4]}
+
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_ch_initter': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3,3],
+                                                        [3,3],
+                                                        [3,3],
+                                                        [3,3],
+                                                        [3,3]],
+                                       'strides': [1, 1],
+                                       'padding': [[1,1],
+                                                   [1,1],[1,1],
+                                                   [1,1],[1,1],
+                                                   [1,1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 64}
+            vars(args)['energy_weight_mask'] = [1.0,
+                                                0.75,
+                                                0.75,
+                                                1.5,
+                                                12.0]
+
+        if args.architecture == 'DAN_cifar10_med_6layers_btself':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
                                          [args.batch_size, 16, 16, 16],  # 32768
                                          [args.batch_size, 16, 16, 16],  # 8192
@@ -1470,18 +1504,20 @@ def finalize_args(parser):
                                                 12.0,
                                                 48.0]
 
-        if args.architecture == 'DAN_cifar10_5layers_btself':
+        if args.architecture == 'DAN_cifar10_large_6layers_btself':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
-                                         [args.batch_size, 16, 16, 16],  # 32768
-                                         [args.batch_size, 16, 8, 8],  # 2048
+                                         [args.batch_size, 32, 32, 32],  # 32768
+                                         [args.batch_size, 32, 16, 16],  # 8192
+                                         [args.batch_size, 32, 8, 8],  # 2048
                                          [args.batch_size, 256],
                                          [args.batch_size, 64]]
 
             mod_connect_dict = {0: [0, 1],
                                 1: [0, 2],
                                 2: [1, 3],
-                                3: [2, 3, 4],
-                                4: [3, 4]}
+                                3: [2, 4],
+                                4: [3, 4, 5],
+                                5: [4, 5]}
 
             vars(args)['arch_dict'] = {'num_ch': 64,
                                        'num_ch_initter': 64,
@@ -1499,10 +1535,11 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict,
                                        'num_fc_channels': 64}
             vars(args)['energy_weight_mask'] = [1.0,
-                                                0.75,
-                                                0.75,
+                                                0.0938,
+                                                0.3750,
                                                 1.5,
-                                                12.0]
+                                                12.0,
+                                                48.0]
 
         if args.architecture == 'DAN_cifar10_8layers_huge_filtermix':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
@@ -1913,6 +1950,7 @@ gradcheck = lambda  y : [x.requires_grad for x in y]
 leafcheck = lambda  y : [x.is_leaf for x in y]
 existgradcheck = lambda  y : [(x.grad is not None) for x in y]
 existgraddatacheck = lambda  y : [(x.grad.data is not None) for x in y]
+divl = lambda l1, l2: torch.prod(torch.tensor(l1)).float()/torch.prod(torch.tensor(l2)).float()
 
 if __name__ == '__main__':
     main()
