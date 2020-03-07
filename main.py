@@ -1158,14 +1158,14 @@ def finalize_args(parser):
 
             vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
-        elif args.architecture == 'DAN_smallish_3_layers':
+        elif args.architecture == 'DAN_smallish_3_layers_topself':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size, 16, 28, 28],
                                          [args.batch_size, 128]]
 
             mod_connect_dict = {0: [1],
                                 1: [0,2],
-                                2: [1]}
+                                2: [1,2]}
             vars(args)['arch_dict'] = {'num_ch': 32,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
