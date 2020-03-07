@@ -664,7 +664,7 @@ class DeepAttractorNetwork(nn.Module):
         sq_terms = []
         for i, layer in enumerate(states):
             sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2).sum()
-            sq_term = self.args.energy_weight_mask[i] * sq_term
+            #sq_term = self.args.energy_weight_mask[i] * sq_term
             sq_terms.append(sq_term)
         sq_nrm = sum(sq_terms)
 
@@ -673,7 +673,7 @@ class DeepAttractorNetwork(nn.Module):
         for i, (layer, bias) in enumerate(zip(states, self.biases)):
             lin_term = bias(self.state_actv(layer.view(layer.shape[0], -1)))
             lin_term = lin_term.sum()
-            lin_term = self.args.energy_weight_mask[i] * lin_term
+            #lin_term = self.args.energy_weight_mask[i] * lin_term
             lin_terms.append(lin_term)
         lin_terms = - sum(lin_terms)
 
