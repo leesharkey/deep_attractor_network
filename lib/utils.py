@@ -181,6 +181,8 @@ def get_activation_function(args):
         act = torch.nn.ReLU()
     elif args.activation == "swish":
         act = cust_actv.Swish_module()
+    elif args.activation == "identity":
+        act = torch.nn.Identity()
     return act
 
 def get_state_optimizers(args, params):
