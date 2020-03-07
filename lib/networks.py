@@ -661,12 +661,26 @@ class DeepAttractorNetwork(nn.Module):
     def forward(self, states, class_id=None, step=None):
 
         # Squared norm
-        sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in states])
+        sq_terms = []
+        for i, layer in enumerate(states):
+            sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2).sum()
+            sq_term = self.args.energy_weight_mask[i] * sq_term
+            sq_terms.append(sq_term)
+        sq_nrm = sum(sq_terms)
 
         # Linear terms
-        linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
-                              for layer, bias in
-                              zip(states, self.biases)])
+        lin_terms = []
+        for i, (layer, bias) in enumerate(i, zip(states, self.biases)):
+            lin_term = bias(self.state_actv(layer.view(layer.shape[0], -1)))
+            lin_term = lin_term.sum()
+            lin_term = self.args.energy_weight_mask[i] * lin_term
+            lin_terms.append(lin_term)
+        lin_terms = - sum(lin_terms)
+
+
+        # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
+        #                       for layer, bias in
+        #                       zip(states, self.biases)])
 
         # Quadratic terms
         quadr_outs = []
@@ -677,14 +691,14 @@ class DeepAttractorNetwork(nn.Module):
             pos_inp_states = [self.state_actv(state)
                               for state in pos_inp_states]
             quadr_out, out = net(pre_state, pos_inp_states)
-            #quadr_out = self.args.energy_weight_mask[i] * quadr_out
+            quadr_out = self.args.energy_weight_mask[i] * quadr_out
             quadr_outs.append(quadr_out)
             outs.append(out)
 
         quadratic_terms = - sum(sum(quadr_outs))  # Note the minus here
 
         # Get the final energy
-        energy = sq_nrm + linear_terms + quadratic_terms
+        energy = sq_nrm + lin_terms + quadratic_terms
 
         return energy, outs
 
