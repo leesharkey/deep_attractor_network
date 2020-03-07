@@ -86,7 +86,7 @@ class TrainingManager():
         self.max_history_len = 5000
         self.mean_neg_pos_margin = 100
         self.neg_it_schedule_cooldown = 0
-        self.cooldown_len = 3 #epochs
+        self.cooldown_len = 10 #epochs
         self.latest_pos_enrg = None
         self.latest_neg_enrg = None
         self.num_it_neg_mean = self.args.num_it_neg
@@ -312,7 +312,7 @@ class TrainingManager():
         if step % self.args.scalar_logging_interval == 0 and step is not None:
             for i, enrg in enumerate(outs):
                 mean_layer_string = 'layers/mean_energies_%s' % i
-                #print("Logging mean energies")
+                #print("Logging mean energies") #TODO rename these. They aren't energies, they're the outputs of the quadratic networks
                 self.writer.add_scalar(mean_layer_string, enrg.mean(), step)
                 if self.args.log_histograms  and \
                         step % self.args.histogram_logging_interval == 0:
@@ -856,7 +856,9 @@ def clip_grad(parameters, optimizer):
                 p.grad.data.copy_(torch.max(torch.min(p.grad.data, bound), -bound))
 
 def calc_enrg_masks(args):
-    return [divl(args.state_sizes[0][1:], x[1:]).item() for x in args.state_sizes]
+    m = [divl(args.state_sizes[0][1:], x[1:]).item() for x in args.state_sizes]
+    print(m)
+    return m
 
 def finalize_args(parser):
 
@@ -874,417 +876,611 @@ def finalize_args(parser):
         vars(args)['special_name'] = input("Special name: ") or "None"
 
     # Set architecture-specific hyperparams
-    if args.architecture == 'BFN_small_4_layers':
+    if args.network_type == 'BengioFischer':
+        if args.architecture == 'BFN_small_4_layers':
+                vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                             [args.batch_size, 500],
+                                             [args.batch_size, 100],
+                                             [args.batch_size, 10]]
+
+        elif args.architecture == 'BFN_med_4_layers':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size, 500],
+                                         [args.batch_size, 500],
+                                         [args.batch_size, 200]]
+
+        elif args.architecture == 'BFN_large_5_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 1000],
+                                         [args.batch_size, 1000],
+                                         [args.batch_size, 300],
+                                         [args.batch_size, 300]]
+    if args.network_type == 'VectorField':
+
+        if args.architecture == 'VF_small_2_layers_toy':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 2]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0]}
+
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+
+        elif args.architecture == 'VF_small_3_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size, 100],
-                                         [args.batch_size, 10]]
+                                         [args.batch_size, 50]]
 
-    elif args.architecture == 'BFN_med_4_layers':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 500],
-                                     [args.batch_size, 500],
-                                     [args.batch_size, 200]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1]} # no self connections, just a FF-like net
 
-    elif args.architecture == 'BFN_large_5_layers':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 1000],
-                                     [args.batch_size, 1000],
-                                     [args.batch_size, 300],
-                                     [args.batch_size, 300]]
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1,1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
 
-    elif args.architecture == 'VF_small_2_layers_toy':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 2]]
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
-        mod_connect_dict = {0: [1],
-                            1: [0]}
+        elif args.architecture == 'VF_largelayer1_3_layers_for_EMasktesting':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 4000],
+                                         [args.batch_size, 16]]
 
-        vars(args)['arch_dict'] = {'num_ch': 64,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict}
-        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1]} # no self connections, just a FF-like net
 
-    elif args.architecture == 'VF_small_3_layers':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1,1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
 
-        mod_connect_dict = {0: [1],
-                            1: [0,2],
-                            2: [1]} # no self connections, just a FF-like net
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
-        vars(args)['arch_dict'] = {'num_ch': 64,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict}
-        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+        elif args.architecture == 'VF_largelayer1_3_layers_for_EMasktesting2':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 4000],
+                                         [args.batch_size, 16]]
 
-    elif args.architecture == 'VF_small_4_layers':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 300],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1]}
 
-        mod_connect_dict = {0: [1],
-                            1: [0,2],
-                            2: [1,3],
-                            3: [2]} # no self connections, just a FF-like net
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1,1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
 
-        vars(args)['arch_dict'] = {'num_ch': 64,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict}
-        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+            vars(args)['energy_weight_mask'] = [1., 1., 1.]
 
-    elif args.architecture == 'VF_small_4_layers_self':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 300],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+        elif args.architecture == 'VF_cifar_med_5_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  3, 32, 32],
+                                         [args.batch_size, 1024],
+                                         [args.batch_size, 512],
+                                         [args.batch_size, 128],
+                                         [args.batch_size, 32]
+                                         ]
 
-        mod_connect_dict = {0: [1],
-                            1: [0,1,2],
-                            2: [1,2,3],
-                            3: [2,3]} #worked first time. Beautiful.
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2,4],
+                                4: [3]} # no self connections, just a FF-like net
 
-        vars(args)['arch_dict'] = {'num_ch': 64,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict}
-        vars(args)['energy_weight_mask'] = [10.45, 1.0, 81.92, 163.84] #incorrect
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_ch_initter': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1,1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 64}
 
-    elif args.architecture == 'DAN_small_4_layers_experimental':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 1, 56, 56],
-                                     [args.batch_size, 16, 16, 16],
-                                     [args.batch_size, 32, 8, 8],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
-        mod_connect_dict = {0: [1],
-                            1: [0,1,2],
-                            2: [1,2,3],
-                            3: [1, 2, 4],
-                            4: [2, 4],
-                            5: [0,1,2,3,4]} # no self connections, just a FF-like net
+        elif args.architecture == 'VF_small_5_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 256],
+                                         [args.batch_size, 128],
+                                         [args.batch_size, 64],
+                                         [args.batch_size, 32]
+                                         ]
 
-        vars(args)['arch_dict'] = {'num_ch': 64,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict}
-        vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2,4],
+                                4: [3]} # no self connections, just a FF-like net
 
-    elif args.architecture == 'DAN_very_small_3_layers':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1,1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
 
-        mod_connect_dict = {0: [1],
-                            1: [0,2],
-                            2: [1,3]}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
-        vars(args)['arch_dict'] = {'num_ch': 16,
-                                   'num_ch_initter': 16,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [[3, 3], [3, 3]],
-                                   'strides': [[1,1], [1,1]],
-                                   'padding': [[1,1], [1,1]],
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 64}
-        vars(args)['energy_weight_mask'] = [1.0, 7.84, 15.68]
+        elif args.architecture == 'VF_small_4_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 300],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
 
-    elif args.architecture == 'DAN_very_small_4_layers_selftop':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 16, 8, 8],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2]} # no self connections, just a FF-like net
 
-        mod_connect_dict = {0: [1],
-                            1: [0,2],
-                            2: [1,3],
-                            3: [2,3]}
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 
-        vars(args)['arch_dict'] = {'num_ch': 16,
-                                   'num_ch_initter': 16,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [[3, 3], [3, 3], [3, 3]],
-                                   'strides': [1,1,1],
-                                   'padding': [[1,1], [1,1], [1,1]],
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 16}
-        vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
+        elif args.architecture == 'VF_small_4_layers_self':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 300],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
 
-    elif args.architecture == 'DAN_very_small_4_layers_selftop_larger_initr':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 16, 8, 8],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+            mod_connect_dict = {0: [1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3]}
 
-        mod_connect_dict = {0: [1],
-                            1: [0,2],
-                            2: [1,3],
-                            3: [2,3]}
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = [10.45, 1.0, 81.92, 163.84] #incorrect
 
-        vars(args)['arch_dict'] = {'num_ch': 16,
-                                   'num_ch_initter': 64,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 16}
-        vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
+    if args.network_type == 'DAN':
+        if args.architecture == 'DAN_small_2_layers_allself':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 128]]
 
-    elif args.architecture == 'DAN_small_4_layers_selftop3_larger_initr':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 16, 8, 8],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+            mod_connect_dict = {0: [0,1],
+                                1: [0,1]}
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1, 1],
+                                       'padding': [[1, 1],
+                                                   [1, 1],
+                                                   [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 64}
 
-        mod_connect_dict = {0: [1],
-                            1: [0,1,2],
-                            2: [1,2,3],
-                            3: [2,3]}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+        elif args.architecture == 'DAN_small_3_layers_allself':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 128]]
 
-        vars(args)['arch_dict'] = {'num_ch': 64,
-                                   'num_ch_initter': 64,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 32}
-        vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
+            mod_connect_dict = {0: [0,1],
+                                1: [0,1,2],
+                                2: [1,2]}
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1, 1],
+                                       'padding': [[1, 1],
+                                                   [1, 1],
+                                                   [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 64}
 
-    elif args.architecture == 'DAN_very_small_4_layers_selftop2':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 16, 8, 8],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+        if args.architecture == 'DAN_small_4_layers_experimental':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 1, 56, 56],
+                                         [args.batch_size, 16, 16, 16],
+                                         [args.batch_size, 32, 8, 8],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
 
-        mod_connect_dict = {0: [1],
-                            1: [0,2],
-                            2: [1,2,3],
-                            3: [2,3]}
+            mod_connect_dict = {0: [1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [1, 2, 4],
+                                4: [2, 4],
+                                5: [0,1,2,3,4]} # no self connections, just a FF-like net
 
-        vars(args)['arch_dict'] = {'num_ch': 16,
-                                   'num_ch_initter': 16,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 16}
-        vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = [1.0, 8.0, 32.0, 36, 144.0]
 
-    elif args.architecture == 'DAN_very_small_4_layers_selftop_smallworld':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 16, 8, 8],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50],
-                                     [args.batch_size, 50]]
+        elif args.architecture == 'DAN_very_small_3_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
 
-        mod_connect_dict = {0: [1],
-                            1: [0,2,4],
-                            2: [1,3,4],
-                            3: [2,3,4],
-                            4: [0,1,2,3,4]}
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3]}
 
-        vars(args)['arch_dict'] = {'num_ch': 16,
-                                   'num_ch_initter': 16,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 16}
-        vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68, 1.]# just 1. for small world layer in order to place soft influence over the rest
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3], [3, 3]],
+                                       'strides': [[1,1], [1,1]],
+                                       'padding': [[1,1], [1,1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 64}
+            vars(args)['energy_weight_mask'] = [1.0, 7.84, 15.68]
 
-    elif args.architecture == 'DAN_small_4_layers':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 32, 16, 16],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+        elif args.architecture == 'DAN_very_small_4_layers_selftop':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
 
-        mod_connect_dict = {0: [1],
-                            1: [0,2],
-                            2: [1,3],
-                            3: [2]} # no self connections, just a FF-like net
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2,3]}
 
-        vars(args)['arch_dict'] = {'num_ch': 32,
-                                   'num_ch_initter': 16,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 64}
-        vars(args)['energy_weight_mask'] = [10.45, 1.0, 81.92, 163.84]
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3], [3, 3], [3, 3]],
+                                       'strides': [1,1,1],
+                                       'padding': [[1,1], [1,1], [1,1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 16}
+            vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
 
-    elif args.architecture == 'DAN_small_4_layers_self':
-        vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                     [args.batch_size, 32, 16, 16],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+        elif args.architecture == 'DAN_very_small_4_layers_selftop_larger_initr':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
 
-        mod_connect_dict = {0: [1],
-                            1: [0, 1, 2],
-                            2: [1, 2, 3],
-                            3: [2, 3]}
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2,3]}
 
-        vars(args)['arch_dict'] = {'num_ch': 32,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1, 1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 128}
-        vars(args)['energy_weight_mask'] = [1.0, 1.4, 32.0, 36,
-                                            144.0]  # WRONG NEEDS FIXING BEFORE USE
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_ch_initter': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 16}
+            vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
 
-    elif args.architecture == 'DAN_very_small_5_layers_selftop':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 16, 8, 8],
-                                     [args.batch_size, 16, 8, 8],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+        elif args.architecture == 'DAN_small_4_layers_selftop3_larger_initr':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
 
-        mod_connect_dict = {0: [1],
-                            1: [0,2],
-                            2: [1,3],
-                            3: [2,4],
-                            4: [3,4]}
+            mod_connect_dict = {0: [1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3]}
 
-        vars(args)['arch_dict'] = {'num_ch': 16,
-                                   'num_ch_initter': 16,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 16}
-        vars(args)['energy_weight_mask'] = [1.0, 0.784, 0.784, 7.84, 15.68]
-    elif args.architecture == 'DAN_med_5_layers_self':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 16, 28, 28],
-                                     [args.batch_size, 16, 8, 8],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+            vars(args)['arch_dict'] = {'num_ch': 64,
+                                       'num_ch_initter': 64,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
+            vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
 
-        mod_connect_dict = {0: [0,1],
-                            1: [0,1,2],
-                            2: [1,2,3],
-                            3: [2,3,4],
-                            4: [3,4]}
+        elif args.architecture == 'DAN_very_small_4_layers_selftop2':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
 
-        vars(args)['arch_dict'] = {'num_ch': 16,
-                                   'num_ch_initter': 16,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [[3, 3], [3, 3], [3, 3], [3, 3]],
-                                   'strides': [1,1,1,1],
-                                   'padding': [[1,1], [1,1], [1,1], [1,1]],
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 16}
-        vars(args)['energy_weight_mask'] = [1.0, 0.0625, 0.784, 7.84, 15.68]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,2,3],
+                                3: [2,3]}
 
-    elif args.architecture == 'DAN_med_5_layers_selftop':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 32, 16, 16],
-                                     [args.batch_size, 32, 8, 8],
-                                     [args.batch_size, 100],
-                                     [args.batch_size, 50]]
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 16}
+            vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68]
 
-        mod_connect_dict = {0: [1],
-                            1: [0,2],
-                            2: [1,3],
-                            3: [2,4],
-                            4: [3,4]}
+        elif args.architecture == 'DAN_very_small_4_layers_selftop_smallworld':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50],
+                                         [args.batch_size, 50]]
 
-        vars(args)['arch_dict'] = {'num_ch': 32,
-                                   'num_ch_initter': 16,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [3, 3, 3],
-                                   'strides': [1,1],
-                                   'padding': 1,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 32}
-        vars(args)['energy_weight_mask'] = [1.0, 0.09, 0.383, 7.84, 15.68]
-    elif args.architecture == 'DAN_med_5_layers_btself':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 16, 16, 16],
-                                     [args.batch_size, 32, 8, 8],
-                                     [args.batch_size, 128],
-                                     [args.batch_size, 64]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2,4],
+                                2: [1,3,4],
+                                3: [2,3,4],
+                                4: [0,1,2,3,4]}
 
-        mod_connect_dict = {0: [0,1],
-                            1: [0,2],
-                            2: [1,3],
-                            3: [2,4],
-                            4: [3,4]}
-        vars(args)['arch_dict'] = {'num_ch': 16,
-                                   'num_ch_initter': 16,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [[3, 3],
-                                                    [3, 3],
-                                                    [3, 3],
-                                                    [3, 3],
-                                                    [3, 3]],
-                                   'strides': [1, 1],
-                                   'padding': [[1, 1],
-                                               [1, 1], [1, 1],
-                                               [1, 1], [1, 1],
-                                               [1, 1]],
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 16}
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 16}
+            vars(args)['energy_weight_mask'] = [1.0, 0.784, 7.84, 15.68, 1.]# just 1. for small world layer in order to place soft influence over the rest
 
-        vars(args)['energy_weight_mask'] = [1.0, 0.1914, 0.3828, 6.125, 12.25]
+        elif args.architecture == 'DAN_small_4_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
 
-    elif args.architecture == 'DAN_large_6_layers_allself':
-        vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                     [args.batch_size, 32, 28, 28],
-                                     [args.batch_size, 32, 16, 16],
-                                     [args.batch_size, 32, 8, 8],
-                                     [args.batch_size, 128],
-                                     [args.batch_size, 64]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2]} # no self connections, just a FF-like net
 
-        mod_connect_dict = {0: [0,1],
-                            1: [0,1,2],
-                            2: [1,2,3],
-                            3: [2,3,4],
-                            4: [3,4,5],
-                            5: [4,5]}
-        vars(args)['arch_dict'] = {'num_ch': 32,
-                                   'num_ch_initter': 32,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'kernel_sizes': [[3, 3],
-                                                    [3, 3],
-                                                    [3, 3],
-                                                    [3, 3],
-                                                    [3, 3]],
-                                   'strides': [1, 1],
-                                   'padding': [[1, 1],
-                                               [1, 1], [1, 1],
-                                               [1, 1], [1, 1],
-                                               [1, 1]],
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'num_fc_channels': 32}
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 64}
+            vars(args)['energy_weight_mask'] = [10.45, 1.0, 81.92, 163.84]
 
-        vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+        elif args.architecture == 'DAN_small_4_layers_self':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3]}
+
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1, 1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 128}
+            vars(args)['energy_weight_mask'] = [1.0, 1.4, 32.0, 36,
+                                                144.0]  # WRONG NEEDS FIXING BEFORE USE
+
+        elif args.architecture == 'DAN_very_small_5_layers_selftop':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2,4],
+                                4: [3,4]}
+
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 16}
+            vars(args)['energy_weight_mask'] = [1.0, 0.784, 0.784, 7.84, 15.68]
+        elif args.architecture == 'DAN_med_5_layers_self':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
+
+            mod_connect_dict = {0: [0,1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3,4],
+                                4: [3,4]}
+
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3], [3, 3], [3, 3], [3, 3]],
+                                       'strides': [1,1,1,1],
+                                       'padding': [[1,1], [1,1], [1,1], [1,1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 16}
+            vars(args)['energy_weight_mask'] = [1.0, 0.0625, 0.784, 7.84, 15.68]
+
+        elif args.architecture == 'DAN_med_5_layers_selftop':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 32, 8, 8],
+                                         [args.batch_size, 100],
+                                         [args.batch_size, 50]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2,4],
+                                4: [3,4]}
+
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [3, 3, 3],
+                                       'strides': [1,1],
+                                       'padding': 1,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
+            vars(args)['energy_weight_mask'] = [1.0, 0.09, 0.383, 7.84, 15.68]
+        elif args.architecture == 'DAN_med_5_layers_btself':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 16, 16],
+                                         [args.batch_size, 32, 8, 8],
+                                         [args.batch_size, 128],
+                                         [args.batch_size, 64]]
+
+            mod_connect_dict = {0: [0,1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2,4],
+                                4: [3,4]}
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1, 1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 16}
+
+            vars(args)['energy_weight_mask'] = [1.0, 0.1914, 0.3828, 6.125, 12.25]
+
+        elif args.architecture == 'DAN_med_4_layers_allself': #Lee want to do on 20200307 after very small 2 l allself
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 8, 8],
+                                         [args.batch_size, 128]]
+
+            mod_connect_dict = {0: [0,1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3]}
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1, 1],
+                                       'padding': [[1, 1],
+                                                   [1, 1],
+                                                   [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
+
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+
+        elif args.architecture == 'DAN_large_6_layers_allself':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 32, 8, 8],
+                                         [args.batch_size, 128],
+                                         [args.batch_size, 64]]
+
+            mod_connect_dict = {0: [0,1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3,4],
+                                4: [3,4,5],
+                                5: [4,5]}
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1, 1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
+
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
 
-    if args.dataset == "CIFAR10":
+
         if args.architecture == 'DAN_cifar10_large_5_layers_self':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
                                          [args.batch_size, 64, 16, 16], # 16384
@@ -1509,10 +1705,10 @@ def finalize_args(parser):
                                                 48.0]
 
         if args.architecture == 'DAN_cifar10_large_6layers_allself':
-            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
-                                         [args.batch_size, 64, 32, 32],  # 32768
-                                         [args.batch_size, 32, 16, 16],  # 8192
-                                         [args.batch_size, 32, 8, 8],  # 2048
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
+                                         [args.batch_size, 64, 32, 32],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 32, 8, 8],
                                          [args.batch_size, 256],
                                          [args.batch_size, 64]]
 
@@ -1798,11 +1994,12 @@ def main():
                         help='')
     ngroup.add_argument('--dampening_param', type=float, default=0.0,
                         help='')
-    ngroup.add_argument('--spec_norm_reg_lin', action='store_true',
-                        help='If true, linear layers are subjected to ' +
+    ngroup.add_argument('--no_spec_norm_reg', action='store_true',
+                        help='If true, networks are NOT subjected to ' +
                              'spectral norm regularisation. ' +
                              'Default: %(default)s.')
-    parser.set_defaults(spec_norm_reg_lin=False)
+    parser.set_defaults(no_spec_norm_reg=False)
+
 
     vgroup = parser.add_argument_group('Visualization options')
     vgroup.add_argument('--viz', action='store_true',
