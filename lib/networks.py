@@ -670,7 +670,7 @@ class DeepAttractorNetwork(nn.Module):
 
         # Linear terms
         lin_terms = []
-        for i, (layer, bias) in enumerate(i, zip(states, self.biases)):
+        for i, (layer, bias) in enumerate(zip(states, self.biases)):
             lin_term = bias(self.state_actv(layer.view(layer.shape[0], -1)))
             lin_term = lin_term.sum()
             lin_term = self.args.energy_weight_mask[i] * lin_term
