@@ -661,6 +661,9 @@ class DeepAttractorNetwork(nn.Module):
     def forward(self, states, class_id=None, step=None):
 
         # Squared norm
+        # sq_nrm = sum(
+        #     [(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in
+        #      states])
         sq_terms = []
         for i, layer in enumerate(states):
             sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2).sum()
@@ -676,7 +679,6 @@ class DeepAttractorNetwork(nn.Module):
             #lin_term = self.args.energy_weight_mask[i] * lin_term
             lin_terms.append(lin_term)
         lin_terms = - sum(lin_terms)
-
 
         # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
         #                       for layer, bias in

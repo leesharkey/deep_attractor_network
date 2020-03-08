@@ -1141,8 +1141,8 @@ def finalize_args(parser):
             mod_connect_dict = {0: [0,1],
                                 1: [0,1,2],
                                 2: [1,2]}
-            vars(args)['arch_dict'] = {'num_ch': 32,
-                                       'num_ch_initter': 32,
+            vars(args)['arch_dict'] = {'num_ch': 2,
+                                       'num_ch_initter': 2,
                                        'num_sl': len(args.state_sizes) - 1,
                                        'kernel_sizes': [[3, 3],
                                                         [3, 3],
