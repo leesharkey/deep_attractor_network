@@ -693,7 +693,7 @@ class DeepAttractorNetwork(nn.Module):
             pos_inp_states = [self.state_actv(state)
                               for state in pos_inp_states]
             quadr_out, out = net(pre_state, pos_inp_states)
-            quadr_out = self.args.energy_weight_mask[i] * quadr_out
+            #quadr_out = self.args.energy_weight_mask[i] * quadr_out
             quadr_outs.append(quadr_out)
             outs.append(out)
 
