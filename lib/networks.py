@@ -588,7 +588,7 @@ class VectorFieldNetwork(nn.Module):
             post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
             pos_inp_states = [states[j] for j in post_inp_idxs]
             quadr_out, out = net(pre_state, pos_inp_states)
-            #quadr_out = self.args.energy_weight_mask[i] * quadr_out #TODO temporary, just to see if this messes it up with larger archi layers
+            quadr_out = self.args.energy_weight_mask[i] * quadr_out #TODO temporary, just to see if this messes it up with larger archi layers
             quadr_outs.append(quadr_out)
             outs.append(out)
 
@@ -607,6 +607,95 @@ class VectorFieldNetwork(nn.Module):
 
         return energy, outs
 
+class StructuredVectorFieldNetwork(nn.Module):
+    """Like the VectorFieldNetwork but allows for conv layers
+    """
+    def __init__(self, args, device, model_name, writer, n_class=None):
+        super().__init__()
+        self.args = args
+        self.device = device
+        self.writer = writer
+        self.model_name = model_name
+        self.num_state_layers = len(self.args.state_sizes[1:])
+
+        # Define the networks that output the quadratic terms
+        self.quadratic_nets = nn.ModuleList([])
+        for i, size in enumerate(self.args.state_sizes):
+            inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            state_sizes = [self.args.state_sizes[j] for j in inp_idxs]
+            state_sizes.append(size)
+            all_same_dim = all([len(state_sizes[0])==len(sz) for sz in state_sizes])
+            if len(size) == 4:
+                if all_same_dim:
+                    net = DenseConv(self.args, i)
+                else:
+                    net = ConvFCMixturetoFourDim(self.args, i)
+            elif len(size) == 2:
+                if all_same_dim:
+                    net = FCFC(self.args, i)
+                else:
+                    net = ConvFCMixturetoTwoDim(self.args, i)
+            self.quadratic_nets.append(net)
+
+        # Define the biases that determine the linear term
+        self.biases = nn.ModuleList(
+            [nn.Linear(torch.prod(torch.tensor(l[1:])), 1, bias=False)
+             for l in args.state_sizes])
+        for bias in self.biases:
+            torch.nn.init.zeros_(bias.weight)
+
+        if self.args.states_activation == "hardsig":
+            self.state_actv = activations.get_hard_sigmoid()
+        elif self.args.states_activation == "relu":
+            self.state_actv = activations.get_relu()
+        elif self.args.states_activation == "swish":
+            self.state_actv = activations.get_swish()
+
+    def forward(self, states, class_id=None, step=None):
+
+        # Squared norm
+        # sq_nrm = sum(
+        #     [(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in
+        #      states])
+        sq_terms = []
+        for i, layer in enumerate(states):
+            sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2).sum()
+            #sq_term = self.args.energy_weight_mask[i] * sq_term
+            sq_terms.append(sq_term)
+        sq_nrm = sum(sq_terms)
+
+        # Linear terms
+        lin_terms = []
+        for i, (layer, bias) in enumerate(zip(states, self.biases)):
+            lin_term = bias(self.state_actv(layer.view(layer.shape[0], -1)))
+            lin_term = lin_term.sum()
+            #lin_term = self.args.energy_weight_mask[i] * lin_term
+            lin_terms.append(lin_term)
+        lin_terms = - sum(lin_terms)
+
+        # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
+        #                       for layer, bias in
+        #                       zip(states, self.biases)])
+
+        # Quadratic terms
+        quadr_outs = []
+        outs = []
+        for i, (pre_state, net) in enumerate(zip(states, self.quadratic_nets)):
+            post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            pos_inp_states = [states[j] for j in post_inp_idxs]
+            pos_inp_states = [self.state_actv(state)
+                              for state in pos_inp_states]
+            quadr_out, out = net(pre_state, pos_inp_states)
+            #quadr_out = self.args.energy_weight_mask[i] * quadr_out
+            quadr_outs.append(quadr_out)
+            outs.append(out)
+
+        quadratic_terms = - sum(sum(quadr_outs))  # Note the minus here
+
+        # Get the final energy
+        energy = sq_nrm + lin_terms + quadratic_terms
+
+        return energy, outs
 
 class DeepAttractorNetwork(nn.Module):
     """Defines the Deep Attractor Network (Sharkey 2019)
