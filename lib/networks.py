@@ -708,7 +708,7 @@ class LinearConvFCMixturetoFourDim(nn.Module):
                                         Reshape(-1,
                                                 self.state_layer_ch,
                                                 self.state_layer_h_w[0],
-                                                self.state_layer_h_w[0])) # Spreads each 1D channel across the whole sheet of latent neurons
+                                                self.state_layer_h_w[1])) # Spreads each 1D channel across the whole sheet of latent neurons
             )
 
         # # Define energy convs (take output of base convs and FCs as input
@@ -1424,7 +1424,7 @@ class StructuredVectorFieldNetwork(nn.Module):
             quadr_outs.append(quadr_out)
             outs.append(out)
 
-        quadratic_terms = - sum(sum(quadr_outs))  # Note the minus here
+        quadratic_terms = sum(sum(quadr_outs))  # Note no the minus here
 
         # Get the final energy
         energy = sq_nrm + quadratic_terms #+ lin_terms
