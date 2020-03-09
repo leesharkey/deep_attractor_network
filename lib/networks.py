@@ -520,6 +520,275 @@ class LinearLayer(nn.Module):
             out = out_list[0]
         return quadr_out, out
 
+# Also need classes for
+# mix of fc and conv to 4dim and
+# mix to 2dim.
+
+class LinearConvFCMixturetoTwoDim(nn.Module):
+    """
+    Takes a mixture of four dimensional inputs and two dimensional inputs
+    and combines them and outputs a two dimensional output, the size of the
+    current layer
+    """
+    def __init__(self, args, layer_idx):
+        super().__init__()
+        self.args = args
+        self.pad_mode = 'zeros'
+        self.layer_idx = layer_idx
+        self.out_ch = 1
+        #self.act = lib.utils.get_activation_function(args)
+        #self.base_fc_out_size = 256 # TODO this seems like a hack
+
+        # Gets the indices of the state_layers that will be input to this net.
+        self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
+
+        # Size values of state_layer of this network
+        self.state_layer_size = self.args.state_sizes[layer_idx][1]
+
+        # The summed number of conv channels of all the input state_layers
+        self.in_conv_sizes = [self.args.state_sizes[j]
+                                     for j in self.input_idxs
+                                     if len(self.args.state_sizes[j]) == 4]
+        self.num_in_conv_channels = sum([size[1] for size in self.in_conv_sizes])
+
+        # Defines interpolater that reshapes all conv inputs to same size H x W
+        self.max_4dim_size = int(torch.max(torch.tensor(
+            [size[2] for size in self.in_conv_sizes]).float()))
+        self.max_4dim_size = [self.max_4dim_size, self.max_4dim_size]
+        self.interp = Interpolate(size=self.max_4dim_size, mode='bilinear')
+
+        # Define base convs (includes avg pooling to downsample)
+        base_conv = nn.Conv2d(
+            in_channels=self.num_in_conv_channels,
+            out_channels=self.out_ch, #TODO consider making a hyperparam
+            kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
+            padding=self.args.arch_dict['padding'][layer_idx][0],
+            stride=self.args.arch_dict['strides'][0],
+            padding_mode=self.pad_mode,
+            bias=True)
+        if not self.args.no_spec_norm_reg:
+            base_conv = spectral_norm(base_conv)
+        self.base_conv = nn.Sequential(base_conv,
+                                       nn.AvgPool2d(kernel_size=2, #TODO consider making this a hyperparam
+                                                    count_include_pad=True))
+
+        # Get size of base conv outputs
+        self.base_conv_outshapes = []
+        outshape0, outshape1 = \
+            conv_output_shape(self.max_4dim_size,
+                             kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
+                             padding=self.args.arch_dict['padding'][layer_idx][0],
+                             stride=self.args.arch_dict['strides'][0])
+        outshape = (outshape0, outshape1)
+        self.base_conv_outshapes.append([conv_output_shape(outshape,
+                                                     kernel_size=2,
+                                                     padding=0,
+                                                     stride=2)]) #for avg pool2d
+        self.base_conv_outsizes = [torch.prod(torch.tensor(bcos))# * \
+                                   #self.args.arch_dict['num_ch']
+                              for bcos in self.base_conv_outshapes] # TODO this scales poorly with num channels. Consider adding another conv layer with smaller output when network is working
+        self.linker_net = nn.Linear(self.base_conv_outsizes[0], self.state_layer_size) #todo probs don't need self.base_conv_outsizes to be a list
+
+        # Get num of fc neuron
+        self.in_fc_sizes = [self.args.state_sizes[j][1]
+                            for j in self.input_idxs
+                            if len(self.args.state_sizes[j]) == 2]
+        self.num_fc_inps = len(self.in_fc_sizes)
+        self.in_fc_neurons = sum(self.in_fc_sizes)
+
+        # Define base FCs
+        self.base_fc_layers = nn.ModuleList([])
+        for in_size in self.in_fc_sizes:
+            fc_layer = nn.Linear(in_size, self.state_layer_size)
+            if not self.args.no_spec_norm_reg:
+                fc_layer = spectral_norm(fc_layer, bound=True)
+            self.base_fc_layers.append(fc_layer) #TODO consider changing this to sequential and adding actv instead of doing actvs in forward (do once you've got network working)
+
+        # # Define energy FC (take flattened convs and base FCs as input)
+        # self.energy_inp_size = (self.base_fc_out_size * self.num_fc_inps) + \
+        #     sum(self.base_conv_outsizes)
+        # energy_layer = nn.Linear(self.energy_inp_size,
+        #                          self.state_layer_size)
+        # if not self.args.no_spec_norm_reg:
+        #     energy_layer = spectral_norm(energy_layer, bound=True)
+        # self.energy_layer = energy_layer
+
+    def forward(self, pre_states, inputs, class_id=None):
+        # Get 4-d inputs and pass through base conv layers, then flatten output
+        inps_4d = [inp for inp in inputs if len(inp.shape) == 4]
+        reshaped_4dim_inps = [self.interp(inp) for inp in inps_4d]
+        reshaped_4dim_inps = torch.cat(reshaped_4dim_inps, dim=1)
+        base_conv_out = self.base_conv(reshaped_4dim_inps)
+        resized_base_conv_out = base_conv_out.view(base_conv_out.shape[0], -1)
+        base_conv_out = self.linker_net(resized_base_conv_out)
+
+        # Get 2-d inputs and pass through base FC layers
+        inps_2d = [inp for inp in inputs if len(inp.shape) == 2]
+        if inps_2d:
+            fc_outs = [self.base_fc_layers[i](inp)
+                       for (i, inp) in enumerate(inps_2d)]
+            fc_outs_cat = torch.cat(fc_outs, dim=1)
+            out = fc_outs_cat + base_conv_out
+        else:
+            out = base_conv_out
+        # out = torch.sum(all_outs_cat, dim=1)
+
+        # Combine outputs of base fc & base conv layers and get energy output
+        # energy_input = torch.cat([resized_base_conv_out, fc_outs_cat], dim=1)
+        # out = self.energy_layer(energy_input)
+        quadr_out = 0.5 * torch.einsum('ba,ba->b',
+                                       out.view(out.shape[0], -1),
+                                       pre_states.view(pre_states.shape[0],-1))
+        return quadr_out, out
+
+class LinearConvFCMixturetoFourDim(nn.Module):
+    """
+    Takes a mixture of four dimensional and two dimensional inputs and
+    outputs a four dimensional output of the same shape as the current state.
+
+    """
+    def __init__(self, args, layer_idx):
+        super().__init__()
+        self.args = args
+        self.pad_mode = 'zeros'
+        self.layer_idx = layer_idx
+        # self.act = lib.utils.get_activation_function(args)
+        # self.num_fc_channels = self.args.arch_dict['num_fc_channels']
+
+        # Gets the indices of the state_layers that will be input to this net.
+        self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
+
+        # Size values of state_layer of this network
+        self.state_layer_ch = self.args.state_sizes[layer_idx][1]
+        self.state_layer_h_w = self.args.state_sizes[layer_idx][2:]
+        self.total_nrns = self.state_layer_ch * \
+                          torch.prod(torch.tensor(self.state_layer_h_w))
+
+        self.interp = Interpolate(size=self.state_layer_h_w, mode='bilinear')
+
+        # The summed number of channels of all the input state_layers
+        self.in_conv_channels = []
+        self.in_conv_channels = sum([self.args.state_sizes[j][1]
+                                     for j in self.input_idxs
+                                     if len(self.args.state_sizes[j]) == 4])
+
+        self.in_fc_sizes   = [self.args.state_sizes[j][1]
+                                  for j in self.input_idxs
+                                  if len(self.args.state_sizes[j]) == 2]
+        self.in_fc_neurons = sum(self.in_fc_sizes)
+        # fc_channel_fracs   = \
+        #     [int(round(self.num_fc_channels*(sz/sum(self.in_fc_sizes))))
+        #      for sz in self.in_fc_sizes]
+
+        # Define base convs (no max pooling)
+        self.base_conv = spectral_norm(nn.Conv2d(
+            in_channels=self.in_conv_channels,
+            out_channels=self.state_layer_ch,
+            kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
+            padding=self.args.arch_dict['padding'][layer_idx][0],
+            stride=self.args.arch_dict['strides'][0],
+            padding_mode=self.pad_mode,
+            bias=True))
+
+        # Define base FCs (then reshape their output to something that fits a conv)
+
+        self.base_actv_fc_layers = nn.ModuleList([])
+        for in_size in self.in_fc_sizes:
+            base_fc_layer = nn.Linear(in_size, self.total_nrns.item())
+            if not self.args.no_spec_norm_reg:
+                base_fc_layer = spectral_norm(base_fc_layer, bound=True)
+            self.base_actv_fc_layers.append(nn.Sequential(
+                                        base_fc_layer,
+                                        Reshape(-1,
+                                                self.state_layer_ch,
+                                                self.state_layer_h_w[0],
+                                                self.state_layer_h_w[0])) # Spreads each 1D channel across the whole sheet of latent neurons
+            )
+
+        # # Define energy convs (take output of base convs and FCs as input
+        # energy_conv = nn.Conv2d(
+        #     in_channels=self.args.arch_dict['num_ch'] +
+        #                 self.in_conv_channels +
+        #                 self.num_fc_channels,
+        #     out_channels=self.state_layer_ch,
+        #     kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][1],
+        #     padding=self.args.arch_dict['padding'][layer_idx][1],
+        #     padding_mode=self.pad_mode,
+        #     bias=True)
+        # if not self.args.no_spec_norm_reg:
+        #     energy_conv = spectral_norm(energy_conv, std=1e-10, bound=True)
+        # self.energy_conv = energy_conv
+
+    def forward(self, pre_states, inputs, class_id=None):
+        inps_4d = [inp for inp in inputs if len(inp.shape) == 4]
+        inps_2d = [inp for inp in inputs if len(inp.shape) == 2]
+        reshaped_4dim_inps = [self.interp(inp) for inp in inps_4d
+                             if inp.shape[2:] != self.state_layer_h_w]
+        reshaped_inps = torch.cat(reshaped_4dim_inps, dim=1)
+        base_conv_out = self.base_conv(reshaped_inps)
+
+        fc_outs = [self.base_actv_fc_layers[i](inp)
+                   for (i, inp) in enumerate(inps_2d)]
+
+        fc_outs = torch.cat(fc_outs, dim=1)
+        all_out = torch.stack([base_conv_out, fc_outs])
+        out = torch.sum(all_out, dim=0)
+        quadr_out = 0.5 * torch.einsum('ba,ba->b',
+                                       out.view(
+                                           int(out.shape[0]), -1),
+                                       pre_states.view(
+                                           int(pre_states.shape[0]), -1))
+        return quadr_out, out
+
+
+class LinearConv(nn.Module):
+    def __init__(self, args, layer_idx):
+        super().__init__()
+        self.args = args
+        self.pad_mode = 'zeros'
+        self.layer_idx = layer_idx
+        # self.act = lib.utils.get_activation_function(args)
+
+        # Gets the indices of the state_layers that will be input to this net.
+        self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
+
+        # The summed number of channels of all the input state_layers
+        self.in_channels = sum([self.args.state_sizes[j][1]
+                                for j in self.input_idxs])
+
+        # Size values of state_layer of this network
+        self.state_layer_ch = self.args.state_sizes[layer_idx][1]
+        self.state_layer_h_w = self.args.state_sizes[layer_idx][2:]
+        print("Input channels in %i: %i" % (layer_idx, self.in_channels))
+        print("Input h and w  in %i: %r" % (layer_idx, self.state_layer_h_w))
+
+        # Network
+        self.interp = Interpolate(size=self.state_layer_h_w, mode='bilinear')
+        base_conv = nn.Conv2d(
+                in_channels=self.in_channels,
+                out_channels=self.state_layer_ch,
+                kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
+                padding=self.args.arch_dict['padding'][layer_idx][0],
+                stride=self.args.arch_dict['strides'][0],
+                padding_mode=self.pad_mode,
+                bias=True)
+
+        if not self.args.no_spec_norm_reg:
+            base_conv = spectral_norm(base_conv)
+
+        self.base_conv = base_conv
+
+    def forward(self, pre_states, inputs, class_id=None):
+        reshaped_inps = [self.interp(inp) for inp in inputs
+                         if inp.shape[2:] != self.state_layer_h_w]
+        reshaped_inps = torch.cat(reshaped_inps, dim=1)
+        out = self.base_conv(reshaped_inps)
+        # energy_input = torch.cat([reshaped_inps, base_out], dim=1)
+        # out = self.act(self.energy_conv(energy_input))
+        quadr_out = 0.5 * torch.einsum('ba,ba->b', out.view(int(out.shape[0]), -1),
+                                     pre_states.view(int(pre_states.shape[0]), -1))
+        return quadr_out, out
+
 ##############################################################################
 ##############################################################################
 
@@ -607,95 +876,6 @@ class VectorFieldNetwork(nn.Module):
 
         return energy, outs
 
-class StructuredVectorFieldNetwork(nn.Module):
-    """Like the VectorFieldNetwork but allows for conv layers
-    """
-    def __init__(self, args, device, model_name, writer, n_class=None):
-        super().__init__()
-        self.args = args
-        self.device = device
-        self.writer = writer
-        self.model_name = model_name
-        self.num_state_layers = len(self.args.state_sizes[1:])
-
-        # Define the networks that output the quadratic terms
-        self.quadratic_nets = nn.ModuleList([])
-        for i, size in enumerate(self.args.state_sizes):
-            inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
-            state_sizes = [self.args.state_sizes[j] for j in inp_idxs]
-            state_sizes.append(size)
-            all_same_dim = all([len(state_sizes[0])==len(sz) for sz in state_sizes])
-            if len(size) == 4:
-                if all_same_dim:
-                    net = DenseConv(self.args, i)
-                else:
-                    net = ConvFCMixturetoFourDim(self.args, i)
-            elif len(size) == 2:
-                if all_same_dim:
-                    net = FCFC(self.args, i)
-                else:
-                    net = ConvFCMixturetoTwoDim(self.args, i)
-            self.quadratic_nets.append(net)
-
-        # Define the biases that determine the linear term
-        self.biases = nn.ModuleList(
-            [nn.Linear(torch.prod(torch.tensor(l[1:])), 1, bias=False)
-             for l in args.state_sizes])
-        for bias in self.biases:
-            torch.nn.init.zeros_(bias.weight)
-
-        if self.args.states_activation == "hardsig":
-            self.state_actv = activations.get_hard_sigmoid()
-        elif self.args.states_activation == "relu":
-            self.state_actv = activations.get_relu()
-        elif self.args.states_activation == "swish":
-            self.state_actv = activations.get_swish()
-
-    def forward(self, states, class_id=None, step=None):
-
-        # Squared norm
-        # sq_nrm = sum(
-        #     [(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in
-        #      states])
-        sq_terms = []
-        for i, layer in enumerate(states):
-            sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2).sum()
-            #sq_term = self.args.energy_weight_mask[i] * sq_term
-            sq_terms.append(sq_term)
-        sq_nrm = sum(sq_terms)
-
-        # Linear terms
-        lin_terms = []
-        for i, (layer, bias) in enumerate(zip(states, self.biases)):
-            lin_term = bias(self.state_actv(layer.view(layer.shape[0], -1)))
-            lin_term = lin_term.sum()
-            #lin_term = self.args.energy_weight_mask[i] * lin_term
-            lin_terms.append(lin_term)
-        lin_terms = - sum(lin_terms)
-
-        # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
-        #                       for layer, bias in
-        #                       zip(states, self.biases)])
-
-        # Quadratic terms
-        quadr_outs = []
-        outs = []
-        for i, (pre_state, net) in enumerate(zip(states, self.quadratic_nets)):
-            post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
-            pos_inp_states = [states[j] for j in post_inp_idxs]
-            pos_inp_states = [self.state_actv(state)
-                              for state in pos_inp_states]
-            quadr_out, out = net(pre_state, pos_inp_states)
-            #quadr_out = self.args.energy_weight_mask[i] * quadr_out
-            quadr_outs.append(quadr_out)
-            outs.append(out)
-
-        quadratic_terms = - sum(sum(quadr_outs))  # Note the minus here
-
-        # Get the final energy
-        energy = sq_nrm + lin_terms + quadratic_terms
-
-        return energy, outs
 
 class DeepAttractorNetwork(nn.Module):
     """Defines the Deep Attractor Network (Sharkey 2019)
@@ -782,7 +962,7 @@ class DeepAttractorNetwork(nn.Module):
             pos_inp_states = [self.state_actv(state)
                               for state in pos_inp_states]
             quadr_out, out = net(pre_state, pos_inp_states)
-            #quadr_out = self.args.energy_weight_mask[i] * quadr_out
+            quadr_out = self.args.energy_weight_mask[i] * quadr_out
             quadr_outs.append(quadr_out)
             outs.append(out)
 
@@ -1144,5 +1324,128 @@ class EBMLV(nn.Module):
 
         quadratic_terms = - sum(sum(enrgs))  # Note the minus here
         energy = quadratic_terms #sq_nrm + quadratic_terms #linear_terms +
+
+        return energy, outs
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class StructuredVectorFieldNetwork(nn.Module):
+    """Like the VectorFieldNetwork but allows for conv layers
+    """
+    def __init__(self, args, device, model_name, writer, n_class=None):
+        super().__init__()
+        self.args = args
+        self.device = device
+        self.writer = writer
+        self.model_name = model_name
+        self.num_state_layers = len(self.args.state_sizes[1:])
+
+
+
+
+        # Define the networks that output the quadratic terms
+        self.quadratic_nets = nn.ModuleList([])
+        for i, size in enumerate(self.args.state_sizes):
+            inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            state_sizes = [self.args.state_sizes[j] for j in inp_idxs]
+            state_sizes.append(size)
+            all_same_dim = all([len(state_sizes[0])==len(sz)
+                                for sz in state_sizes])
+            if len(size) == 4:
+                if all_same_dim:
+                    net = LinearConv(self.args, i)
+                else:
+                    net = LinearConvFCMixturetoFourDim(self.args, i)
+            elif len(size) == 2:
+                if all_same_dim:
+                    net = LinearLayer(self.args, i)
+                else:
+                    net = LinearConvFCMixturetoTwoDim(self.args, i)
+            self.quadratic_nets.append(net)
+
+        # Define the biases that determine the linear term
+        self.biases = nn.ModuleList(
+            [nn.Linear(torch.prod(torch.tensor(l[1:])), 1, bias=False)
+             for l in args.state_sizes])
+        for bias in self.biases:
+            torch.nn.init.zeros_(bias.weight)
+
+        if self.args.states_activation == "hardsig":
+            self.state_actv = activations.get_hard_sigmoid()
+        elif self.args.states_activation == "relu":
+            self.state_actv = activations.get_relu()
+        elif self.args.states_activation == "swish":
+            self.state_actv = activations.get_swish()
+
+    def forward(self, states, class_id=None, step=None):
+
+        # Squared norm
+        # sq_nrm = sum(
+        #     [(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in
+        #      states])
+        sq_terms = []
+        for i, layer in enumerate(states):
+            sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2).sum()
+            #sq_term = self.args.energy_weight_mask[i] * sq_term
+            sq_terms.append(sq_term)
+        sq_nrm = sum(sq_terms)
+
+        # Linear terms
+        lin_terms = []
+        for i, (layer, bias) in enumerate(zip(states, self.biases)):
+            lin_term = bias(self.state_actv(layer.view(layer.shape[0], -1)))
+            lin_term = lin_term.sum()
+            #lin_term = self.args.energy_weight_mask[i] * lin_term
+            lin_terms.append(lin_term)
+        lin_terms = - sum(lin_terms)
+
+        # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
+        #                       for layer, bias in
+        #                       zip(states, self.biases)])
+
+        # Quadratic terms
+        quadr_outs = []
+        outs = []
+        for i, (pre_state, net) in enumerate(zip(states, self.quadratic_nets)):
+            post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            pos_inp_states = [states[j] for j in post_inp_idxs]
+            pos_inp_states = [self.state_actv(state)
+                              for state in pos_inp_states]
+            quadr_out, out = net(pre_state, pos_inp_states)
+            #quadr_out = self.args.energy_weight_mask[i] * quadr_out
+            quadr_outs.append(quadr_out)
+            outs.append(out)
+
+        quadratic_terms = - sum(sum(quadr_outs))  # Note the minus here
+
+        # Get the final energy
+        energy = sq_nrm + lin_terms + quadratic_terms
 
         return energy, outs

@@ -1084,6 +1084,54 @@ def finalize_args(parser):
                                        'padding': 1,
                                        'mod_connect_dict': mod_connect_dict}
             vars(args)['energy_weight_mask'] = [10.45, 1.0, 81.92, 163.84] #incorrect
+    if args.network_type == 'SVF':
+        if args.architecture == 'SVF_small_3_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 8, 8, 8],
+                                         [args.batch_size, 128]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1]}
+
+            vars(args)['arch_dict'] = {'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1,1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict}
+
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+        elif args.architecture == 'SVF_med_4_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size,  16, 28, 28],
+                                         [args.batch_size, 8, 8, 8],
+                                         [args.batch_size, 128]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2]}
+
+            vars(args)['arch_dict'] = {'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1,1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict}
+
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
     if args.network_type == 'DAN':
         if args.architecture == 'DAN_small_2_layers_allself':
@@ -2231,6 +2279,9 @@ def main():
     elif args.network_type == 'EBMLV':
         model = nw.EBMLV(args, device, model_name, writer).to(
             device)
+    elif args.network_type == 'SVF':
+        model = nw.StructuredVectorFieldNetwork(args, device, model_name,
+                                                writer).to(device)
     else:
         raise ValueError("Invalid CLI argument for argument 'network_type'. ")
 
