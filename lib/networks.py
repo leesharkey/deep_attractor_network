@@ -1330,7 +1330,7 @@ class EBMLV(nn.Module):
             pos_inp_states = [self.state_actv(state)
                               for state in pos_inp_states]
             enrg, out = net(pre_state, pos_inp_states)
-            #enrg = self.args.energy_weight_mask[i] * enrg
+            enrg = self.args.energy_weight_mask[i] * enrg
             enrgs.append(enrg)
             outs.append(out)
 
