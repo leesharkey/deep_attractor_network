@@ -1134,6 +1134,66 @@ def finalize_args(parser):
 
             vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
+        elif args.architecture == 'SVF_med_5_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,   1, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 16, 16],
+                                         [args.batch_size,  32,  8,  8],
+                                         [args.batch_size, 128]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2,4],
+                                4: [3,4]}
+
+            vars(args)['arch_dict'] = {'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1,1,1,1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict}
+
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+
+        elif args.architecture == 'SVF_small_flat_4_layers_experimental': #untested
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 64],
+                                         [args.batch_size, 64],
+                                         [args.batch_size, 64],
+                                         [args.batch_size, 256],
+                                         [args.batch_size, 128]]
+
+            mod_connect_dict = {0: [1,2,3],
+                                1: [0,1,2,3,4],
+                                2: [0,1,2,3,4],
+                                3: [0,1,2,3,4],
+                                4: [1,2,3,4,5],
+                                5: [4,5]}
+
+            vars(args)['arch_dict'] = {'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1,1,1],
+                                       'padding': [[1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1], [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict}
+
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+
         elif args.architecture == 'SVF_med_4_layers':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size,  16, 28, 28],
