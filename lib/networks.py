@@ -686,14 +686,15 @@ class LinearConvFCMixturetoFourDim(nn.Module):
         #      for sz in self.in_fc_sizes]
 
         # Define base convs (no max pooling)
-        self.base_conv = spectral_norm(nn.Conv2d(
-            in_channels=self.in_conv_channels,
-            out_channels=self.state_layer_ch,
-            kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
-            padding=self.args.arch_dict['padding'][layer_idx][0],
-            stride=self.args.arch_dict['strides'][0],
-            padding_mode=self.pad_mode,
-            bias=True))
+        if self.in_conv_channels > 0:
+            self.base_conv = spectral_norm(nn.Conv2d(
+                in_channels=self.in_conv_channels,
+                out_channels=self.state_layer_ch,
+                kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
+                padding=self.args.arch_dict['padding'][layer_idx][0],
+                stride=self.args.arch_dict['strides'][0],
+                padding_mode=self.pad_mode,
+                bias=True))
 
         # Define base FCs (then reshape their output to something that fits a conv)
 
@@ -727,18 +728,21 @@ class LinearConvFCMixturetoFourDim(nn.Module):
     def forward(self, pre_states, inputs, class_id=None):
         inps_4d = [inp for inp in inputs if len(inp.shape) == 4]
         inps_2d = [inp for inp in inputs if len(inp.shape) == 2]
-        reshaped_4dim_inps = [self.interp(inp) for inp in inps_4d
-                             if inp.shape[2:] != self.state_layer_h_w]
-        reshaped_inps = torch.cat(reshaped_4dim_inps, dim=1)
-        base_conv_out = self.base_conv(reshaped_inps)
-
         fc_outs = [self.base_actv_fc_layers[i](inp)
                    for (i, inp) in enumerate(inps_2d)]
-
         fc_outs = torch.cat(fc_outs, dim=1)
-        # all_out = torch.stack([base_conv_out, fc_outs])
-        # out = torch.sum(all_out, dim=0)
-        out = base_conv_out + fc_outs
+
+        if inps_4d:
+            reshaped_4dim_inps = [self.interp(inp) for inp in inps_4d
+                                  if inp.shape[2:] != self.state_layer_h_w]
+            reshaped_inps = torch.cat(reshaped_4dim_inps, dim=1)
+            base_conv_out = self.base_conv(reshaped_inps)
+            out = base_conv_out + fc_outs
+        else:
+            # all_out = torch.stack([base_conv_out, fc_outs])
+            # out = torch.sum(all_out, dim=0)
+            out = fc_outs
+
         quadr_out = 0.5 * torch.einsum('ba,ba->b',
                                        out.view(
                                            int(out.shape[0]), -1),
