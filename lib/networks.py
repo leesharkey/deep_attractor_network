@@ -568,9 +568,10 @@ class LinearConvFCMixturetoTwoDim(nn.Module):
             bias=True)
         if not self.args.no_spec_norm_reg:
             base_conv = spectral_norm(base_conv)
-        self.base_conv = nn.Sequential(base_conv,
-                                       nn.AvgPool2d(kernel_size=2, #TODO consider making this a hyperparam
-                                                    count_include_pad=True))
+        self.base_conv = base_conv
+        # self.base_conv = nn.Sequential(base_conv,
+        #                                nn.AvgPool2d(kernel_size=2, #TODO consider making this a hyperparam
+        #                                             count_include_pad=True))
 
         # Get size of base conv outputs
         self.base_conv_outshapes = []
@@ -580,14 +581,18 @@ class LinearConvFCMixturetoTwoDim(nn.Module):
                              padding=self.args.arch_dict['padding'][layer_idx][0],
                              stride=self.args.arch_dict['strides'][0])
         outshape = (outshape0, outshape1)
-        self.base_conv_outshapes.append([conv_output_shape(outshape,
-                                                     kernel_size=2,
-                                                     padding=0,
-                                                     stride=2)]) #for avg pool2d
+
+        # [conv_output_shape(outshape,
+        #                    kernel_size=2,
+        #                    padding=0,
+        #                    stride=2)]
+
+        self.base_conv_outshapes.append(outshape) #for avg pool2d
         self.base_conv_outsizes = [torch.prod(torch.tensor(bcos))# * \
                                    #self.args.arch_dict['num_ch']
-                              for bcos in self.base_conv_outshapes] # TODO this scales poorly with num channels. Consider adding another conv layer with smaller output when network is working
-        self.linker_net = nn.Linear(self.base_conv_outsizes[0], self.state_layer_size) #todo probs don't need self.base_conv_outsizes to be a list
+                                   for bcos in self.base_conv_outshapes] # TODO this scales poorly with num channels. Consider adding another conv layer with smaller output when network is working
+        self.linker_net = nn.Linear(self.base_conv_outsizes[0],
+                                    self.state_layer_size) #todo probs don't need self.base_conv_outsizes to be a list
 
         # Get num of fc neuron
         self.in_fc_sizes = [self.args.state_sizes[j][1]
@@ -731,8 +736,9 @@ class LinearConvFCMixturetoFourDim(nn.Module):
                    for (i, inp) in enumerate(inps_2d)]
 
         fc_outs = torch.cat(fc_outs, dim=1)
-        all_out = torch.stack([base_conv_out, fc_outs])
-        out = torch.sum(all_out, dim=0)
+        # all_out = torch.stack([base_conv_out, fc_outs])
+        # out = torch.sum(all_out, dim=0)
+        out = base_conv_out + fc_outs
         quadr_out = 0.5 * torch.einsum('ba,ba->b',
                                        out.view(
                                            int(out.shape[0]), -1),
