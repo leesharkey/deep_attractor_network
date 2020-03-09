@@ -1334,7 +1334,7 @@ class EBMLV(nn.Module):
             enrgs.append(enrg)
             outs.append(out)
 
-        quadratic_terms = sum(sum(enrgs))  # Note the minus here
+        quadratic_terms = - sum(sum(enrgs))  # Note the minus here
         energy = quadratic_terms #sq_nrm + quadratic_terms #linear_terms +
 
         return energy, outs
