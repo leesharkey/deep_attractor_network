@@ -1334,7 +1334,7 @@ class EBMLV(nn.Module):
             enrgs.append(enrg)
             outs.append(out)
 
-        quadratic_terms = - sum(sum(enrgs))  # Note the minus here
+        quadratic_terms = sum(sum(enrgs))  # Note the minus here
         energy = quadratic_terms #sq_nrm + quadratic_terms #linear_terms +
 
         return energy, outs
@@ -1424,7 +1424,7 @@ class StructuredVectorFieldNetwork(nn.Module):
             quadr_outs.append(quadr_out)
             outs.append(out)
 
-        quadratic_terms = sum(sum(quadr_outs))  # Note no the minus here
+        quadratic_terms = - sum(sum(quadr_outs))  # Note no the minus here
 
         # Get the final energy
         energy = sq_nrm + quadratic_terms #+ lin_terms
