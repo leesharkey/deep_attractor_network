@@ -1110,8 +1110,8 @@ def finalize_args(parser):
 
         elif args.architecture == 'SVF_small_flat_4_layers':
             vars(args)['state_sizes'] = [[args.batch_size,   1, 28, 28],
-                                         [args.batch_size,  16, 28, 28],
-                                         [args.batch_size,   8,  8,  8],
+                                         [args.batch_size, 784],
+                                         [args.batch_size, 256],
                                          [args.batch_size, 128]]
 
             mod_connect_dict = {0: [1],
