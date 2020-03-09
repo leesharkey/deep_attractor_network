@@ -785,8 +785,10 @@ class LinearConv(nn.Module):
         out = self.base_conv(reshaped_inps)
         # energy_input = torch.cat([reshaped_inps, base_out], dim=1)
         # out = self.act(self.energy_conv(energy_input))
-        quadr_out = 0.5 * torch.einsum('ba,ba->b', out.view(int(out.shape[0]), -1),
-                                     pre_states.view(int(pre_states.shape[0]), -1))
+        quadr_out = 0.5 * torch.einsum('ba,ba->b',
+                                     out.view(int(out.shape[0]), -1),
+                                     pre_states.view(int(pre_states.shape[0]),
+                                                     -1))
         return quadr_out, out
 
 ##############################################################################
@@ -1328,34 +1330,6 @@ class EBMLV(nn.Module):
         return energy, outs
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class StructuredVectorFieldNetwork(nn.Module):
     """Like the VectorFieldNetwork but allows for conv layers
     """
@@ -1366,9 +1340,6 @@ class StructuredVectorFieldNetwork(nn.Module):
         self.writer = writer
         self.model_name = model_name
         self.num_state_layers = len(self.args.state_sizes[1:])
-
-
-
 
         # Define the networks that output the quadratic terms
         self.quadratic_nets = nn.ModuleList([])
@@ -1417,14 +1388,14 @@ class StructuredVectorFieldNetwork(nn.Module):
             sq_terms.append(sq_term)
         sq_nrm = sum(sq_terms)
 
-        # Linear terms
-        lin_terms = []
-        for i, (layer, bias) in enumerate(zip(states, self.biases)):
-            lin_term = bias(self.state_actv(layer.view(layer.shape[0], -1)))
-            lin_term = lin_term.sum()
-            #lin_term = self.args.energy_weight_mask[i] * lin_term
-            lin_terms.append(lin_term)
-        lin_terms = - sum(lin_terms)
+        # # Linear terms
+        # lin_terms = []
+        # for i, (layer, bias) in enumerate(zip(states, self.biases)):
+        #     lin_term = bias(self.state_actv(layer.view(layer.shape[0], -1)))
+        #     lin_term = lin_term.sum()
+        #     #lin_term = self.args.energy_weight_mask[i] * lin_term
+        #     lin_terms.append(lin_term)
+        # lin_terms = - sum(lin_terms)
 
         # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
         #                       for layer, bias in
@@ -1446,6 +1417,6 @@ class StructuredVectorFieldNetwork(nn.Module):
         quadratic_terms = - sum(sum(quadr_outs))  # Note the minus here
 
         # Get the final energy
-        energy = sq_nrm + lin_terms + quadratic_terms
+        energy = sq_nrm + quadratic_terms #+ lin_terms
 
         return energy, outs
