@@ -1303,7 +1303,7 @@ def finalize_args(parser):
         elif args.architecture == 'EBMLV_small_4_layers_topself':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 16, 28, 28],
-                                         [args.batch_size, 100],
+                                         [args.batch_size, 8, 8, 8],
                                          [args.batch_size, 50]]
 
             mod_connect_dict = {0: [1],
