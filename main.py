@@ -2103,15 +2103,22 @@ def finalize_args(parser):
                                 4: [3, 4, 5],
                                 5: [4, 5]}
 
-            vars(args)['arch_dict'] = {'num_ch': 128,
-                                       'num_ch_initter': 128,
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
-                                       'kernel_sizes': [3, 3, 3],
-                                       'strides': [1, 1],
-                                       'padding': 1,
+                                       'kernel_sizes': [[3,3],
+                                                        [3,3],
+                                                        [3,3],
+                                                        [3,3],
+                                                        [3,3]],
+                                       'strides': [1, 1,1,1,1],
+                                       'padding': [[1,1],
+                                                   [1,1],[1,1],
+                                                   [1,1],[1,1],
+                                                   [1,1]],
                                        'mod_connect_dict': mod_connect_dict,
-                                       'num_fc_channels': 128}
-            vars(args)['energy_weight_mask'] = [1.0, 0.046875, 0.18, 0.375, 5.95, 24.0]
+                                       'num_fc_channels': 64}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
         if args.architecture == 'DAN_cifar10_large_6_layers_top2self_fcconvconnect':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
