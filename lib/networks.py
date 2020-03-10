@@ -1199,7 +1199,7 @@ class VFEBMLV(nn.Module):
             post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
             pos_inp_states = [states[j] for j in post_inp_idxs]
             quadr_out, out = net(pre_state, pos_inp_states)
-            quadr_out = self.args.energy_weight_mask[i] * quadr_out #TODO temporary, just to see if this messes it up with larger archi layers
+            #quadr_out = self.args.energy_weight_mask[i] * quadr_out #TODO temporary, just to see if this messes it up with larger archi layers
             quadr_outs.append(quadr_out)
             outs.append(out)
 
