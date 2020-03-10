@@ -1203,7 +1203,7 @@ class VFEBMLV(nn.Module):
             quadr_outs.append(quadr_out)
             outs.append(out)
 
-        quadratic_terms = - sum(sum(quadr_outs))
+        quadratic_terms = sum(sum(quadr_outs))
 
         energy = quadratic_terms #sq_nrm + linear_terms +
 
