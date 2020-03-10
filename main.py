@@ -895,7 +895,7 @@ def finalize_args(parser):
                                          [args.batch_size, 1000],
                                          [args.batch_size, 300],
                                          [args.batch_size, 300]]
-    if args.network_type == 'VectorField':
+    if args.network_type == 'VectorField' or args.network_type == 'VFEBMLV':
 
         if args.architecture == 'VF_small_2_layers_toy':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
@@ -2475,6 +2475,8 @@ def main():
     elif args.network_type == 'SVF':
         model = nw.StructuredVectorFieldNetwork(args, device, model_name,
                                                 writer).to(device)
+    elif args.network_type == 'VFEBMLV':
+        model = nw.VFEBMLV(args, device, model_name, writer).to(device)
     else:
         raise ValueError("Invalid CLI argument for argument 'network_type'. ")
 

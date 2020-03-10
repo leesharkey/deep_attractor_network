@@ -1109,30 +1109,6 @@ class EBMLV(nn.Module):
 
         # # Squared norm
         # sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in states])
-        #
-        # # # Linear terms
-        # # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
-        # #                       for layer, bias in
-        # #                       zip(states, self.biases)])
-        #
-        # # Quadratic terms
-        # enrgs = []
-        # outs = []
-        # for i, (pre_state, net) in enumerate(zip(states, self.quadratic_nets)):
-        #     post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
-        #     pos_inp_states = [states[j] for j in post_inp_idxs]
-        #     pos_inp_states = [self.state_actv(state)
-        #                       for state in pos_inp_states]
-        #     enrg, out = net(pre_state, pos_inp_states)
-        #     enrg = self.args.energy_weight_mask[i] * enrg
-        #     enrgs.append(enrg)
-        #     outs.append(out)
-        #
-        # energy = sum(sum(enrgs))  # Note there is no minus sign here where it
-        # # exists in the DAN
-
-        # Squared norm
-        sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in states])
 
         # # # Linear terms
         # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
@@ -1147,7 +1123,6 @@ class EBMLV(nn.Module):
             pos_inp_states = [states[j] for j in post_inp_idxs]
             # pos_inp_states = [self.state_actv(state)
             #                   for state in pos_inp_states]
-            pos_inp_states = [state for state in pos_inp_states]
             enrg, out = net(pre_state, pos_inp_states)
             enrg = self.args.energy_weight_mask[i] * enrg
             enrgs.append(enrg)
@@ -1158,6 +1133,81 @@ class EBMLV(nn.Module):
 
         return energy, outs
 
+class VFEBMLV(nn.Module):
+    """Defines the vector field studied by Scellier et al. (2018)
+
+        Uses same archi set as VF but implements it as an EBMLV
+
+    @misc{scellier2018generalization,
+        title={Generalization of Equilibrium Propagation to Vector Field Dynamics},
+        author={Benjamin Scellier and Anirudh Goyal and Jonathan Binas and Thomas Mesnard and Yoshua Bengio},
+        year={2018},
+        eprint={1808.04873},
+        archivePrefix={arXiv},
+        primaryClass={cs.LG}
+    }
+    https://arxiv.org/abs/1808.04873
+
+    The network is a relaxation of the continuous Hopfield-like network (CHN)
+    studied by Bengio and Fischer (2015) and later in
+    Equilibrium Propagation (Scellier et al. 2017) and other works. It
+    no longer required symmetric weights as in the CHN.
+    """
+    def __init__(self, args, device, model_name, writer, n_class=None):
+        super().__init__()
+        self.args = args
+        self.device = device
+        self.writer = writer
+        self.model_name = model_name
+        self.num_state_layers = len(self.args.state_sizes[1:])
+
+        self.quadratic_nets = nn.ModuleList([
+            LinearLayer(args, i) for i in range(len(self.args.state_sizes))
+        ])
+
+        # self.weights = nn.ModuleList(
+        #     [nn.Linear(torch.prod(torch.tensor(l1[1:])),
+        #                torch.prod(torch.tensor(l2[1:])), bias=False)
+        #      for l1, l2 in zip(args.state_sizes[:-1], args.state_sizes[1:])])
+        self.biases = nn.ModuleList([nn.Linear(torch.prod(torch.tensor(l[1:])),
+                                               1, bias=False)
+                       for l in args.state_sizes])
+        for bias in self.biases:
+            torch.nn.init.zeros_(bias.weight)
+
+        if self.args.states_activation == "hardsig":
+            self.actvn = activations.get_hard_sigmoid()
+        elif self.args.states_activation == "relu":
+            self.actvn = activations.get_relu()
+        elif self.args.states_activation == "swish":
+            self.actvn = activations.get_swish()
+
+    def forward(self, states, class_id=None, step=None):
+
+        # Squared norm
+        #sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in states])
+
+        # Linear terms
+        # linear_terms = - sum([bias(self.actvn(layer.view(layer.shape[0], -1))).sum()
+        #                       for layer, bias in
+        #                       zip(states, self.biases)])
+
+        # Quadratic terms
+        quadr_outs = []
+        outs = []
+        for i, (pre_state, net) in enumerate(zip(states, self.quadratic_nets)):
+            post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            pos_inp_states = [states[j] for j in post_inp_idxs]
+            quadr_out, out = net(pre_state, pos_inp_states)
+            quadr_out = self.args.energy_weight_mask[i] * quadr_out #TODO temporary, just to see if this messes it up with larger archi layers
+            quadr_outs.append(quadr_out)
+            outs.append(out)
+
+        quadratic_terms = - sum(sum(quadr_outs))
+
+        energy = quadratic_terms #sq_nrm + linear_terms +
+
+        return energy, outs
 
 class StructuredVectorFieldNetwork(nn.Module):
     """Like the VectorFieldNetwork but allows for conv layers
