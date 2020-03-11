@@ -6,6 +6,7 @@ import random
 from datetime import datetime
 from torch import nn, optim
 import lib.custom_swish_activation as cust_actv
+import lib.sghmc as sghmc
 
 
 def save_configs_to_csv(args, model_name, results_dict=None):
@@ -191,6 +192,8 @@ def get_state_optimizers(args, params):
     and the gradient is 0 at the mask value)."""
     if args.state_optimizer == 'langevin':
         return None
+    if args.state_optimizer == 'sghmc':
+        return [sghmc.SGHMC([prm], args.sampling_step_size) for prm in params]
     if args.state_optimizer == 'sgd':
         return [optim.SGD([prm], args.sampling_step_size) for prm in params]
     if args.state_optimizer == 'sgd_momentum':
