@@ -1110,10 +1110,10 @@ class EBMLV(nn.Module):
         # # Squared norm
         # sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in states])
 
-        # # # Linear terms
-        # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
-        #                       for layer, bias in
-        #                       zip(states, self.biases)])
+        # # Linear terms
+        linear_terms = sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
+                              for layer, bias in
+                              zip(states, self.biases)])
 
         # Quadratic terms
         enrgs = []
@@ -1128,8 +1128,8 @@ class EBMLV(nn.Module):
             enrgs.append(enrg)
             outs.append(out)
 
-        quadratic_terms = sum(sum(enrgs))  # Note the minus here
-        energy = quadratic_terms #sq_nrm + quadratic_terms #linear_terms +
+        quadratic_terms = sum(sum(enrgs))
+        energy = quadratic_terms + linear_terms
 
         return energy, outs
 
@@ -1187,10 +1187,10 @@ class VFEBMLV(nn.Module):
         # Squared norm
         #sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in states])
 
-        # Linear terms
-        # linear_terms = - sum([bias(self.actvn(layer.view(layer.shape[0], -1))).sum()
-        #                       for layer, bias in
-        #                       zip(states, self.biases)])
+        #Linear terms #TODO IF YOU RETRUN TO THIS, PUT LIN/UNARY TERMS BACK IN BECAUSE OTHER MRFs have them
+        linear_terms = sum([bias(self.actvn(layer.view(layer.shape[0], -1))).sum()
+                              for layer, bias in
+                              zip(states, self.biases)])
 
         # Quadratic terms
         quadr_outs = []
@@ -1199,13 +1199,13 @@ class VFEBMLV(nn.Module):
             post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
             pos_inp_states = [states[j] for j in post_inp_idxs]
             quadr_out, out = net(pre_state, pos_inp_states)
-            #quadr_out = self.args.energy_weight_mask[i] * quadr_out #TODO temporary, just to see if this messes it up with larger archi layers
+            quadr_out = self.args.energy_weight_mask[i] * quadr_out #TODO temporary, just to see if this messes it up with larger archi layers
             quadr_outs.append(quadr_out)
             outs.append(out)
 
         quadratic_terms = sum(sum(quadr_outs))
 
-        energy = quadratic_terms #sq_nrm + linear_terms +
+        energy = quadratic_terms + linear_terms
 
         return energy, outs
 
