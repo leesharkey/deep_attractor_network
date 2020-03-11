@@ -84,7 +84,7 @@ class TrainingManager():
         self.pos_history = []
         self.neg_history = []
         self.max_history_len = 5000
-        self.mean_neg_pos_margin = 100
+        self.mean_neg_pos_margin = 5000
         self.neg_it_schedule_cooldown = 0
         self.cooldown_len = 10 #epochs
         self.latest_pos_enrg = None
@@ -1326,6 +1326,33 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict,
                                        'num_fc_channels': 32}
             vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+
+        elif args.architecture == 'EBMLV_small_4_layers_topself':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 8, 8, 8],
+                                         [args.batch_size, 50]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0, 2],
+                                2: [1, 3],
+                                3: [2, 3]}
+
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1, 1, 1],
+                                       'padding': [[1, 1],
+                                                   [1, 1],
+                                                   [1, 1],
+                                                   [1, 1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
     if args.network_type == 'DAN':
         if args.architecture == 'DAN_small_2_layers_allself':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
@@ -2110,6 +2137,41 @@ def finalize_args(parser):
                                                         [3,3],
                                                         [3,3],
                                                         [3,3],
+                                                        [3,3]],
+                                       'strides': [1, 1,1,1,1],
+                                       'padding': [[1,1],
+                                                   [1,1],[1,1],
+                                                   [1,1],[1,1],
+                                                   [1,1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 64}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+
+        if args.architecture == 'DAN_cifar10_very_large_7_layers_top2self':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],  # 3072
+                                         [args.batch_size, 64, 32, 32], # 65536
+                                         [args.batch_size, 64, 32, 32],
+                                         [args.batch_size, 64, 16, 16], # 16384
+                                         [args.batch_size, 64, 10, 10], # 6400
+                                         [args.batch_size, 516],
+                                         [args.batch_size, 128]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0, 2],
+                                2: [1, 3],
+                                3: [2, 4],
+                                4: [3, 5],
+                                5: [4, 5, 6],
+                                6: [5, 6]}
+
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': [[3,3],
+                                                        [3,3],
+                                                        [3,3],
+                                                        [3,3],
+                                                        [3, 3],
                                                         [3,3]],
                                        'strides': [1, 1,1,1,1],
                                        'padding': [[1,1],
