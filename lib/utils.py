@@ -193,7 +193,10 @@ def get_state_optimizers(args, params):
     if args.state_optimizer == 'langevin':
         return None
     if args.state_optimizer == 'sghmc':
-        return [sghmc.SGHMC([prm], args.sampling_step_size) for prm in params]
+        return [sghmc.SGHMC([prm],
+                            lr=args.sampling_step_size,
+                            noise=args.sigma,
+                            mdecay=args.momentum_param) for prm in params]
     if args.state_optimizer == 'sgd':
         return [optim.SGD([prm], args.sampling_step_size) for prm in params]
     if args.state_optimizer == 'sgd_momentum':
