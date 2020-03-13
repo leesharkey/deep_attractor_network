@@ -393,6 +393,114 @@ class ConvFCMixturetoFourDim(nn.Module):
         return quadr_out, out
 
 
+class ConvFCMixturetoFourDim_Type2(nn.Module):
+    """
+    Takes a mixture of four dimensional and two dimensional inputs and
+    outputs a four dimensional output of the same shape as the current state.
+
+    """
+    def __init__(self, args, layer_idx):
+        super().__init__()
+        self.args = args
+        self.pad_mode = 'zeros'
+        self.layer_idx = layer_idx
+        self.act = lib.utils.get_activation_function(args)
+        #self.num_fc_channels = self.args.arch_dict['num_fc_channels']
+
+        # Gets the indices of the state_layers that will be input to this net.
+        self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
+
+        # Size values of state_layer of this network
+        self.state_layer_ch = self.args.state_sizes[layer_idx][1]
+        self.state_layer_h_w = self.args.state_sizes[layer_idx][2:]
+        self.state_layer_ttl_nrns = torch.prod(torch.tensor(
+            self.args.state_sizes[layer_idx][1:])).item()
+
+        self.interp = Interpolate(size=self.state_layer_h_w, mode='bilinear')
+
+        # The summed number of channels of all the input state_layers
+        self.in_conv_channels = []
+        self.in_conv_channels = sum([self.args.state_sizes[j][1]
+                                     for j in self.input_idxs
+                                     if len(self.args.state_sizes[j]) == 4])
+
+        self.in_fc_sizes   = [self.args.state_sizes[j][1]
+                                  for j in self.input_idxs
+                                  if len(self.args.state_sizes[j]) == 2]
+        self.in_fc_neurons = sum(self.in_fc_sizes)
+        # fc_channel_fracs   = \
+        #     [int(round(self.num_fc_channels*(sz/sum(self.in_fc_sizes))))
+        #      for sz in self.in_fc_sizes]
+
+        # Define base convs (no max pooling)
+        self.base_conv = spectral_norm(nn.Conv2d(
+            in_channels=self.in_conv_channels,
+            out_channels=self.state_layer_ch,# this used to be self.args.arch_dict['num_ch'], but I decided that it would work better architecturally if I could have several nonlinearities applied to both the 4d and 2d inputs, and this would only work by decoupling the number of internal channels in this layer from the number of channels in the other layers, because I need this to be of a manageable size for FC layers to interface with. I'll only be making such layers when the number of channels in the state layer is manageable for the FC layers, so using the num of ch in this sl seemed like a reasonable number to use.
+            kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
+            padding=self.args.arch_dict['padding'][layer_idx][0],
+            stride=self.args.arch_dict['strides'][0],
+            padding_mode=self.pad_mode,
+            bias=True))
+
+        # Define base FCs (then reshape their output to something that fits a conv)
+        base_fc = nn.Linear(self.in_fc_neurons, self.state_layer_ttl_nrns)
+        if not self.args.no_spec_norm_reg:
+            self.base_fc = spectral_norm(base_fc, bound=True)
+        self.base_fc_to_4dim = nn.Sequential(base_fc,
+                                             self.act,
+                                             Reshape(-1,
+                                                     self.state_layer_ch,
+                                                     self.state_layer_h_w[0],
+                                                     self.state_layer_h_w[1]))
+
+        # self.base_actv_fc_layers = nn.ModuleList([])
+        # for (in_size, out_size) in zip(self.in_fc_sizes, fc_channel_fracs):
+        #     base_fc_layer = nn.Linear(in_size, out_size)
+        #     if not self.args.no_spec_norm_reg:
+        #         base_fc_layer = spectral_norm(base_fc_layer, bound=True)
+        #     self.base_actv_fc_layers.append(nn.Sequential(
+        #                                 base_fc_layer,
+        #                                 self.act,
+        #                                 Reshape(-1, out_size, 1, 1), # makes each neuron a 'channel'
+        #                                 self.interp) # Spreads each 1D channel across the whole sheet of latent neurons
+        #     )
+
+        # Define energy convs (take output of base convs and FCs as input
+        energy_conv = nn.Conv2d(
+            in_channels=(self.state_layer_ch*2)+self.in_conv_channels,  # One for base conv, one for fc layers, and one for
+            out_channels=self.state_layer_ch,
+            kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][1],
+            padding=self.args.arch_dict['padding'][layer_idx][1],
+            padding_mode=self.pad_mode,
+            bias=True)
+        if not self.args.no_spec_norm_reg:
+            energy_conv = spectral_norm(energy_conv, std=1e-10, bound=True)
+        self.energy_conv = energy_conv
+
+    def forward(self, pre_states, inputs, class_id=None):
+        inps_4d = [inp for inp in inputs if len(inp.shape) == 4]
+        inps_2d = [inp for inp in inputs if len(inp.shape) == 2]
+        reshaped_4dim_inps = [self.interp(inp) for inp in inps_4d
+                              if inp.shape[2:] != self.state_layer_h_w]
+        reshaped_4dim_inps = torch.cat(reshaped_4dim_inps, dim=1)
+        base_conv_out = self.base_conv(reshaped_4dim_inps)
+
+        fc_inputs = torch.cat(inps_2d, dim=1)
+        fc_4dimout = self.base_fc_to_4dim(fc_inputs)
+        # fc_outs = [self.base_actv_fc_layers[i](inp)
+        #            for (i, inp) in enumerate(inps_2d)]
+        # fc_outs = torch.cat(fc_outs, dim=1)
+        energy_input = torch.cat([reshaped_4dim_inps, base_conv_out,
+                                  fc_4dimout], dim=1)
+        out = self.act(self.energy_conv(energy_input)) #TODO put act in sequential above
+        quadr_out = 0.5 * torch.einsum('ba,ba->b',
+                                       out.view(
+                                           int(out.shape[0]), -1),
+                                       pre_states.view(
+                                           int(pre_states.shape[0]), -1))
+        return quadr_out, out
+
+
 class DenseConv(nn.Module):
     def __init__(self, args, layer_idx):
         super().__init__()
@@ -981,7 +1089,7 @@ class DeepAttractorNetwork(nn.Module):
                 if all_same_dim:
                     net = DenseConv(self.args, i)
                 else:
-                    net = ConvFCMixturetoFourDim(self.args, i)
+                    net = ConvFCMixturetoFourDim_Type2(self.args, i) #LEE this has changed
             elif len(size) == 2:
                 if all_same_dim:
                     net = FCFC(self.args, i)
