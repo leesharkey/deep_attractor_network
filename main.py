@@ -1719,6 +1719,25 @@ def finalize_args(parser):
                                        'num_fc_channels': 32}
             vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
+        elif args.architecture == 'DAN_med_5_layers_truncated_to_3':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 16, 8, 8]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0, 2],
+                                2: [1]}
+
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'num_ch_initter': 16,
+                                       'kernel_sizes': [[3, 3], [3, 3], [3, 3], [3, 3]],
+                                       'strides': [1,1,1,1],
+                                       'padding': [[1,1], [1,1], [1,1], [1,1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+
         elif args.architecture == 'DAN_very_small_5_layers_selftop':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size, 16, 8, 8],
