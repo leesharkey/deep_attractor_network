@@ -819,9 +819,10 @@ class VisualizationManager(TrainingManager):
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
-        for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-            noise.normal_(0, self.args.sigma)
-            state.data.add_(noise.data)
+        if not self.args.state_optimizer == "sghmc":
+            for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
+                noise.normal_(0, self.args.sigma)
+                state.data.add_(noise.data)
 
 
         # The gradient step in the Langevin/SGHMC step
