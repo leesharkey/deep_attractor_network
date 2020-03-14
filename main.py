@@ -1696,6 +1696,47 @@ def finalize_args(parser):
                                        'num_fc_channels': 128}
             vars(args)['energy_weight_mask'] = [1.0, 1.4, 32.0, 36,
                                                 144.0]  # WRONG NEEDS FIXING BEFORE USE
+        elif args.architecture == 'DAN_med_4_layers_sides':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                           [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 16, 16],
+                                           [args.batch_size, 32, 4, 4],
+                                         [args.batch_size, 16, 8, 8],
+                                           [args.batch_size, 16, 4, 4],
+                                         [args.batch_size, 100]]
+
+            mod_connect_dict = {0: [2,       1],
+                                1: [0],
+                                2: [0, 4,    3],
+                                3: [2],
+                                4: [2, 6,    5],
+                                5: [4],
+                                6: [4, 6]}
+
+            vars(args)['arch_dict'] = {'num_ch': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'num_ch_initter': 16,
+                                       'kernel_sizes': [[3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3],
+                                                        [3, 3]],
+                                       'strides': [1,1,1,1,1,1],
+                                       'padding': [[1,1],
+                                                   [1,1],
+                                                   [1, 1],
+                                                   [1, 1],
+                                                   [1,1],
+                                                   [1,1],
+                                                   [1,1],
+                                                   [1,1]],
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 128}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+
         elif args.architecture == 'DAN_med_5_layers':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 16, 28, 28],
