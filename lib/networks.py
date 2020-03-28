@@ -214,11 +214,17 @@ class ConvFCMixturetoTwoDim(nn.Module):
                                      if len(self.args.state_sizes[j]) == 4]
         self.num_in_conv_channels = sum([size[1] for size in self.in_conv_sizes])
 
+        # # Defines interpolater that reshapes all conv inputs to same size H x W
+        # self.mean_4dim_size = int(torch.mean(torch.tensor(
+        #     [size[2] for size in self.in_conv_sizes]).float()))
+        # self.mean_4dim_size = [self.mean_4dim_size, self.mean_4dim_size] #TODO inclined to change this to max
+        # self.interp = Interpolate(size=self.mean_4dim_size, mode='bilinear')
+
         # Defines interpolater that reshapes all conv inputs to same size H x W
-        self.mean_4dim_size = int(torch.mean(torch.tensor(
+        self.max_4dim_size = int(torch.max(torch.tensor(
             [size[2] for size in self.in_conv_sizes]).float()))
-        self.mean_4dim_size = [self.mean_4dim_size, self.mean_4dim_size] #TODO inclined to change this to max
-        self.interp = Interpolate(size=self.mean_4dim_size, mode='bilinear')
+        self.max_4dim_size = [self.max_4dim_size, self.max_4dim_size]
+        self.interp = Interpolate(size=self.max_4dim_size, mode='bilinear')
 
         # Define base convs (includes avg pooling to downsample)
         base_conv = nn.Conv2d(
@@ -238,7 +244,7 @@ class ConvFCMixturetoTwoDim(nn.Module):
         # Get size of base conv outputs
         self.base_conv_outshapes = []
         outshape0, outshape1 = \
-            conv_output_shape(self.mean_4dim_size,
+            conv_output_shape(self.max_4dim_size,
                              kernel_size= self.args.arch_dict['kernel_sizes'][layer_idx][0],
                              padding=self.args.arch_dict['padding'][layer_idx][0],
                              stride=self.args.arch_dict['strides'][0])
@@ -976,6 +982,129 @@ class BengioFischerNetwork(nn.Module):
                                  for pre, W, post in
                                  zip(states[:-1], self.weights, states[1:])])
         return sq_nrm + linear_terms + quadratic_terms, None
+
+
+class ConvBengioFischerNetwork(nn.Module):
+    """Defines the attractor network studied by Bengio and Fischer
+
+    Bengio, Y. and Fischer, A. (2015). Early inference in energy-based models
+    approximates back-propagation. Technical Report arXiv:1510.02777,
+    Universite de Montreal.
+
+    Bengio, Y., Mesnard, T., Fischer, A., Zhang, S., and Wu, Y. (2015).
+    STDP as presynaptic activity times rate of change of postsynaptic activity.
+    arXiv:1509.05936.
+
+    The network is a continuous Hopfield-like network. It was first
+    studied by Bengio and Fischer (2015), and has since been used in
+    Equilibrium Propagation (Scellier et al. 2017) and other works.
+    """
+    def __init__(self, args, device, model_name, writer, n_class=None):
+        super().__init__()
+
+        self.args = args
+        self.device = device
+        self.writer = writer
+        self.model_name = model_name
+        self.pad_mode = 'zeros'
+        self.num_state_layers = len(self.args.state_sizes[1:])
+        self.connexions = self.args.arch_dict['mod_connect_dict']
+        self.f_keys = []
+        self.f_nets = nn.ModuleDict({})
+        for i in self.args.arch_dict['mod_connect_dict'].keys():
+            inp_idxs = self.connexions[i]
+            if any([j > i for j in inp_idxs]):
+                raise ValueError("In Conv BFN, the mod connect dict only " +
+                                 "defines feedforward connections. At least one " +
+                                 "indice here is describing a feedback " +
+                                 "connection, which is not allowed.")
+            if inp_idxs:
+                for j_ind, j in enumerate(inp_idxs):
+                    f_key = '%i--%i' % (j, i)
+                    #print(f_key)
+                    self.f_keys.append((f_key))
+                    #b_key = '%i--%i' % (i, j)
+                    f_in_ch  = self.args.state_sizes[j][1]
+                    f_out_ch = self.args.state_sizes[i][1]
+                    f_net = nn.Conv2d(in_channels=f_in_ch,
+                                      out_channels=f_out_ch,
+                                      kernel_size=self.args.arch_dict['kernel_sizes'][i][j_ind],
+                                      padding=self.args.arch_dict['padding'][i][j_ind],
+                                      stride=self.args.arch_dict['strides'][i][j_ind],
+                                      padding_mode='zeros')
+                    self.f_nets.update({f_key: f_net})
+
+        self.biases = nn.ModuleList([nn.Linear(torch.prod(torch.tensor(l[1:])),
+                                               1, bias=False)
+                       for l in args.state_sizes])
+        for bias in self.biases:
+            torch.nn.init.zeros_(bias.weight)
+
+        if self.args.activation == "hardsig": #TODO put into utils
+            self.actvn = activations.get_hard_sigmoid()
+        elif self.args.activation == "relu":
+            self.actvn = activations.get_relu()
+        elif self.args.activation == "swish":
+            self.actvn = activations.get_swish()
+
+    def forward(self, states, class_id=None, step=None):
+
+        # Squared norm
+        sq_nrm = sum(
+            [(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in
+             states])
+
+
+        # Quadratic terms
+        outs = []
+        labs = []
+        for l in range(self.num_state_layers+1):
+                outs.append([None] * (self.num_state_layers+1))
+                labs.append([None] * (self.num_state_layers + 1))
+
+        for (i, out_st) in enumerate(states):
+            inp_states = [(k, states[k]) for k in self.connexions[i] if self.connexions[i]]
+            for (j_ind, (j, inp_st)) in enumerate(inp_states):
+                key = '%i--%i' % (j, i)
+                f_net = self.f_nets[key]
+                f_out = f_net(inp_st)
+                if self.args.arch_dict['strides'][i][j_ind] == 2:
+                    output_padding = 1
+                else:
+                    output_padding = 0
+                b_out = nn.functional.conv_transpose2d(out_st,
+                                                       weight=f_net.weight.transpose(2,3), #TODO check if it should be transposed at all.
+                                                       padding=self.args.arch_dict['padding'][i][j_ind],
+                                                       output_padding=output_padding,
+                                                       stride=self.args.arch_dict['strides'][i][j_ind])
+                labs[j][i] = '%i--%i' % (j, i)
+                labs[i][j] = '%i--%i' % (i, j)
+
+                outs[j][i] = f_out
+                outs[i][j] = b_out
+
+        # Transpose list of lists
+        outs = list(map(list, zip(*outs)))
+        labs = list(map(list, zip(*labs)))
+
+        # Remove empty entries in list of list
+        outs = [[o for o in out if o is not None] for out in outs]
+        outs = [torch.stack(out) for out in outs]
+        outs = [torch.sum(out, dim=0) for out in outs]
+
+        quadratic_terms = - sum([0.5 * sum(torch.einsum('ba,ba->b',
+                                                        w_inps.view(state.shape[0], -1),
+                                                        self.actvn(   state.view(state.shape[0], -1))))
+                                 for w_inps, state in
+                                 zip(outs, states)])
+
+        # Linear terms
+        linear_terms = - sum([bias(self.actvn(layer.view(layer.shape[0], -1))).sum()
+                              for layer, bias in
+                              zip(states, self.biases)]) #TODO init that uses biases
+
+
+        return sq_nrm + linear_terms + quadratic_terms, outs
 
 class VectorFieldNetwork(nn.Module):
     """Defines the vector field studied by Scellier et al. (2018)

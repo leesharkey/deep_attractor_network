@@ -308,7 +308,7 @@ class TrainingManager():
                 optimizer.step()
 
         # Log data to tensorboard
-        ## Energies for layers (mean scalar and all histogram)
+        # Energies for layers (mean scalar and all histogram)
         if step % self.args.scalar_logging_interval == 0 and step is not None:
             for i, enrg in enumerate(outs):
                 mean_layer_string = 'layers/mean_energies_%s' % i
@@ -896,6 +896,98 @@ def finalize_args(parser):
                                          [args.batch_size, 1000],
                                          [args.batch_size, 300],
                                          [args.batch_size, 300]]
+    if args.network_type == 'ConvBFN':
+        if args.architecture == 'ConvBFN_med_6_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 64, 28, 28],
+                                         [args.batch_size, 64, 28, 28],
+                                         [args.batch_size, 64, 28, 28],
+                                         [args.batch_size, 16, 12, 12],
+                                         [args.batch_size, 16, 12, 12]]
+
+            mod_connect_dict = {0: [],
+                                1: [0],
+                                2: [0,1],
+                                3: [1,2,3],
+                                4: [3],
+                                5: [4]}
+            mod_kernel_dict = {0: [],
+                                1: [3],
+                                2: [3,3],
+                                3: [3,3,3,3],
+                                4: [7],
+                                5: [3]}
+            mod_padding_dict = {0: [],
+                                1: [1],
+                                2: [1,1],
+                                3: [1,1,1,1],
+                                4: [1],
+                                5: [1]}
+            mod_strides_dict = {0: [],
+                                1: [1],
+                                2: [1,1],
+                                3: [1,1,1,1],
+                                4: [2],
+                                5: [1]}
+
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': mod_kernel_dict,
+                                       'strides': mod_strides_dict,
+                                       'padding': mod_padding_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'num_fc_channels': 32}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+
+        if args.architecture == 'ConvBFN_med_2_dense_3layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 16, 12, 12],
+                                         [args.batch_size, 16, 12, 12],
+                                         [args.batch_size, 16, 12, 12],
+                                         ]
+
+            mod_connect_dict = {0: [],
+                                1: [0],
+                                2: [0,1],
+                                3: [0,1,2],
+                                4: [3],
+                                5: [3,4],
+                                6: [3,4,5]}
+            mod_kernel_dict = {0: [],
+                                1: [3],
+                                2: [3,3],
+                                3: [3,3,3,3],
+                                4: [7],
+                                5: [7,3],
+                                6: [7,3,3]}
+            mod_padding_dict = {0: [],
+                                1: [1],
+                                2: [1,1],
+                                3: [1,1,1],
+                                4: [1],
+                                5: [1,1],
+                                6: [1,1,1]}
+            mod_strides_dict = {0: [],
+                                1: [1],
+                                2: [1,1],
+                                3: [1,1,1,1],
+                                4: [2],
+                                5: [2,1],
+                                6: [2,1,1]}
+
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': mod_kernel_dict,
+                                       'strides': mod_strides_dict,
+                                       'padding': mod_padding_dict,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+
     if args.network_type == 'VectorField' or args.network_type == 'VFEBMLV':
 
         if args.architecture == 'VF_small_2_layers_toy':
@@ -2744,6 +2836,9 @@ def main():
     if args.network_type == 'BengioFischer':
         model = nw.BengioFischerNetwork(args, device, model_name, writer).to(
         device)
+    elif args.network_type == 'ConvBFN':
+        model = nw.ConvBengioFischerNetwork(args, device, model_name, writer).to(
+            device)
     elif args.network_type == 'VectorField':
         model = nw.VectorFieldNetwork(args, device, model_name, writer).to(
             device)
