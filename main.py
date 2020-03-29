@@ -940,7 +940,8 @@ def finalize_args(parser):
                                        'num_fc_channels': 32}
             vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
-        if args.architecture == 'ConvBFN_med_2_dense_3layers':
+        elif args.architecture == 'ConvBFN_med_2_dense_3layers':
+            #Messed this one up. Keeping as is for posterity.
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size, 16, 28, 28],
                                          [args.batch_size, 16, 28, 28],
@@ -978,6 +979,94 @@ def finalize_args(parser):
                                 4: [2],
                                 5: [2,1],
                                 6: [2,1,1]}
+
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': mod_kernel_dict,
+                                       'strides': mod_strides_dict,
+                                       'padding': mod_padding_dict,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+        elif args.architecture == 'ConvBFN_med_3_dense_3layers_base':#Untested and incomplete
+            #Messed this one up. Keeping as is for posterity.
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 64, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 16, 12, 12],
+                                         [args.batch_size, 16, 12, 12],
+                                         [args.batch_size, 16, 12, 12],
+                                         #[args.batch_size, 16, 4, 4],#???Size???
+
+                                         ]
+
+            mod_connect_dict = {0: [],
+                                1: [0],
+                                2: [1],
+                                3: [1,2],
+                                4: [1,2,3],
+                                5: [4],
+                                6: [4,5],
+                                7: [4,5,6]}
+            mod_kernel_dict = {0: [],
+                                1: [3],
+                                2: [3,3],
+                                3: [3,3,3,3],
+                                4: [7],
+                                5: [7,3],
+                                6: [7,3,3]}
+            mod_padding_dict = {0: [],
+                                1: [1],
+                                2: [1,1],
+                                3: [1,1,1],
+                                4: [1],
+                                5: [1,1],
+                                6: [1,1,1]}
+            mod_strides_dict = {0: [],
+                                1: [1],
+                                2: [1,1],
+                                3: [1,1,1,1],
+                                4: [2],
+                                5: [2,1],
+                                6: [2,1,1]}
+
+            vars(args)['arch_dict'] = {'num_ch': 32,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'kernel_sizes': mod_kernel_dict,
+                                       'strides': mod_strides_dict,
+                                       'padding': mod_padding_dict,
+                                       'mod_connect_dict': mod_connect_dict}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+        elif args.architecture == 'ConvBFN_small_3_layers':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 12, 12],
+                                         [args.batch_size, 32, 4, 4]
+                                         ]
+
+            mod_connect_dict = {0: [],
+                                1: [0],
+                                2: [1],
+                                3: [2]
+                                }
+            mod_kernel_dict = {0: [],
+                                1: [3],
+                                2: [7],
+                                3: [7]
+                                }
+            mod_padding_dict = {0: [],
+                                1: [1],
+                                2: [1],
+                                3: [1]
+                                }
+            mod_strides_dict = {0: [],
+                                1: [1],
+                                2: [2],
+                                3: [2]
+                                }
 
             vars(args)['arch_dict'] = {'num_ch': 32,
                                        'num_ch_initter': 16,

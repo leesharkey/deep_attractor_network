@@ -1089,6 +1089,7 @@ class ConvBengioFischerNetwork(nn.Module):
 
         # Remove empty entries in list of list
         outs = [[o for o in out if o is not None] for out in outs]
+        print([shapes(o) for o in outs])
         outs = [torch.stack(out) for out in outs]
         outs = [torch.sum(out, dim=0) for out in outs]
 
