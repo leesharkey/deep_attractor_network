@@ -1032,6 +1032,8 @@ class ConvBengioFischerNetwork(nn.Module):
                                       padding=self.args.arch_dict['padding'][i][j_ind],
                                       stride=self.args.arch_dict['strides'][i][j_ind],
                                       padding_mode='zeros')
+                    if not self.args.no_spec_norm_reg:
+                        f_net = spectral_norm(f_net)
                     self.f_nets.update({f_key: f_net})
 
         self.biases = nn.ModuleList([nn.Linear(torch.prod(torch.tensor(l[1:])),
@@ -1089,6 +1091,7 @@ class ConvBengioFischerNetwork(nn.Module):
 
         # Remove empty entries in list of list
         outs = [[o for o in out if o is not None] for out in outs]
+        #print([shapes(out) for out in outs])
         outs = [torch.stack(out) for out in outs]
         outs = [torch.sum(out, dim=0) for out in outs]
 

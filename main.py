@@ -527,6 +527,45 @@ class TrainingManager():
                 self.pos_history = []
                 self.neg_history = []
 
+    def visualize_weights(self):
+
+        self.params = [p for p in self.model.parameters()]
+        self.base_bias = self.params[0]
+        self.base_weights = self.params[1]
+        #self.imported = torch.hub.load('pytorch/vision:v0.5.0', 'alexnet', pretrained=True)
+        self.imported = torch.hub.load('pytorch/vision:v0.5.0', 'densenet121', pretrained=True)
+
+        # w_b = torch.add(self.base_weights, self.base_bias)
+        biases = [self.base_bias.unsqueeze(1).unsqueeze(1).unsqueeze(1)] * (
+            torch.prod(torch.tensor(self.base_weights.shape[1:])))
+        sbiases = torch.cat(biases, dim=1)
+        b = sbiases.view(self.base_weights.shape)
+        std_b = torch.std(b)
+        std_biases = (b / std_b) + 0.5
+        utils.save_image(std_biases,
+                         'exps/weight_visualisations/biases.png',
+                         nrow=32, normalize=True, range=(0, 1))
+
+        std = torch.std(self.base_weights)
+        std_weights = (self.base_weights / std) + 0.5
+        utils.save_image(std_weights,
+                         'exps/weight_visualisations/weights.png',
+                         nrow=32, normalize=True, range=(0, 1))
+
+        w_b = self.base_weights + b
+        std_w_b = torch.std(w_b)
+        std_weights_and_biases = (w_b / std_w_b) + 0.5
+        utils.save_image(std_weights_and_biases,
+                         'exps/weight_visualisations/weights_and_biases.png',
+                         nrow=32, normalize=True, range=(0, 1))
+
+        imported_w = [x for x in self.imported.parameters()][0]
+        std = torch.std(imported_w)
+        std_weights = (imported_w / std) + 0.5
+        network_name = 'exps/weight_visualisations/densenet'
+        utils.save_image(std_weights, '%s_weights.png' % network_name, nrow=8,
+                         normalize=True, range=(0, 1))
+
 
 
 
@@ -1042,9 +1081,9 @@ def finalize_args(parser):
             vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
         elif args.architecture == 'ConvBFN_small_3_layers':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 32, 28, 28],
-                                         [args.batch_size, 32, 12, 12],
-                                         [args.batch_size, 32, 4, 4]
+                                         [args.batch_size, 32, 22, 22],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 32, 10, 10]
                                          ]
 
             mod_connect_dict = {0: [],
@@ -1053,19 +1092,19 @@ def finalize_args(parser):
                                 3: [2]
                                 }
             mod_kernel_dict = {0: [],
-                                1: [3],
+                                1: [7],
                                 2: [7],
                                 3: [7]
                                 }
             mod_padding_dict = {0: [],
-                                1: [1],
-                                2: [1],
-                                3: [1]
+                                1: [0],
+                                2: [0],
+                                3: [0]
                                 }
             mod_strides_dict = {0: [],
                                 1: [1],
-                                2: [2],
-                                3: [2]
+                                2: [1],
+                                3: [1]
                                 }
 
             vars(args)['arch_dict'] = {'num_ch': 32,
