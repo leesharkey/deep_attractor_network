@@ -1011,6 +1011,7 @@ class ConvBengioFischerNetwork(nn.Module):
         self.connexions = self.args.arch_dict['mod_connect_dict']
         self.f_keys = []
         self.f_nets = nn.ModuleDict({})
+        self.b_nets = nn.ModuleDict({})
         for i in self.args.arch_dict['mod_connect_dict'].keys():
             inp_idxs = self.connexions[i]
             if any([j > i for j in inp_idxs]):
@@ -1023,18 +1024,43 @@ class ConvBengioFischerNetwork(nn.Module):
                     f_key = '%i--%i' % (j, i)
                     #print(f_key)
                     self.f_keys.append((f_key))
-                    #b_key = '%i--%i' % (i, j)
+
                     f_in_ch  = self.args.state_sizes[j][1]
                     f_out_ch = self.args.state_sizes[i][1]
+
                     f_net = nn.Conv2d(in_channels=f_in_ch,
                                       out_channels=f_out_ch,
-                                      kernel_size=self.args.arch_dict['kernel_sizes'][i][j_ind],
-                                      padding=self.args.arch_dict['padding'][i][j_ind],
-                                      stride=self.args.arch_dict['strides'][i][j_ind],
+                                      kernel_size=self.args.arch_dict[
+                                          'kernel_sizes'][i][j_ind],
+                                      padding=self.args.arch_dict[
+                                          'padding'][i][j_ind],
+                                      stride=self.args.arch_dict[
+                                          'strides'][i][j_ind],
                                       padding_mode='zeros')
+
                     if not self.args.no_spec_norm_reg:
                         f_net = spectral_norm(f_net)
                     self.f_nets.update({f_key: f_net})
+
+                    if self.args.no_forced_symmetry:
+                        b_key = '%i--%i' % (i, j)
+                        if self.args.arch_dict['strides'][i][j_ind] == 2:
+                            output_padding = 1
+                        else:
+                            output_padding = 0
+                        b_net = nn.ConvTranspose2d(in_channels=f_out_ch,
+                                                   out_channels=f_in_ch,
+                                                   kernel_size=self.args.arch_dict[
+                                                       'kernel_sizes'][i][j_ind],
+                                                   padding=self.args.arch_dict[
+                                                       'padding'][i][j_ind],
+                                                   output_padding=output_padding,
+                                                   stride=self.args.arch_dict[
+                                                       'strides'][i][j_ind]
+                                                   )
+                        if not self.args.no_spec_norm_reg:
+                            b_net = spectral_norm(b_net)
+                        self.b_nets.update({b_key: b_net})
 
         self.biases = nn.ModuleList([nn.Linear(torch.prod(torch.tensor(l[1:])),
                                                1, bias=False)
@@ -1056,7 +1082,6 @@ class ConvBengioFischerNetwork(nn.Module):
             [(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in
              states])
 
-
         # Quadratic terms
         outs = []
         labs = []
@@ -1067,18 +1092,23 @@ class ConvBengioFischerNetwork(nn.Module):
         for (i, out_st) in enumerate(states):
             inp_states = [(k, states[k]) for k in self.connexions[i] if self.connexions[i]]
             for (j_ind, (j, inp_st)) in enumerate(inp_states):
-                key = '%i--%i' % (j, i)
-                f_net = self.f_nets[key]
+                f_key = '%i--%i' % (j, i)
+                f_net = self.f_nets[f_key]
                 f_out = f_net(inp_st)
                 if self.args.arch_dict['strides'][i][j_ind] == 2:
                     output_padding = 1
                 else:
                     output_padding = 0
-                b_out = nn.functional.conv_transpose2d(out_st,
-                                                       weight=f_net.weight.transpose(2,3), #TODO check if it should be transposed at all.
-                                                       padding=self.args.arch_dict['padding'][i][j_ind],
-                                                       output_padding=output_padding,
-                                                       stride=self.args.arch_dict['strides'][i][j_ind])
+                if self.args.no_forced_symmetry:
+                    b_key = '%i--%i' % (i, j)
+                    b_net = self.b_nets[b_key]
+                    b_out = b_net(out_st)
+                else:
+                    b_out = nn.functional.conv_transpose2d(out_st,
+                                                           weight=f_net.weight.transpose(2,3), #TODO check if it should be transposed at all.
+                                                           padding=self.args.arch_dict['padding'][i][j_ind],
+                                                           output_padding=output_padding,
+                                                           stride=self.args.arch_dict['strides'][i][j_ind])
                 labs[j][i] = '%i--%i' % (j, i)
                 labs[i][j] = '%i--%i' % (i, j)
 
