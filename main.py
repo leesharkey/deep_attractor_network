@@ -979,7 +979,7 @@ def finalize_args(parser):
                                        'num_fc_channels': 32}
             vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
-        elif args.architecture == 'ConvBFN_med_2_dense_3layers':
+        elif args.architecture == 'ConvBFN_med_2_dense_3layers_strides':
             #Messed this one up. Keeping as is for posterity.
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size, 16, 28, 28],
@@ -1030,17 +1030,19 @@ def finalize_args(parser):
         elif args.architecture == 'ConvBFN_med_3_dense_3layers_base':#Untested and incomplete
             #Messed this one up. Keeping as is for posterity.
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
-                                         [args.batch_size, 64, 28, 28],
-                                         [args.batch_size, 16, 28, 28],
-                                         [args.batch_size, 16, 28, 28],
-                                         [args.batch_size, 16, 28, 28],
-                                         [args.batch_size, 16, 12, 12],
-                                         [args.batch_size, 16, 12, 12],
-                                         [args.batch_size, 16, 12, 12],
+                                         [args.batch_size, 64, 22, 22],
+                                         [args.batch_size, 16, 22, 22],
+                                         [args.batch_size, 16, 22, 22],
+                                         [args.batch_size, 16, 22, 22],
+                                         [args.batch_size, 16, 16, 16],
+                                         [args.batch_size, 16, 16, 16],
+                                         [args.batch_size, 16, 16, 16],
+                                         [args.batch_size, 16, 10, 10],
+                                         [args.batch_size, 16, 10, 10],
+                                         [args.batch_size, 16, 10, 10],
                                          #[args.batch_size, 16, 4, 4],#???Size???
 
                                          ]
-
             mod_connect_dict = {0: [],
                                 1: [0],
                                 2: [1],
@@ -1048,28 +1050,45 @@ def finalize_args(parser):
                                 4: [1,2,3],
                                 5: [4],
                                 6: [4,5],
-                                7: [4,5,6]}
+                                7: [4,5,6],
+                                8: [7],
+                                9: [7, 8],
+                                10: [7, 8, 9]
+                                }
             mod_kernel_dict = {0: [],
-                                1: [3],
-                                2: [3,3],
-                                3: [3,3,3,3],
-                                4: [7],
-                                5: [7,3],
-                                6: [7,3,3]}
+                               1: [7],
+                                2: [3],
+                                3: [3,3],
+                                4: [3,3,3,3],
+                                5: [7],
+                                6: [7,3],
+                                7: [7,3,3],
+                                8: [7],
+                                9: [7,3],
+                                10: [7,3,3]}
             mod_padding_dict = {0: [],
-                                1: [1],
-                                2: [1,1],
-                                3: [1,1,1],
-                                4: [1],
-                                5: [1,1],
-                                6: [1,1,1]}
+                                1: [0],
+                                2: [1],
+                                3: [1,1],
+                                4: [1,1,1],
+                                5: [0],
+                                6: [0,1],
+                                7: [0,1,1],
+                                8: [0],
+                                9: [0, 1],
+                                10:[0, 1, 1]
+                                }
             mod_strides_dict = {0: [],
                                 1: [1],
-                                2: [1,1],
-                                3: [1,1,1,1],
-                                4: [2],
-                                5: [2,1],
-                                6: [2,1,1]}
+                                2: [1],
+                                3: [1,1],
+                                4: [1,1,1],
+                                5: [1],
+                                6: [1,1],
+                                7: [1,1,1],
+                                8: [1],
+                                9: [1, 1],
+                                10: [1, 1, 1]}
 
             vars(args)['arch_dict'] = {'num_ch': 32,
                                        'num_ch_initter': 16,
@@ -1078,7 +1097,7 @@ def finalize_args(parser):
                                        'strides': mod_strides_dict,
                                        'padding': mod_padding_dict,
                                        'mod_connect_dict': mod_connect_dict}
-            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+            # vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
         elif args.architecture == 'ConvBFN_small_3_layers':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size, 32, 22, 22],
@@ -1120,7 +1139,7 @@ def finalize_args(parser):
                                          [args.batch_size, 32, 22, 22],
                                          [args.batch_size, 32, 16, 16],
                                          [args.batch_size, 32, 10, 10],
-                                         [args.batch_size, 32, 4, 4]
+                                         [args.batch_size, 32, 4, 4]# Think this layer causes box artefacts in the image
                                          ]
 
             mod_connect_dict = {0: [],
