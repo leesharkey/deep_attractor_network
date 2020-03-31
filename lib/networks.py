@@ -297,7 +297,9 @@ class ConvFCMixturetoTwoDim(nn.Module):
 
         # Combine outputs of base fc & base conv layers and get energy output
         energy_input = torch.cat([resized_base_conv_out, fc_outs_cat], dim=1)
-        out = self.act(self.energy_layer(energy_input))
+        out = self.energy_layer(energy_input)
+        if not self.args.no_end_layer_activation:
+            out = self.act(out)
         quadr_out = 0.5 * torch.einsum('ba,ba->b',
                                        out.view(out.shape[0], -1),
                                        pre_states.view(pre_states.shape[0],-1))
@@ -390,7 +392,10 @@ class ConvFCMixturetoFourDim(nn.Module):
                    for (i, inp) in enumerate(inps_2d)]
         fc_outs = torch.cat(fc_outs, dim=1)
         energy_input = torch.cat([reshaped_inps, base_conv_out, fc_outs],dim=1)
-        out = self.act(self.energy_conv(energy_input)) #TODO put act in sequential above
+
+        out = self.energy_conv(energy_input)
+        if not self.args.no_end_layer_activation:
+            out = self.act(out) #TODO put act in sequential above
         quadr_out = 0.5 * torch.einsum('ba,ba->b',
                                        out.view(
                                            int(out.shape[0]), -1),
@@ -498,7 +503,9 @@ class ConvFCMixturetoFourDim_Type2(nn.Module):
         # fc_outs = torch.cat(fc_outs, dim=1)
         energy_input = torch.cat([reshaped_4dim_inps, base_conv_out,
                                   fc_4dimout], dim=1)
-        out = self.act(self.energy_conv(energy_input)) #TODO put act in sequential above
+        out = self.energy_conv(energy_input)
+        if not self.args.no_end_layer_activation:
+            out = self.act(out) #TODO put act in sequential above
         quadr_out = 0.5 * torch.einsum('ba,ba->b',
                                        out.view(
                                            int(out.shape[0]), -1),
@@ -559,7 +566,9 @@ class DenseConv(nn.Module):
         reshaped_inps = torch.cat(reshaped_inps, dim=1)
         base_out = self.act(self.base_conv(reshaped_inps))
         energy_input = torch.cat([reshaped_inps, base_out], dim=1)
-        out = self.act(self.energy_conv(energy_input))
+        out = self.energy_conv(energy_input)
+        if not self.args.no_end_layer_activation:
+            out = self.act(out)
         quadr_out = 0.5 * torch.einsum('ba,ba->b', out.view(int(out.shape[0]), -1),
                                      pre_states.view(int(pre_states.shape[0]), -1))
         return quadr_out, out
@@ -588,11 +597,18 @@ class FCFC(nn.Module):
         if not self.args.no_spec_norm_reg:
             fc1 = spectral_norm(fc1, bound=True)
             fc2 = spectral_norm(fc2, bound=True)
-        self.energy_actv_fc_layer = nn.Sequential(
-            fc1,
-            self.act,
-            fc2,
-            self.act)
+        if not self.args.no_end_layer_activation:
+            self.energy_actv_fc_layer = nn.Sequential(
+                fc1,
+                self.act,
+                fc2,
+                self.act)
+        else:
+            self.energy_actv_fc_layer = nn.Sequential(
+                fc1,
+                self.act,
+                fc2)
+
 
     def forward(self, pre_states, actv_post_states, class_id=None): #I think I might have misnamed the pre and post states.
         inputs = actv_post_states
