@@ -4,9 +4,9 @@ import os
 import re
 import random
 from datetime import datetime
-from torch import nn, optim
-import lib.custom_swish_activation as cust_actv
-import lib.sghmc as sghmc
+from torch import optim
+import lib.custom_components.custom_swish_activation as cust_actv
+import lib.custom_components.sghmc as sghmc
 
 
 def save_configs_to_csv(args, model_name, results_dict=None):
@@ -135,7 +135,9 @@ def random_arg_generator(parser, args):
             new_arg_val = float('%s' % float('%.4g' % new_arg_val))
         elif argtype == list and name == 'alphas':
             # This is just for searching for a list of alphas, because that
-            # is awkward in the above code #TODO REMOVE WHEN PUBLISHING
+            # is awkward in the above code
+            # #REMOVE WHEN PUBLISHING
+
             arg_opts1 = extract_possible_values(search_str, arghelpstr)
             arg_opts1 = [float(opt) for opt in arg_opts1]
             # print(arg_opts1)
@@ -166,7 +168,7 @@ def extract_possible_values(search_str, arg_helpstr, second_opt=False):
         arg_opts = re.search(search_str + "\[(.*)\]", arg_helpstr).group()
     arg_opts = arg_opts[len(search_str) + 1:-1].split(sep=",")
     arg_opts = [opt.strip() for opt in arg_opts]
-    arg_opts = [opt for opt in arg_opts if 'Opt2' not in opt] #TODO REMOVE WHEN PUBLISHING
+    arg_opts = [opt for opt in arg_opts if 'Opt2' not in opt] #REMOVE WHEN PUBLISHING
     return arg_opts
 
 def requires_grad(parameters, flag=True):
@@ -175,15 +177,26 @@ def requires_grad(parameters, flag=True):
         p.requires_grad = flag
 
 
-def get_activation_function(args):
-    if args.activation == 'leaky_relu':
+def get_activation_function(args, states_activation=False, inplace=False): #TODO extend for use with state activations
+    # Define whether it's getting the state_activation or the activation
+    # for use within the multi-layer perceptrons
+    if states_activation:
+        activation = args.states_activation
+    else:
+        activation = args.activation
+
+    if  activation == 'leaky_relu':
         act = torch.nn.LeakyReLU()
-    elif args.activation == "relu":
+    elif activation == "relu":
         act = torch.nn.ReLU()
-    elif args.activation == "swish":
+    elif activation == "swish":
         act = cust_actv.Swish_module()
-    elif args.activation == "identity":
+    elif activation == "identity":
         act = torch.nn.Identity()
+    elif activation == "hardsig":
+        act = torch.nn.Hardtanh(min_val=0.0)
+    elif activation == "relu":
+        act = torch.nn.ReLU(inplace=inplace)
     return act
 
 def get_state_optimizers(args, params):
@@ -213,3 +226,5 @@ def get_state_optimizers(args, params):
 def datetimenow():
     now = datetime.now()
     return now.strftime("%Y%m%d-%H%M%S")
+
+
