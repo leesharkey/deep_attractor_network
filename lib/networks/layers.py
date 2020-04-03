@@ -6,8 +6,6 @@ from torch import nn, optim
 from torch.nn import functional as F
 import lib.utils
 import lib.custom_components.custom_swish_activation as cust_actv
-from lib.custom_components import activations
-
 
 def conv_output_shape(h_w, kernel_size=1, stride=1, padding=0, dilation=1):
     """
