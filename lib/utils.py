@@ -177,7 +177,7 @@ def requires_grad(parameters, flag=True):
         p.requires_grad = flag
 
 
-def get_activation_function(args, states_activation=False, inplace=False): #TODO extend for use with state activations
+def get_activation_function(args, states_activation=False, inplace=False):
     # Define whether it's getting the state_activation or the activation
     # for use within the multi-layer perceptrons
     if states_activation:

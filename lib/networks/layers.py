@@ -13,12 +13,13 @@ def conv_output_shape(h_w, kernel_size=1, stride=1, padding=0, dilation=1):
     Link to source: https://discuss.pytorch.org/t/utility-function-for-calculating-the-shape-of-a-conv-output/11173/5
     """
     from math import floor
-    if type(kernel_size) is not tuple:
-        kernel_size = (kernel_size, kernel_size)
-    h = floor( ((h_w[0] + (2 * padding) - ( dilation * (kernel_size[0] - 1) ) - 1 )/ stride) + 1)
-    w = floor( ((h_w[1] + (2 * padding) - ( dilation * (kernel_size[1] - 1) ) - 1 )/ stride) + 1)
+    h = floor( ((h_w + (2 * padding) - (kernel_size - 1) - 1 )/ stride) + 1)
+    w = floor( ((h_w + (2 * padding) - (kernel_size - 1) - 1 )/ stride) + 1)
     return h, w
 
+def conv_t_output_shape(h_w, kernel_size=1, stride=1, padding=0,
+                        output_padding=0):
+    return (h_w -1)*stride - 2*padding + kernel_size + output_padding
 
 class SpectralNorm:
     def __init__(self, name, bound=False):
@@ -172,6 +173,279 @@ class ResBlock(nn.Module):
         out = F.leaky_relu(out, negative_slope=0.2)
         return out
 
+
+class CCTLayer(nn.Module):
+    """A network formed of possibly two networks, a CNN and a transposed CNN
+
+    In the case where there are two networks, the input is fed to both
+    networks separately and their result is concatenated together along the
+    channel dimension before output.
+
+    The motivation for having two directions
+    is that for networks with arbitrary connectivity,
+    there is not necessarily an obvious direction that information needs
+    to be processed in, unlike in standard feed forward networks,
+    such as the discriminator or generator networks of GANs which use conv
+    and transposed conv nets respectively. In the DAN (of the 2nd kind),
+    information flows both ways along connections. If, despite the capability
+    to use both the conv and the transposed conv components of the network,
+    the direction that information needs to flow in a particular
+    case demands only one, the network should be able to learn to ignore
+    the other channels. This feat is to be facilitated by the 1 by 1
+    convolutions in the CCTBlock, which typically follow (and often precede)
+    a CCTLayer.
+
+    In the case where there is only one network, the output is the same number
+    of channels as when there are two networks.
+
+    """
+    def __init__(self, in_channels, out_channels, kernel_size,
+                 padding=None, only_conv=False, only_conv_t=False):
+        super().__init__()
+
+        if only_conv and only_conv_t:
+            raise ValueError("Cannot set CCTLayer to be only_conv AND only"
+                             "conv_t. Only one can be true.")
+        self.only_conv   = only_conv
+        self.only_conv_t = only_conv_t
+
+        # Define padding values to preserve volume of input in output
+        if padding == 0:
+           self.padding = padding
+        elif kernel_size == 3:
+            self.padding = 1
+        elif kernel_size == 7:
+            self.padding = 3
+        else:
+            self.padding = padding
+        self.kernel_size = kernel_size
+        self.output_pad = 0
+        out_channels_half = out_channels // 2
+
+        if self.only_conv:
+            self.conv = nn.Conv2d(in_channels=in_channels,
+                                  out_channels=out_channels,
+                                  kernel_size=self.kernel_size,
+                                  padding=self.padding,
+                                  stride=1,
+                                  padding_mode='zeros')
+        elif self.only_conv_t:
+            self.conv_T = nn.ConvTranspose2d(in_channels=in_channels,
+                                             out_channels=out_channels,
+                                             kernel_size=self.kernel_size,
+                                             padding=self.padding,
+                                             stride=1,
+                                             padding_mode='zeros',
+                                             output_padding=self.output_pad)
+        else:
+            out_channels_half = out_channels // 2
+            self.conv = nn.Conv2d(in_channels=in_channels,
+                                  out_channels=out_channels_half,
+                                  kernel_size=self.kernel_size,
+                                  padding=self.padding,
+                                  stride=1,
+                                  padding_mode='zeros')
+            self.conv_T = nn.ConvTranspose2d(in_channels=in_channels,
+                                             out_channels=out_channels_half,
+                                             kernel_size=self.kernel_size,
+                                             padding=self.padding,
+                                             stride=1,
+                                             padding_mode='zeros',
+                                             output_padding=self.output_pad)
+
+    def forward(self, inp):
+        if self.only_conv:
+            out = self.conv(inp)
+        elif self.only_conv_t:
+            out = self.conv_T(inp)
+        else:
+            out_conv = self.conv(inp)
+            out_conv_T = self.conv_T(inp)
+            out = torch.cat([out_conv, out_conv_T], dim=1)
+        return out
+
+
+class CCTBlock(nn.Module):
+    """"""
+    def __init__(self, args, in_channels, out_channels, kernel_size,
+                 only_conv=False, only_conv_t=False, padding=None):
+        super().__init__()
+
+        self.one_by_one_conv = nn.Conv2d(in_channels=in_channels,
+                                         out_channels=out_channels,
+                                         kernel_size=1,
+                                         stride=1,
+                                         padding=0,
+                                         padding_mode='zeros')
+        self.cct_layer = CCTLayer(out_channels,
+                                      out_channels,
+                                      kernel_size,
+                                      padding=padding,
+                                      only_conv=only_conv,
+                                      only_conv_t=only_conv_t)
+        self.act = lib.utils.get_activation_function(args)
+        # TODO
+        #  if no batch norm
+        #  else:
+        #  put in batch norm
+        self.block = nn.Sequential(self.one_by_one_conv,
+                                   self.cct_layer,
+                                   self.act)
+
+    def forward(self, inp):
+        return self.block(inp)
+
+class DenseCCTMiddle(nn.Module):
+    """
+
+    Takes as input the concatenated input states
+
+    Does not include base layer or final layer of the full DenseCCTBlock"""
+
+    def __init__(self, args, in_channels, growth_rate, num_layers,
+                 kernel_size, only_conv=False, only_conv_t=False,):
+        super().__init__()
+        self.cctb_blocks = nn.ModuleList([])
+        for i in range(num_layers):
+            num_in_ch = in_channels + (i * growth_rate)
+            cctb = CCTBlock(args,
+                            in_channels=num_in_ch,
+                            out_channels=growth_rate,
+                            kernel_size=kernel_size,
+                            only_conv=only_conv,
+                            only_conv_t=only_conv_t,)
+            self.cctb_blocks.append(cctb)
+    def forward(self, inp):
+        outs = [inp]
+        for block in self.cctb_blocks:
+            inps = torch.cat(outs, dim=1)
+            out = block(inps)
+            outs.append(out)
+        out = torch.cat(outs, dim=1)
+        return out
+
+
+class DenseCCTBlock(nn.Module):
+    """
+
+    Takes as input the separate input states, passes them through a
+    cct layer, interps then concats the outputs, passes the concatted tensor
+    through an activation, then a 1x1 conv, before passing it to the main
+    DenseCCTMiddle layers, if there are any, otherwise just outputs, and if
+    there are any, then takes the output of the DenseCCTMiddle and passes it
+    through a final 1x1 conv.
+
+    Does not include base layer or final layer of the full DenseCCTBlock"""
+
+    def __init__(self, args, state_layer_idx):
+        super().__init__()
+        self.args = args
+        base_ch      = args.arch_dict['num_ch_base']
+        growth_rate  = args.arch_dict['growth_rate']
+        num_layers   = args.arch_dict['mod_num_lyr_dict'][state_layer_idx]
+        inp_idxs     = args.arch_dict['mod_connect_dict'][state_layer_idx]
+        cct_statuses = args.arch_dict['mod_cct_status_dict'][state_layer_idx]
+        base_kern_pads = args.arch_dict['base_kern_pad_dict'][state_layer_idx]
+        kern = args.arch_dict['main_kern_dict'][state_layer_idx]
+        out_shape    = args.state_sizes[state_layer_idx]
+
+        inp_state_shapes = [self.args.state_sizes[j] for j in inp_idxs]
+
+        self.act = lib.utils.get_activation_function(args)
+
+
+        # Makes the base CCTLayers
+        self.base_cctls = nn.ModuleList([])
+        for (cct_status, shape, kp) in zip(cct_statuses,
+                                           inp_state_shapes,
+                                           base_kern_pads):
+            if cct_status == 1:
+                only_conv = True
+                only_conv_t = False
+            elif cct_status == 2:
+                only_conv = False
+                only_conv_t = True
+            else:
+                only_conv = only_conv_t = False
+            cctl = nn.Sequential(CCTLayer(in_channels=shape[1],
+                                          out_channels=base_ch,
+                                          kernel_size=kp[0],
+                                          padding = kp[1],
+                                          only_conv = only_conv,
+                                          only_conv_t = only_conv_t),
+                                 self.act)
+            self.base_cctls.append(cctl)
+
+        # If the num_layers is 0, the final 1x1 conv input channel is
+        # base_ch * num inputs since it just takes the concated outputs of the
+        # base ccts
+        # elif the num layers is greater than 0, the final 1x1 cct has
+        # num_out_ch for the number of in channels, since it's taking the
+        # output of DenseCCTMiddle.
+
+        # If the cct_statuses are all 1 (or all 2), then the status input to the
+        # DenseCCTMiddle is also 1 (or 2). But if there is any mixture,
+        # then the layers in DenseCCTMiddle are also mixtures, even though the
+        # bases get their preferences
+
+        all_same_cct_status = all([cct_statuses[0] == cct_st
+                                    for cct_st in cct_statuses])
+        if all_same_cct_status:
+            if cct_statuses[0] == 1:
+                only_conv = True
+                only_conv_t = False
+            elif cct_statuses[0] == 2:
+                only_conv = False
+                only_conv_t = True
+        else:
+            only_conv = only_conv_t = False
+
+        if num_layers > 0:
+            in_channels = base_ch * len(inp_state_shapes)
+            num_out_ch  = in_channels + (num_layers * growth_rate)
+            dcctm = DenseCCTMiddle(args,
+                                   in_channels=in_channels,
+                                   growth_rate=growth_rate,
+                                   num_layers=num_layers,
+                                   kernel_size=kern,
+                                   only_conv=only_conv,
+                                   only_conv_t=only_conv_t)
+            final_1x1_conv = nn.Conv2d(in_channels=num_out_ch,
+                                       out_channels=out_shape[1],
+                                       kernel_size=1,
+                                       stride=1,
+                                       padding=0)
+            self.top_net = nn.Sequential(dcctm,
+                                         final_1x1_conv)
+        else:
+            num_out_ch = base_ch * len(inp_state_shapes)
+            final_1x1_conv = nn.Conv2d(in_channels=num_out_ch,
+                                       out_channels=out_shape[1],
+                                       kernel_size=1,
+                                       stride=1,
+                                       padding=0)
+            self.top_net = final_1x1_conv
+
+
+    def forward(self, pre_state, inps):
+        outs = []
+        for base_cctl, inp in zip(self.base_cctls, inps):
+            out = base_cctl(inp)
+            outs.append(out)
+        out = torch.cat(outs, dim=1)
+        out = self.top_net(out)
+
+        quadr_out = 0.5 * torch.einsum('ba,ba->b',
+                                       out.view(out.shape[0], -1),
+                                       pre_state.view(pre_state.shape[0],-1))
+
+        return quadr_out, out
+
+
+
+
+
+
 class ConvFCMixturetoTwoDim(nn.Module):
     """
     Takes a mixture of four dimensional inputs and two dimensional inputs
@@ -197,12 +471,6 @@ class ConvFCMixturetoTwoDim(nn.Module):
                                      for j in self.input_idxs
                                      if len(self.args.state_sizes[j]) == 4]
         self.num_in_conv_channels = sum([size[1] for size in self.in_conv_sizes])
-
-        # # Defines interpolater that reshapes all conv inputs to same size H x W
-        # self.mean_4dim_size = int(torch.mean(torch.tensor(
-        #     [size[2] for size in self.in_conv_sizes]).float()))
-        # self.mean_4dim_size = [self.mean_4dim_size, self.mean_4dim_size] #TODO inclined to change this to max
-        # self.interp = Interpolate(size=self.mean_4dim_size, mode='bilinear')
 
         # Defines interpolater that reshapes all conv inputs to same size H x W
         self.max_4dim_size = int(torch.max(torch.tensor(
@@ -656,9 +924,7 @@ class LinearConvFCMixturetoTwoDim(nn.Module):
         self.args = args
         self.pad_mode = 'zeros'
         self.layer_idx = layer_idx
-        self.out_ch = 1
-        #self.act = lib.utils.get_activation_function(args)
-        #self.base_fc_out_size = 256 # TODO this seems like a hack
+        self.out_ch = 64
 
         # Gets the indices of the state_layers that will be input to this net.
         self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
@@ -681,7 +947,7 @@ class LinearConvFCMixturetoTwoDim(nn.Module):
         # Define base convs (includes avg pooling to downsample)
         base_conv = nn.Conv2d(
             in_channels=self.num_in_conv_channels,
-            out_channels=self.out_ch, #TODO consider making a hyperparam
+            out_channels=self.out_ch,
             kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
             padding=self.args.arch_dict['padding'][layer_idx][0],
             stride=self.args.arch_dict['strides'][0],
@@ -690,9 +956,6 @@ class LinearConvFCMixturetoTwoDim(nn.Module):
         if not self.args.no_spec_norm_reg:
             base_conv = spectral_norm(base_conv)
         self.base_conv = base_conv
-        # self.base_conv = nn.Sequential(base_conv,
-        #                                nn.AvgPool2d(kernel_size=2, #TODO consider making this a hyperparam
-        #                                             count_include_pad=True))
 
         # Get size of base conv outputs
         self.base_conv_outshapes = []
@@ -709,8 +972,7 @@ class LinearConvFCMixturetoTwoDim(nn.Module):
         #                    stride=2)]
 
         self.base_conv_outshapes.append(outshape) #for avg pool2d
-        self.base_conv_outsizes = [torch.prod(torch.tensor(bcos))# * \
-                                   #self.args.arch_dict['num_ch']
+        self.base_conv_outsizes = [torch.prod(torch.tensor(bcos))
                                    for bcos in self.base_conv_outshapes] # TODO this scales poorly with num channels. Consider adding another conv layer with smaller output when network is working
         self.linker_net = nn.Linear(self.base_conv_outsizes[0],
                                     self.state_layer_size) #todo probs don't need self.base_conv_outsizes to be a list
@@ -729,15 +991,6 @@ class LinearConvFCMixturetoTwoDim(nn.Module):
             if not self.args.no_spec_norm_reg:
                 fc_layer = spectral_norm(fc_layer, bound=True)
             self.base_fc_layers.append(fc_layer) #TODO consider changing this to sequential and adding actv instead of doing actvs in forward (do once you've got network working)
-
-        # # Define energy FC (take flattened convs and base FCs as input)
-        # self.energy_inp_size = (self.base_fc_out_size * self.num_fc_inps) + \
-        #     sum(self.base_conv_outsizes)
-        # energy_layer = nn.Linear(self.energy_inp_size,
-        #                          self.state_layer_size)
-        # if not self.args.no_spec_norm_reg:
-        #     energy_layer = spectral_norm(energy_layer, bound=True)
-        # self.energy_layer = energy_layer
 
     def forward(self, pre_states, inputs, class_id=None):
         # Get 4-d inputs and pass through base conv layers, then flatten output

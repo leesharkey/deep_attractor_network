@@ -29,7 +29,7 @@ class Dataset():
                             #num_workers=4) #this makes debugging very very slow
         #self.loader = tqdm(enumerate(sample_data(self.loader)))
 
-class SampleBuffer:
+class SampleBuffer: #TODO init that uses biases
     def __init__(self, args, device, max_samples=10000):
         self.args = args
         self.max_samples = max_samples
@@ -46,9 +46,6 @@ class SampleBuffer:
         if self.args.cd_mixture:
             self.p_neg_buffer = []  # for 'positive negative buffer'
             self.max_p_neg_samples = 10000
-
-    # def __len__(self): #TODO consider removing
-    #     return len(self.neg_buffer)
 
     def push(self, states, class_ids=None, pos=False):
 
@@ -165,26 +162,11 @@ class SampleBuffer:
         )
 
 
-# def sample_data(loader):
-#     loader_iter = iter(loader)
-#
-#     while True:
-#         try:
-#             yield next(loader_iter)
-#
-#         except StopIteration:
-#             loader_iter = iter(loader)
-#
-#             yield next(loader_iter)
-
 listdetach = lambda y : [x.detach() for x in y]
 listtodevice = lambda y, device: [x.to(device) for x in y]
 listsplit = lambda y, size, dim: [torch.split(x, size, dim) for x in y]
 liststack = lambda y, dim : [torch.stack(x, dim) for x in y]
 listcat = lambda y, dim : [torch.cat(x, dim) for x in y]
-
-
-
 
 
 shapes = lambda x : [y.shape for y in x]

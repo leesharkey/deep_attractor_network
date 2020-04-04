@@ -56,7 +56,7 @@ class InitializerNetwork(torch.nn.Module):
         # Define the rest of the encoders
         for i in range(1, len(self.args.state_sizes)):
             # encs should take as input the image size and output the statesize for that statelayer
-            if len(self.args.state_sizes[i]) == 4: #TODO this is a hack for the new type of networks with dim4 in sl0
+            if len(self.args.state_sizes[i]) == 4:
                 self.encs.append(
                                 nn.Sequential(
                                           nn.BatchNorm2d(self.num_ch),

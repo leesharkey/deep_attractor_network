@@ -327,12 +327,11 @@ class TrainingManager(Manager):
         # Energies for layers (mean scalar and all histogram)
         if step % self.args.scalar_logging_interval == 0 and step is not None:
             for i, enrg in enumerate(outs):
-                mean_layer_string = 'layers/mean_energies_%s' % i
-                #print("Logging mean energies") #TODO rename these. They aren't energies, they're the outputs of the quadratic networks
+                mean_layer_string = 'layers/mean_bnry_%s' % i
                 self.writer.add_scalar(mean_layer_string, enrg.mean(), step)
                 if self.args.log_histograms  and \
                         step % self.args.histogram_logging_interval == 0:
-                    hist_layer_string = 'layers/hist_energies_%s' % i
+                    hist_layer_string = 'layers/hist_bnrys_%s' % i
                     #print("Logging energy histograms")
                     self.writer.add_histogram(hist_layer_string, enrg, step)
 
@@ -710,7 +709,7 @@ class VisualizationManager(Manager):
                     else:
                         ch_str = str(channel_idx) + '_'
 
-                utils.save_image(states[0].detach().to('cpu'), #TODO fix so the size isn't hardcoded
+                utils.save_image(states[0].detach().to('cpu'),
                                  os.path.join(self.sample_log_dir,
                                               str(state_layer_idx) + '_' +
                                               ch_str +
@@ -759,7 +758,7 @@ class VisualizationManager(Manager):
 
             # Zero the grads above the layer that we're visualizing
             # for s in states[state_layer_idx+1:]:
-            #     s.grad.zero_() #TODO check what this is actually doing
+            #     s.grad.zero_()
 
         # The rest of the sampler step function is no different from the
         # negative step used in training
@@ -829,7 +828,7 @@ class WeightVisualizationManager(Manager):
 
         imported_w = [x for x in self.imported.parameters()][0]
         std = torch.std(imported_w)
-        std_weights = (imported_w/ std) +0.5
+        std_weights = (imported_w/ std) + 0.5
         network_name = 'exps/weight_visualisations/densenet'
         utils.save_image(std_weights, '%s_weights.png' % network_name, nrow=8,
                          normalize=True, range=(0, 1))

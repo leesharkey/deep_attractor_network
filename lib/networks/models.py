@@ -19,7 +19,7 @@ class BaseModel(nn.Module):
         self.st_act = \
             lib.utils.get_activation_function(args, states_activation=True)
 
-    def initialize_biases(self, args):
+        # Initialize biases
         self.biases = nn.ModuleList([
             nn.Linear(torch.prod(torch.tensor(l[1:])), 1, bias=False)
                        for l in args.state_sizes])
@@ -54,8 +54,6 @@ class BengioFischerNetwork(BaseModel):
             [nn.Linear(torch.prod(torch.tensor(l1[1:])),
                        torch.prod(torch.tensor(l2[1:])), bias=False)
              for l1, l2 in zip(args.state_sizes[:-1], args.state_sizes[1:])])
-
-        self.initialize_biases(args)
 
         self.st_act = lib.utils.get_activation_function(args)
 
@@ -150,15 +148,11 @@ class ConvBengioFischerNetwork(BaseModel):
                             b_net = spectral_norm(b_net)
                         self.b_nets.update({b_key: b_net})
 
-        self.initialize_biases(args)
-
-
     def forward(self, states, class_id=None, step=None):
 
         # Squared norm
-        sq_nrm = sum(
-            [(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in
-             states])
+        sq_nrm = sum([(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum()
+                      for layer in states])
 
         # Quadratic terms
         outs = []
@@ -183,7 +177,7 @@ class ConvBengioFischerNetwork(BaseModel):
                     b_out = b_net(out_st)
                 else:
                     b_out = nn.functional.conv_transpose2d(out_st,
-                                                           weight=f_net.weight.transpose(2,3), #TODO check if it should be transposed at all.
+                                                           weight=f_net.weight.transpose(2,3),
                                                            padding=self.args.arch_dict['padding'][i][j_ind],
                                                            output_padding=output_padding,
                                                            stride=self.args.arch_dict['strides'][i][j_ind])
@@ -199,7 +193,6 @@ class ConvBengioFischerNetwork(BaseModel):
 
         # Remove empty entries in list of list
         outs = [[o for o in out if o is not None] for out in outs]
-        #print([shapes(out) for out in outs])
         outs = [torch.stack(out) for out in outs]
         outs = [torch.sum(out, dim=0) for out in outs]
 
@@ -212,8 +205,7 @@ class ConvBengioFischerNetwork(BaseModel):
         # Linear terms
         linear_terms = - sum([bias(self.st_act(layer.view(layer.shape[0], -1))).sum()
                               for layer, bias in
-                              zip(states, self.biases)]) #TODO init that uses biases
-
+                              zip(states, self.biases)])
 
         return sq_nrm + linear_terms + quadratic_terms, outs
 
@@ -248,12 +240,6 @@ class VectorFieldNetwork(BaseModel):
             LinearLayer(args, i) for i in range(len(self.args.state_sizes))
         ])
 
-        # self.weights = nn.ModuleList(
-        #     [nn.Linear(torch.prod(torch.tensor(l1[1:])),
-        #                torch.prod(torch.tensor(l2[1:])), bias=False)
-        #      for l1, l2 in zip(args.state_sizes[:-1], args.state_sizes[1:])])
-        self.initialize_biases(args)
-
     def forward(self, states, class_id=None, step=None):
 
         # Squared norm
@@ -271,19 +257,9 @@ class VectorFieldNetwork(BaseModel):
             post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
             pos_inp_states = [states[j] for j in post_inp_idxs]
             quadr_out, out = net(pre_state, pos_inp_states)
-            quadr_out = self.args.energy_weight_mask[i] * quadr_out #TODO temporary, just to see if this messes it up with larger archi layers
             quadr_outs.append(quadr_out)
             outs.append(out)
 
-
-        # if self.args.log_histograms and step is not None and \
-        #     step % self.args.histogram_logging_interval == 0:
-        #     for i, enrg in enumerate(outs):
-        #         layer_string = 'train/energies_%s' % i
-        #         self.writer.add_histogram(layer_string, enrg, step)
-        # reshaped_outs = [out.view(out.shape[0], -1) for out in outs]
-        # reshaped_outs = [out * mask.view(out.shape[0], -1)
-        #         for out, mask in zip(reshaped_outs, self.energy_weight_masks)]
         quadratic_terms = - sum(sum(quadr_outs))
 
         energy = sq_nrm + linear_terms + quadratic_terms
@@ -319,7 +295,7 @@ class DeepAttractorNetwork(BaseModel):
                 if all_same_dim:
                     net = DenseConv(self.args, i)
                 else:
-                    net = ConvFCMixturetoFourDim_Type2(self.args, i) #LEE this has changed
+                    net = ConvFCMixturetoFourDim_Type2(self.args, i) #N.b. II
             elif len(size) == 2:
                 if all_same_dim:
                     net = FCFC(self.args, i)
@@ -327,19 +303,13 @@ class DeepAttractorNetwork(BaseModel):
                     net = ConvFCMixturetoTwoDim(self.args, i)
             self.quadratic_nets.append(net)
 
-        # Define the biases that determine the linear term
-        self.initialize_biases(args)
 
     def forward(self, states, class_id=None, step=None):
 
         # Squared norm
-        # sq_nrm = sum(
-        #     [(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in
-        #      states])
         sq_terms = []
         for i, layer in enumerate(states):
             sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2).sum()
-            #sq_term = self.args.energy_weight_mask[i] * sq_term
             sq_terms.append(sq_term)
         sq_nrm = sum(sq_terms)
 
@@ -348,13 +318,9 @@ class DeepAttractorNetwork(BaseModel):
         for i, (layer, bias) in enumerate(zip(states, self.biases)):
             lin_term = bias(self.st_act(layer.view(layer.shape[0], -1)))
             lin_term = lin_term.sum()
-            #lin_term = self.args.energy_weight_mask[i] * lin_term
             lin_terms.append(lin_term)
         lin_terms = - sum(lin_terms)
 
-        # linear_terms = - sum([bias(self.st_act(layer.view(layer.shape[0], -1))).sum()
-        #                       for layer, bias in
-        #                       zip(states, self.biases)])
 
         # Quadratic terms
         quadr_outs = []
@@ -365,7 +331,69 @@ class DeepAttractorNetwork(BaseModel):
             pos_inp_states = [self.st_act(state)
                               for state in pos_inp_states]
             quadr_out, out = net(pre_state, pos_inp_states)
-            #quadr_out = self.args.energy_weight_mask[i] * quadr_out
+            quadr_outs.append(quadr_out)
+            outs.append(out)
+
+        quadratic_terms = - sum(sum(quadr_outs))  # Note the minus here
+
+        # Get the final energy
+        energy = sq_nrm + lin_terms + quadratic_terms
+
+        return energy, outs
+
+#####################################################
+class DeepAttractorNetworkTakeTwo(BaseModel):
+    """Defines the Deep Attractor Network of the second kind(Sharkey 2019)
+
+    The network is a generalisation of the vector field network used in
+    Scellier et al. (2018) relaxation of the continuous Hopfield-like network
+    (CHN) studied by Bengio and Fischer (2015) and later in
+    Equilibrium Propagation (Scellier et al. 2017) and other works. It
+    no longer required symmetric weights as in the CHN.
+    """
+    def __init__(self, args, device, model_name, writer, n_class=None):
+        super().__init__(args, device, model_name, writer)
+        self.args = args
+        self.device = device
+        self.writer = writer
+        self.model_name = model_name
+        self.num_state_layers = len(self.args.state_sizes[1:])
+
+        # Define the networks that output the quadratic terms
+        self.quadratic_nets = nn.ModuleList([])
+        for i in range(len(self.args.state_sizes)):
+            net = DenseCCTBlock(args, i)
+
+            self.quadratic_nets.append(net)
+
+
+    def forward(self, states, class_id=None, step=None):
+
+        # Squared norm
+        sq_terms = []
+        for i, layer in enumerate(states):
+            sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2).sum()
+            sq_terms.append(sq_term)
+        sq_nrm = sum(sq_terms)
+
+        # Linear terms
+        lin_terms = []
+        for i, (layer, bias) in enumerate(zip(states, self.biases)):
+            lin_term = bias(self.st_act(layer.view(layer.shape[0], -1)))
+            lin_term = lin_term.sum()
+            lin_terms.append(lin_term)
+        lin_terms = - sum(lin_terms)
+
+
+        # Quadratic terms
+        quadr_outs = []
+        outs = []
+        for i, (pre_state, net) in enumerate(zip(states, self.quadratic_nets)):
+            post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            pos_inp_states = [states[j] for j in post_inp_idxs]
+            pos_inp_states = [self.st_act(state)
+                              for state in pos_inp_states]
+            quadr_out, out = net(pre_state, pos_inp_states)
             quadr_outs.append(quadr_out)
             outs.append(out)
 
@@ -408,34 +436,22 @@ class StructuredVectorFieldNetwork(BaseModel):
                     net = LinearConvFCMixturetoTwoDim(self.args, i)
             self.quadratic_ne1ts.append(net)
 
-        # Define the biases that determine the linear term
-        self.initialize_biases(args)
-
     def forward(self, states, class_id=None, step=None):
 
         # Squared norm
-        # sq_nrm = sum(
-        #     [(0.5 * (layer.view(layer.shape[0], -1) ** 2)).sum() for layer in
-        #      states])
         sq_terms = []
         for i, layer in enumerate(states):
             sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2).sum()
-            #sq_term = self.args.energy_weight_mask[i] * sq_term
             sq_terms.append(sq_term)
         sq_nrm = sum(sq_terms)
 
-        # # Linear terms
-        # lin_terms = []
-        # for i, (layer, bias) in enumerate(zip(states, self.biases)):
-        #     lin_term = bias(self.state_actv(layer.view(layer.shape[0], -1)))
-        #     lin_term = lin_term.sum()
-        #     #lin_term = self.args.energy_weight_mask[i] * lin_term
-        #     lin_terms.append(lin_term)
-        # lin_terms = - sum(lin_terms)
-
-        # linear_terms = - sum([bias(self.state_actv(layer.view(layer.shape[0], -1))).sum()
-        #                       for layer, bias in
-        #                       zip(states, self.biases)])
+        # Linear terms
+        lin_terms = []
+        for i, (layer, bias) in enumerate(zip(states, self.biases)):
+            lin_term = bias(self.state_actv(layer.view(layer.shape[0], -1)))
+            lin_term = lin_term.sum()
+            lin_terms.append(lin_term)
+        lin_terms = - sum(lin_terms)
 
         # Quadratic terms
         quadr_outs = []
@@ -446,14 +462,13 @@ class StructuredVectorFieldNetwork(BaseModel):
             pos_inp_states = [self.state_actv(state)
                               for state in pos_inp_states]
             quadr_out, out = net(pre_state, pos_inp_states)
-            #quadr_out = self.args.energy_weight_mask[i] * quadr_out
             quadr_outs.append(quadr_out)
             outs.append(out)
 
-        quadratic_terms = - sum(sum(quadr_outs))  # Note no the minus here
+        quadratic_terms = - sum(sum(quadr_outs))
 
         # Get the final energy
-        energy = sq_nrm + quadratic_terms #+ lin_terms
+        energy = sq_nrm + quadratic_terms + lin_terms
 
         return energy, outs
 
