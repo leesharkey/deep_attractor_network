@@ -199,7 +199,7 @@ class CCTLayer(nn.Module):
     of channels as when there are two networks.
 
     """
-    def __init__(self, in_channels, out_channels, kernel_size,
+    def __init__(self, args, in_channels, out_channels, kernel_size,
                  padding=None, only_conv=False, only_conv_t=False):
         super().__init__()
 
@@ -208,8 +208,16 @@ class CCTLayer(nn.Module):
                              "conv_t. Only one can be true.")
         self.only_conv   = only_conv
         self.only_conv_t = only_conv_t
+        spec_norm_reg = args.arch_dict['spec_norm_reg']
 
-        # Define padding values to preserve volume of input in output
+        # Define padding values
+        # Padding of 0 is for when the architecture is compressing or expanding
+        # the volume of the output compared with the input. These will only
+        # be used in base CCTLayers
+        # Padding of 1 with KS==3 OR padding of 3 with KS==7 is to preserve
+        # volume of output compared with the input. These will be used either
+        # in base CCTLayers or in the main dense blocks, since dense blocks
+        # require volume preservation.
         if padding == 0:
            self.padding = padding
         elif kernel_size == 3:
@@ -220,7 +228,6 @@ class CCTLayer(nn.Module):
             self.padding = padding
         self.kernel_size = kernel_size
         self.output_pad = 0
-        out_channels_half = out_channels // 2
 
         if self.only_conv:
             self.conv = nn.Conv2d(in_channels=in_channels,
@@ -229,6 +236,8 @@ class CCTLayer(nn.Module):
                                   padding=self.padding,
                                   stride=1,
                                   padding_mode='zeros')
+            if spec_norm_reg:
+                self.conv   = spectral_norm(self.conv)
         elif self.only_conv_t:
             self.conv_T = nn.ConvTranspose2d(in_channels=in_channels,
                                              out_channels=out_channels,
@@ -237,6 +246,8 @@ class CCTLayer(nn.Module):
                                              stride=1,
                                              padding_mode='zeros',
                                              output_padding=self.output_pad)
+            if spec_norm_reg:
+                self.conv_T = spectral_norm(self.conv_T)
         else:
             out_channels_half = out_channels // 2
             self.conv = nn.Conv2d(in_channels=in_channels,
@@ -252,6 +263,9 @@ class CCTLayer(nn.Module):
                                              stride=1,
                                              padding_mode='zeros',
                                              output_padding=self.output_pad)
+            if spec_norm_reg:
+                self.conv   = spectral_norm(self.conv)
+                self.conv_T = spectral_norm(self.conv_T)
 
     def forward(self, inp):
         if self.only_conv:
@@ -277,12 +291,13 @@ class CCTBlock(nn.Module):
                                          stride=1,
                                          padding=0,
                                          padding_mode='zeros')
-        self.cct_layer = CCTLayer(out_channels,
-                                      out_channels,
-                                      kernel_size,
-                                      padding=padding,
-                                      only_conv=only_conv,
-                                      only_conv_t=only_conv_t)
+        self.cct_layer = CCTLayer(args,
+                                  out_channels,
+                                  out_channels,
+                                  kernel_size,
+                                  padding=padding,
+                                  only_conv=only_conv,
+                                  only_conv_t=only_conv_t)
         self.act = lib.utils.get_activation_function(args)
         # TODO
         #  if no batch norm
@@ -327,7 +342,6 @@ class DenseCCTMiddle(nn.Module):
 
 class DenseCCTBlock(nn.Module):
     """
-
     Takes as input the separate input states, passes them through a
     cct layer, interps then concats the outputs, passes the concatted tensor
     through an activation, then a 1x1 conv, before passing it to the main
@@ -367,7 +381,8 @@ class DenseCCTBlock(nn.Module):
                 only_conv_t = True
             else:
                 only_conv = only_conv_t = False
-            cctl = nn.Sequential(CCTLayer(in_channels=shape[1],
+            cctl = nn.Sequential(CCTLayer(args,
+                                          in_channels=shape[1],
                                           out_channels=base_ch,
                                           kernel_size=kp[0],
                                           padding = kp[1],
@@ -442,8 +457,8 @@ class DenseCCTBlock(nn.Module):
         return quadr_out, out
 
 
-
-
+# DAN2 above
+#################################################
 
 
 class ConvFCMixturetoTwoDim(nn.Module):
