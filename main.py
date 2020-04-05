@@ -1966,6 +1966,25 @@ def finalize_args(parser):
                                                 1.5, 1.5,
                                                 12.0] #Fails due to memory issues...
     if args.network_type == 'DAN2':
+        if args.architecture == 'DAN2_very_small_1SL_self':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28]]
+
+            mod_connect_dict = {0: [0]}
+            mod_cct_status_dict = {0: [0] # 0 for cct, 1 for oc, 2 for oct
+                                   }
+            mod_num_lyr_dict =    {0: 2, # 0 to have no dense block
+                                   }
+            base_kern_pad_dict = {0: [[7,3]]}
+            main_kern_dict = {0: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 8,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict}
         if args.architecture == 'DAN2_small_4SL_allself':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size,  32, 28, 28],
@@ -2036,6 +2055,42 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict,
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict}
+        if args.architecture == 'DAN2_small_4SL_topself_cleanbottom':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 28, 28]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3]}
+            mod_cct_status_dict = {0: [2], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1,0,0],
+                                   2: [0,0,0],
+                                   3: [0,0]}
+            mod_num_lyr_dict =    {0: 0, # 0 to have no dense block
+                                   1: 2,
+                                   2: 2,
+                                   3: 2}
+            base_kern_pad_dict = {0: [[3,1],[7,3]],
+                                  1: [[7,3],[3,1],[3,1]],
+                                  2: [[3,1],[3,1],[3,1]],
+                                  3: [[3,1],[3,1]]}
+            main_kern_dict = {0: 3,
+                              1: 3,
+                              2: 3,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': True}
         elif args.architecture == 'DAN2_small_6SL_allself_compress':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size,  32, 28, 28],
@@ -2243,16 +2298,16 @@ def main():
                         help='')
     ngroup.add_argument('--dampening_param', type=float, default=0.0,
                         help='')
-    ngroup.add_argument('--no_spec_norm_reg', action='store_true',
-                        help='If true, networks are NOT subjected to ' +
-                             'spectral norm regularisation. ' +
-                             'Default: %(default)s.')
-    parser.set_defaults(no_spec_norm_reg=False)
+    # ngroup.add_argument('--no_spec_norm_reg', action='store_true',
+    #                     help='If true, networks are NOT subjected to ' +
+    #                          'spectral norm regularisation. ' +
+    #                          'Default: %(default)s.')
+    # parser.set_defaults(no_spec_norm_reg=False)
     ngroup.add_argument('--no_forced_symmetry', action='store_true',
                         help='If true, the backwards nets in ConvBFN are' +
                              'spectral norm regularisation. ' +
                              'Default: %(default)s.')
-    parser.set_defaults(no_spec_norm_reg=False)
+    parser.set_defaults(no_forced_symmetry=False)
     ngroup.add_argument('--no_end_layer_activation', action='store_true',
                         help='If true, there is no activation place on the ' +
                              'final layer of the quadratic nets in the DAN. ' +
