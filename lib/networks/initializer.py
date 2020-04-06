@@ -212,7 +212,7 @@ class InitializerNetwork(torch.nn.Module):
                 k1 = 7
                 p1 = 0
                 step_down1 = True
-                outshape = utils.conv_output_shape(self.input_size,
+                outshape = utils.conv_output_shape(self.input_size[3],
                                                    kernel_size=k1,
                                                    stride=1,
                                                    padding=p1)
