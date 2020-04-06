@@ -4,22 +4,10 @@ which is available under an MIT OSI licence."""
 import torch
 from torch import nn, optim
 from torch.nn import functional as F
-import lib.utils
+import lib.utils as utils
 import lib.custom_components.custom_swish_activation as cust_actv
 
-def conv_output_shape(h_w, kernel_size=1, stride=1, padding=0, dilation=1):
-    """
-    Thanks to DuaneNielsen
-    Link to source: https://discuss.pytorch.org/t/utility-function-for-calculating-the-shape-of-a-conv-output/11173/5
-    """
-    from math import floor
-    h = floor( ((h_w + (2 * padding) - (kernel_size - 1) - 1 )/ stride) + 1)
-    w = floor( ((h_w + (2 * padding) - (kernel_size - 1) - 1 )/ stride) + 1)
-    return h, w
 
-def conv_t_output_shape(h_w, kernel_size=1, stride=1, padding=0,
-                        output_padding=0):
-    return (h_w -1)*stride - 2*padding + kernel_size + output_padding
 
 class SpectralNorm:
     def __init__(self, name, bound=False):
@@ -298,7 +286,7 @@ class CCTBlock(nn.Module):
                                   padding=padding,
                                   only_conv=only_conv,
                                   only_conv_t=only_conv_t)
-        self.act = lib.utils.get_activation_function(args)
+        self.act = utils.get_activation_function(args)
         # TODO
         #  if no batch norm
         #  else:
@@ -365,7 +353,7 @@ class DenseCCTBlock(nn.Module):
 
         inp_state_shapes = [self.args.state_sizes[j] for j in inp_idxs]
 
-        self.act = lib.utils.get_activation_function(args)
+        self.act = utils.get_activation_function(args)
 
 
         # Makes the base CCTLayers
@@ -457,8 +445,34 @@ class DenseCCTBlock(nn.Module):
         return quadr_out, out
 
 
+
+
+
+
+
+
+
+
+
 # DAN2 above
 #################################################
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class ConvFCMixturetoTwoDim(nn.Module):
@@ -472,7 +486,7 @@ class ConvFCMixturetoTwoDim(nn.Module):
         self.args = args
         self.pad_mode = 'zeros'
         self.layer_idx = layer_idx
-        self.act = lib.utils.get_activation_function(args)
+        self.act = utils.get_activation_function(args)
         self.base_fc_out_size = 256 # TODO this seems like a hack
 
         # Gets the indices of the state_layers that will be input to this net.
@@ -510,16 +524,16 @@ class ConvFCMixturetoTwoDim(nn.Module):
 
         # Get size of base conv outputs
         self.base_conv_outshapes = []
-        outshape0, outshape1 = \
-            conv_output_shape(self.max_4dim_size,
+        outshape = \
+            utils.conv_output_shape(self.max_4dim_size,
                              kernel_size= self.args.arch_dict['kernel_sizes'][layer_idx][0],
                              padding=self.args.arch_dict['padding'][layer_idx][0],
                              stride=self.args.arch_dict['strides'][0])
-        outshape = (outshape0, outshape1)
-        self.base_conv_outshapes.append([conv_output_shape(outshape,
-                                                     kernel_size=2,
-                                                     padding=0,
-                                                     stride=2)]) #for avg pool2d
+        outshape = utils.conv_output_shape(outshape,
+                                             kernel_size=2,
+                                             padding=0,
+                                             stride=2)
+        self.base_conv_outshapes.append([outshape,outshape]) #for avg pool2d
         self.base_conv_outsizes = [torch.prod(torch.tensor(bcos)) * \
                                    self.args.arch_dict['num_ch']
                               for bcos in self.base_conv_outshapes] # TODO this scales poorly with num channels. Consider adding another conv layer with smaller output when network is working
@@ -583,7 +597,7 @@ class ConvFCMixturetoFourDim(nn.Module):
         self.args = args
         self.pad_mode = 'zeros'
         self.layer_idx = layer_idx
-        self.act = lib.utils.get_activation_function(args)
+        self.act = utils.get_activation_function(args)
         self.num_fc_channels = self.args.arch_dict['num_fc_channels']
 
         # Gets the indices of the state_layers that will be input to this net.
@@ -682,7 +696,7 @@ class ConvFCMixturetoFourDim_Type2(nn.Module):
         self.args = args
         self.pad_mode = 'zeros'
         self.layer_idx = layer_idx
-        self.act = lib.utils.get_activation_function(args)
+        self.act = utils.get_activation_function(args)
         #self.num_fc_channels = self.args.arch_dict['num_fc_channels']
 
         # Gets the indices of the state_layers that will be input to this net.
@@ -787,7 +801,7 @@ class DenseConv(nn.Module):
         self.args = args
         self.pad_mode = 'zeros'
         self.layer_idx = layer_idx
-        self.act = lib.utils.get_activation_function(args)
+        self.act = utils.get_activation_function(args)
 
         # Gets the indices of the state_layers that will be input to this net.
         self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
@@ -845,7 +859,7 @@ class FCFC(nn.Module):
     def __init__(self, args, layer_idx):
         super().__init__()
         self.args = args
-        self.act = lib.utils.get_activation_function(args)
+        self.act = utils.get_activation_function(args)
         self.layer_idx = layer_idx
 
         # Get the indices of the state_layers that will be input to this net
@@ -974,14 +988,14 @@ class LinearConvFCMixturetoTwoDim(nn.Module):
 
         # Get size of base conv outputs
         self.base_conv_outshapes = []
-        outshape0, outshape1 = \
-            conv_output_shape(self.max_4dim_size,
+        outshape = \
+            utils.conv_output_shape(self.max_4dim_size,
                              kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
                              padding=self.args.arch_dict['padding'][layer_idx][0],
                              stride=self.args.arch_dict['strides'][0])
-        outshape = (outshape0, outshape1)
+        outshape = (outshape, outshape)
 
-        # [conv_output_shape(outshape,
+        # [utils.conv_output_shape(outshape,
         #                    kernel_size=2,
         #                    padding=0,
         #                    stride=2)]
@@ -1046,7 +1060,7 @@ class LinearConvFCMixturetoFourDim(nn.Module):
         self.args = args
         self.pad_mode = 'zeros'
         self.layer_idx = layer_idx
-        # self.act = lib.utils.get_activation_function(args)
+        # self.act = utils.get_activation_function(args)
         # self.num_fc_channels = self.args.arch_dict['num_fc_channels']
 
         # Gets the indices of the state_layers that will be input to this net.
@@ -1146,7 +1160,7 @@ class LinearConv(nn.Module):
         self.args = args
         self.pad_mode = 'zeros'
         self.layer_idx = layer_idx
-        # self.act = lib.utils.get_activation_function(args)
+        # self.act = utils.get_activation_function(args)
 
         # Gets the indices of the state_layers that will be input to this net.
         self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]

@@ -72,6 +72,18 @@ def combine_all_csvs(directory_str, base_csv_name='params_and_results.csv',
     full_df = full_df.drop_duplicates()
     full_df.to_csv(os.path.join(directory_str, base_csv_name))
 
+def conv_output_shape(h_w, kernel_size=1, stride=1, padding=0, dilation=1):
+    """
+    Thanks to DuaneNielsen
+    Link to source: https://discuss.pytorch.org/t/utility-function-for-calculating-the-shape-of-a-conv-output/11173/5
+    """
+    from math import floor
+    h = floor( ((h_w + (2 * padding) - (kernel_size - 1) - 1 )/ stride) + 1)
+    return h
+
+def conv_t_output_shape(h_w, kernel_size=1, stride=1, padding=0,
+                        output_padding=0):
+    return (h_w -1)*stride - 2*padding + kernel_size + output_padding
 
 def generate_random_states(shapes, device):
     rand_states = []
