@@ -212,11 +212,15 @@ class InitializerNetwork(torch.nn.Module):
                 k1 = 7
                 p1 = 0
                 step_down1 = True
-                outshape = utils.conv_output_shape(self.input_size[3],
+                outshape1 = utils.conv_output_shape(self.input_size[3],
                                                    kernel_size=k1,
                                                    stride=1,
                                                    padding=p1)
-                if outshape < sz[3]:
+                outshape2 = utils.conv_output_shape(outshape1,
+                                                   kernel_size=k1,
+                                                   stride=1,
+                                                   padding=p1)
+                if outshape2 < sz[3]:
                     k2 = 7
                     p2 = 0
                     step_down2 = True
@@ -247,7 +251,7 @@ class InitializerNetwork(torch.nn.Module):
                               layers.Interpolate(size=sz[2:],
                                                  mode='bilinear'),
                               layers.CCTBlock(args,
-                                              in_channels=max(32, sz[1]),
+                                              in_channels=max(32, sz[1] * 2),
                                               out_channels=max(32, sz[1]),
                                               kernel_size=7,
                                               padding=3),
@@ -255,7 +259,7 @@ class InitializerNetwork(torch.nn.Module):
                                         out_channels=sz[1],
                                         kernel_size=1,
                                         stride=1,
-                                        padding=1)).to(self.device))
+                                        padding=0)).to(self.device))
 
 
 
