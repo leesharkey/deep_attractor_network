@@ -2198,7 +2198,7 @@ def finalize_args(parser):
                               1: 7,
                               2: 7,
                               3: 7}
-            vars(args)['arch_dict'] = {'num_ch_base': 32,
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
                                        # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
@@ -2234,7 +2234,7 @@ def finalize_args(parser):
                               1: 7,
                               2: 7,
                               3: 7}
-            vars(args)['arch_dict'] = {'num_ch_base': 32,
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
                                        # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
