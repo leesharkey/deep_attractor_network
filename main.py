@@ -2323,6 +2323,12 @@ def main():
     tgroup.add_argument('--shuffle_pos_frac', type=float, default=0.0,
                         help='The fraction of images from the positive buffer that will be shuffled before initializing negative samples. The motivation for this is for experiments when a new image will initialize the state but the previous values for latent variables will be used, as would happen when an animal is presented with a new image.'
                              'Default: %(default)s.')
+    tgroup.add_argument('--truncate_pos_its', action='store_true',
+                        help='If true, the positive phase is cut short if ' +
+                             'the energy stops decreasing. ' +
+                             'Default: %(default)s.')
+    parser.set_defaults(truncate_pos_its=False)
+
 
     ngroup = parser.add_argument_group('Network and states options')
     ngroup.add_argument('--network_type', type=str, default="BengioFischer",

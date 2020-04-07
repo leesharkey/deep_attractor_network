@@ -90,6 +90,10 @@ class Manager():
                      'epoch': self.epoch,
                      'batch_num': self.batch_num,
                      'global_step': self.global_step}
+        if self.args.initializer == 'ff_init':
+            initter_sd = {'initializer': self.initter.state_dict(),
+                          'initializer_optimizer': self.initter.optimizer.state_dict()}
+            save_dict = {**save_dict, **initter_sd}
         return save_dict
 
 
@@ -100,6 +104,7 @@ class TrainingManager(Manager):
                  sample_log_dir)
 
         # Set the rest of the hyperparams for iteration scheduling
+        self.pos_short_term_history = []
         self.pos_history = []
         self.neg_history = []
         self.max_history_len = 5000
@@ -235,10 +240,15 @@ class TrainingManager(Manager):
         self.state_optimizers = lib.utils.get_state_optimizers(self.args,
                                                                pos_states)
 
+        self.pos_short_term_history = []
+        self.stop_pos_phase = False
+
         # Positive phase sampling
-        for _ in tqdm(range(self.args.num_it_pos)):
-            self.sampler_step(pos_states, pos_id, positive_phase=True,
+        for i in tqdm(range(self.args.num_it_pos)):
+            self.sampler_step(pos_states, pos_id, positive_phase=True, pos_it=i,
                               step=self.global_step)
+            if self.stop_pos_phase:
+                break
             self.global_step += 1
 
         # Stop calculting grads w.r.t. images
@@ -290,7 +300,8 @@ class TrainingManager(Manager):
 
         return neg_states, neg_id
 
-    def sampler_step(self, states, ids, positive_phase=False, step=None):
+    def sampler_step(self, states, ids, positive_phase=False, pos_it=None,
+                     step=None):
 
         # Get total energy and energy outputs for indvdual neurons
         energy, outs = self.model(states, ids, step)
@@ -365,6 +376,8 @@ class TrainingManager(Manager):
         # Save latest energy outputs so you can schedule the phase lengths
         if positive_phase:
             self.latest_pos_enrg = energy.item()
+            if self.args.truncate_pos_its:
+                self.pos_iterations_trunc_update(pos_it)
         else:
             self.latest_neg_enrg = energy.item()
 
@@ -373,7 +386,7 @@ class TrainingManager(Manager):
         for state in states:
             state.grad.detach_()
             state.grad.zero_()
-            state.data.clamp_(0, 1)
+            state.data.clamp_(0, 1) #TODO when args.states_activation is relu: state.data.clamp_(0)
 
     def log_mean_energy_histories(self):
         mean_pos = sum(self.pos_history) / len(self.pos_history)
@@ -506,6 +519,20 @@ class TrainingManager(Manager):
         if len(self.neg_history) > self.max_history_len:
             self.neg_history.pop(0)
         self.neg_history.append(self.latest_neg_enrg)
+
+    def pos_iterations_trunc_update(self, current_iteration):
+        if len(self.pos_short_term_history) > 15:
+            self.pos_short_term_history.pop(0)
+        self.pos_short_term_history.append(self.latest_pos_enrg)
+        diff = max(self.pos_short_term_history) - \
+               min(self.pos_short_term_history)
+        print(diff)
+        if diff < 25 and current_iteration > 15:
+            self.stop_pos_phase = True
+            self.writer.add_scalar('train/trunc_pos_at', current_iteration,
+                                   self.batch_num)
+        else:
+            self.stop_pos_phase = False
 
     def neg_iterations_schedule_update(self):
         """Called every epoch to see whether the num it neg mean should be

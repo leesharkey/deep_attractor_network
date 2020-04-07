@@ -43,9 +43,8 @@ class SampleBuffer: #TODO init that uses biases
                                 self.num_p_neg_samples
         self.device = device
         self.neg_buffer = []
-        if self.args.cd_mixture:
-            self.p_neg_buffer = []  # for 'positive negative buffer'
-            self.max_p_neg_samples = 10000
+        self.p_neg_buffer = []  # for 'positive negative buffer'
+        self.max_p_neg_samples = 10000
 
     def push(self, states, class_ids=None, pos=False):
 
