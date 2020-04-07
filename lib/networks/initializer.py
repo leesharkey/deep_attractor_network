@@ -249,7 +249,7 @@ class InitializerNetwork(torch.nn.Module):
                                               padding=p2,
                                               only_conv=step_down2),
                               layers.Interpolate(size=sz[2:],
-                                                 mode='bilinear'),
+                                                 mode='nearest'),
                               layers.CCTBlock(args,
                                               in_channels=max(32, sz[1] * 2),
                                               out_channels=max(32, sz[1]),

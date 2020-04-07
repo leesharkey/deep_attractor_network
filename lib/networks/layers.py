@@ -78,7 +78,7 @@ class Interpolate(nn.Module):
         self.mode = mode
 
     def forward(self, x):
-        x = self.interp(x, size=self.size, mode=self.mode, align_corners=False)
+        x = self.interp(x, size=self.size, mode=self.mode)#, align_corners=False)#removed because move to nearest neighbour mode.
         return x
 
 
