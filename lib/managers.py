@@ -382,10 +382,13 @@ class TrainingManager(Manager):
 
 
         # Prepare gradients and sample for next sampling step
-        for state in states:
+        for i, state in enumerate(states):
             state.grad.detach_()
             state.grad.zero_()
-            state.data.clamp_(0, 1) #TODO when args.states_activation is relu: state.data.clamp_(0)
+            if self.args.states_activation == 'relu' and i>0:
+                state.data.clamp_(0)
+            else:
+                state.data.clamp_(0, 1)
 
     def log_mean_energy_histories(self):
         mean_pos = sum(self.pos_history) / len(self.pos_history)
@@ -808,10 +811,13 @@ class VisualizationManager(Manager):
                 self.state_optimizers[layer_idx].step()
 
         # Prepare gradients and sample for next sampling step
-        for state in states:
+        for i, state in enumerate(states):
             state.grad.detach_()
             state.grad.zero_()
-            state.data.clamp_(0, 1)
+            if self.args.states_activation == 'relu' and i>0:
+                state.data.clamp_(0)
+            else:
+                state.data.clamp_(0, 1)
 
 
 class WeightVisualizationManager(Manager):
