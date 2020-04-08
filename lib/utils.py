@@ -85,7 +85,7 @@ def conv_t_output_shape(h_w, kernel_size=1, stride=1, padding=0,
                         output_padding=0):
     return (h_w -1)*stride - 2*padding + kernel_size + output_padding
 
-def generate_random_states(shapes, device):
+def generate_random_states(shapes, device): #TODO if states_activation is relu then this needs to be multiplied by something like the variance of the negative phase states.
     rand_states = []
     for shape in shapes:
         if len(shape)==4:

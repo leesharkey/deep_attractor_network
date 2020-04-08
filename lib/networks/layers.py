@@ -376,6 +376,8 @@ class DenseCCTBlock(nn.Module):
                                           padding = kp[1],
                                           only_conv = only_conv,
                                           only_conv_t = only_conv_t),
+                                 Interpolate(out_shape[2:],
+                                             mode='nearest'),#newsince20200408
                                  self.act)
             self.base_cctls.append(cctl)
 
@@ -423,11 +425,18 @@ class DenseCCTBlock(nn.Module):
         else:
             num_out_ch = base_ch * len(inp_state_shapes)
             final_1x1_conv = nn.Conv2d(in_channels=num_out_ch,
-                                       out_channels=out_shape[1],
+                                       out_channels=base_ch,
                                        kernel_size=1,
                                        stride=1,
                                        padding=0)
-            self.top_net = final_1x1_conv
+            final_conv = CCTLayer(args,
+                                  in_channels=base_ch,
+                                  out_channels=out_shape[1],
+                                  kernel_size=kern,
+                                  only_conv=True)
+
+            self.top_net = nn.Sequential(final_1x1_conv,
+                                         final_conv)
 
 
     def forward(self, pre_state, inps):
