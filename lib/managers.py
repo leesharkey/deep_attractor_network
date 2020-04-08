@@ -96,6 +96,11 @@ class Manager():
             save_dict = {**save_dict, **initter_sd}
         return save_dict
 
+    def save_net_and_settings(self):
+        save_dict = self.make_save_dict()
+        path = 'exps/models/' + self.model.model_name + '.pt'
+        torch.save(save_dict, path)
+
 
 class TrainingManager(Manager):
     def __init__(self, args, model, data, buffer, writer, device,
@@ -117,9 +122,7 @@ class TrainingManager(Manager):
         self.num_it_neg = self.args.num_it_neg
 
     def train(self):
-        save_dict = self.make_save_dict()
-        path = 'exps/models/' + self.model.model_name + '.pt'
-        torch.save(save_dict, path)
+        self.save_net_and_settings()
         prev_states = None
 
         # Main training loop
@@ -151,9 +154,7 @@ class TrainingManager(Manager):
 
                 # Save network(s) and settings
                 if self.batch_num % self.args.model_save_interval == 0:
-                    save_dict = self.make_save_dict()
-                    path = 'exps/models/' + self.model.model_name + '.pt'
-                    torch.save(save_dict, path)
+                    self.save_net_and_settings()
 
                 self.batch_num += 1
 
@@ -179,9 +180,7 @@ class TrainingManager(Manager):
                 break
 
         # Save network(s) and settings when training is complete too
-        save_dict = self.make_save_dict()
-        path = 'exps/models/' +self.model.model_name + '.pt'
-        torch.save(save_dict, path)
+        self.save_net_and_settings()
 
     def initialize_pos_states(self, pos_img=None, pos_id=None,
                               prev_states=None):
@@ -526,7 +525,6 @@ class TrainingManager(Manager):
         self.pos_short_term_history.append(self.latest_pos_enrg)
         diff = max(self.pos_short_term_history) - \
                min(self.pos_short_term_history)
-        print(diff)
         if diff < 25 and current_iteration > 15:
             self.stop_pos_phase = True
             self.writer.add_scalar('train/trunc_pos_at', current_iteration,
@@ -822,42 +820,118 @@ class WeightVisualizationManager(Manager):
         super().__init__(args, model, data, buffer, writer, device,
                  sample_log_dir)
         self.params = [p for p in self.model.parameters()]
-        self.base_bias = self.params[0]
-        self.base_weights = self.params[1]
-        #self.imported = torch.hub.load('pytorch/vision:v0.5.0', 'alexnet', pretrained=True)
-        self.imported = torch.hub.load('pytorch/vision:v0.5.0', 'densenet121', pretrained=True)
+        self.quad_nets = self.model.quadratic_nets
+        self.forward_net  = self.model.quadratic_nets[0]
+        self.backward_net = self.model.quadratic_nets[1]
+        self.base_save_dir = 'exps/weight_visualizations'
+        self.save_dir = self.base_save_dir + '/' + self.model.model_name
 
-    def visualize_weights(self):
-        #w_b = torch.add(self.base_weights, self.base_bias)
-        biases = [self.base_bias.unsqueeze(1).unsqueeze(1).unsqueeze(1)] * (
-            torch.prod(torch.tensor(self.base_weights.shape[1:])))
-        sbiases = torch.cat(biases, dim=1)
-        b = sbiases.view(self.base_weights.shape)
-        std_b = torch.std(b)
-        std_biases = (b/std_b) + 0.5
-        utils.save_image(std_biases,
-                         'exps/weight_visualisations/biases.png',
-                         nrow=32, normalize=True, range=(0, 1))
+        if not os.path.isdir(self.base_save_dir):
+            os.mkdir(self.base_save_dir)
+        if not os.path.isdir(self.save_dir):
+            os.mkdir(self.save_dir)
 
 
-        std = torch.std(self.base_weights)
-        std_weights = (self.base_weights/std) + 0.5
-        utils.save_image(std_weights,
-                         'exps/weight_visualisations/weights.png',
-                         nrow=32, normalize=True, range=(0, 1))
+    def visualize_base_weights(self):
+        nets = [('forward', self.forward_net), ('backward', self.backward_net)]
+        for lbl, net in nets:
+            print("Visualizing %s" % lbl)
+            self.visualize_cctblock(net, nrow=8, label=lbl)
 
-        w_b = self.base_weights + b
-        std_w_b = torch.std(w_b)
-        std_weights_and_biases = (w_b/std_w_b) + 0.5
-        utils.save_image(std_weights_and_biases,
-                         'exps/weight_visualisations/weights_and_biases.png',
-                         nrow=32, normalize=True, range=(0, 1))
+    def standardize(self, tensor):
+        std_t = torch.std(tensor)
+        stdzd_t = (tensor / max([1e-14, std_t])) + 0.5
+        return stdzd_t
 
-        imported_w = [x for x in self.imported.parameters()][0]
+
+    def visualize_cctblock(self, block, nrow, label):
+
+        # Get the conv and/or transposed conv weight tensor
+        if block.base_cctls[0][0].only_conv:
+            conv = block.base_cctls[0][0].conv
+            weight = conv.weight
+            bias = conv.bias
+
+            stdzd_weights = self.standardize(weight)
+
+            bias = bias.unsqueeze(1).unsqueeze(1).unsqueeze(1).transpose(0, 1)
+            bias = [bias] * (
+                torch.prod(torch.tensor(weight.shape[1:])))
+            bias = torch.cat(bias, dim=0)
+            bias = bias.view(weight.shape)
+            stdzd_biases = self.standardize(bias)
+
+            w_b = weight + bias
+            stdzd_weights_and_biases = self.standardize(w_b)
+        elif block.base_cctls[0][0].only_conv_t:
+            # Untested
+            conv_t = block.base_cctls[0][0].conv_t
+            weight = conv_t.weight
+            bias = conv_t.bias
+
+            stdzd_weights = self.standardize(weight)
+
+            bias = bias.unsqueeze(1).unsqueeze(1).unsqueeze(1).transpose(0, 1)
+            bias = [bias] * (
+                torch.prod(torch.tensor(weight.shape[1:])))
+            bias = torch.cat(bias, dim=1)
+            bias = bias.view(weight.shape)
+            stdzd_biases = self.standardize(bias)
+
+            w_b = weight + bias
+            stdzd_weights_and_biases = self.standardize(w_b)
+        else:
+            conv = block.base_cctls[0][0].conv
+            conv_t = block.base_cctls[0][0].conv_T
+
+            # Combine their weights into one tensor
+            weight = torch.cat([conv.weight.transpose(0, 1),
+                                      conv_t.weight], dim=1)
+            bias = torch.cat([conv.bias, conv_t.bias], dim=0)
+
+            # Transform their weight block by the 1x1 conv that follows them
+            # in the dense cct block
+            transf_weight = block.top_net(weight)
+            stdzd_weights = self.standardize(transf_weight)
+
+            # Turn the vector of biases into a tensor with the same shape as the
+            # weights
+            bias = bias.unsqueeze(1).unsqueeze(1).unsqueeze(1).transpose(0, 1)
+            bias = [bias] * (torch.prod(torch.tensor(weight.transpose(0,1).shape[1:])))
+            bias = torch.cat(bias, dim=0)
+            bias = bias.view(weight.shape)
+
+            # Pass bias through the same 1x1 conv as the weights
+            transf_bias = block.top_net(bias)
+            stdzd_biases = self.standardize(transf_bias)
+
+            # Combine weights and biases and pass through 1x1 conv
+            w_b = weight + bias
+            transf_w_b = block.top_net(w_b)
+            stdzd_weights_and_biases = self.standardize(transf_w_b)
+
+        utils.save_image(stdzd_weights,
+                         self.save_dir + '/weights_%s.png' % label,
+                         nrow=nrow, normalize=True, range=(0, 1))
+        utils.save_image(stdzd_biases,
+                         self.save_dir + '/biases_%s.png' % label,
+                         nrow=nrow, normalize=True, range=(0, 1))
+        utils.save_image(stdzd_weights_and_biases,
+                         self.save_dir + '/weights_and_biases_%s.png' % label,
+                         nrow=nrow, normalize=True, range=(0, 1))
+
+
+    def visualize_weight_pretrained(self, name='densenet121'):
+        save_dir = self.base_save_dir + '/' + name
+        if not os.path.isdir(save_dir):
+            os.mkdir(save_dir)
+
+        imported = torch.hub.load('pytorch/vision:v0.5.0', name,
+                                  pretrained=True)
+        imported_w = [x for x in imported.parameters()][0]
         std = torch.std(imported_w)
-        std_weights = (imported_w/ std) + 0.5
-        network_name = 'exps/weight_visualisations/densenet'
-        utils.save_image(std_weights, '%s_weights.png' % network_name, nrow=8,
+        std_weights = (imported_w / std) + 0.5
+        utils.save_image(std_weights, save_dir + '/weights.png', nrow=8,
                          normalize=True, range=(0, 1))
 
 
