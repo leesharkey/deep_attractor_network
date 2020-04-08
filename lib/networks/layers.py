@@ -208,6 +208,8 @@ class CCTLayer(nn.Module):
         # require volume preservation.
         if padding == 0:
            self.padding = padding
+        elif kernel_size == 1:
+            self.padding = 0
         elif kernel_size == 3:
             self.padding = 1
         elif kernel_size == 7:
@@ -358,6 +360,7 @@ class DenseCCTBlock(nn.Module):
 
         # Makes the base CCTLayers
         self.base_cctls = nn.ModuleList([])
+        #TODO if these aren't the same length, raise an issue.
         for (cct_status, shape, kp) in zip(cct_statuses,
                                            inp_state_shapes,
                                            base_kern_pads):
@@ -447,9 +450,13 @@ class DenseCCTBlock(nn.Module):
         out = torch.cat(outs, dim=1)
         out = self.top_net(out)
 
-        quadr_out = 0.5 * torch.einsum('ba,ba->b',
-                                       out.view(out.shape[0], -1),
-                                       pre_state.view(pre_state.shape[0],-1))
+        # quadr_out = 0.5 * torch.einsum('ba,ba->b',
+        #                                out.view(out.shape[0], -1),
+        #                                pre_state.view(pre_state.shape[0],-1))
+        out = torch.einsum('ba,ba->ba',
+                                 out.view(out.shape[0], -1),
+                                 pre_state.view(pre_state.shape[0],-1))
+        quadr_out = out.sum(dim=1) #almost identical outputs with some differences for unknown numerical reasons
 
         return quadr_out, out
 
