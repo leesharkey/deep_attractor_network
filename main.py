@@ -2282,6 +2282,84 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_4SL_top2self_lotofcompress':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 16, 7, 7]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,2,3],
+                                3: [2,3]}
+            mod_cct_status_dict = {0: [1], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1,1],
+                                   2: [1,1,1],
+                                   3: [1,1]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7,3]],
+                                  1: [[7,3],[7,3]],
+                                  2: [[7,0],[7,3],[7,3]],
+                                  3: [[7,0], [7,3]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_5SL_top3self_lotofcompress':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 16, 7, 7],
+                                         [args.batch_size, 16, 1, 1]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,2,3],
+                                3: [2,3,4],
+                                4: [3,4]}
+            mod_cct_status_dict = {0: [1], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1,1],
+                                   2: [1,1,1],
+                                   3: [1,1,1],
+                                   4: [1,1]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7,3]],
+                                  1: [[7,3],[7,3]],
+                                  2: [[7,0],[7,3],[7,3]],
+                                  3: [[7,0],[7,3],[1,0]],
+                                  4: [[1,0],[1,0]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7,
+                              4: 1}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
 
 
 
@@ -2554,6 +2632,14 @@ def main():
     ngroup.add_argument('--no_train_model', action='store_true',
                         help='Whether or not to train the model ')
     parser.set_defaults(no_train_model=False)
+    ngroup.add_argument('--gen_exp_stim', action='store_true',
+                        help='Whether or not to generate the artificial '+
+                        'stimuli for experiment.')
+    parser.set_defaults(gen_exp_stim=False)
+    ngroup.add_argument('--experiment', action='store_true',
+                        help='Whether or not to run experiments ')
+    parser.set_defaults(experiment=False)
+
 
 
     xgroup = parser.add_argument_group('Options that will be determined ' +
@@ -2631,6 +2717,13 @@ def main():
         esgm = managers.ExperimentalStimuliGenerationManager()
         esgm.generate_double_gabor_dataset__loc_and_angles()
         # esgm.generate_single_gabor_dataset__contrast_and_angle()
+
+    if args.experiment:
+        expm = managers.ExperimentsManager(args, model, data, buffer,
+                                                  writer,
+                                                  device,
+                                                  sample_log_dir)
+        expm.observe_cifar_pos_phase()
 
 shapes = lambda x : [y.shape for y in x]
 nancheck = lambda x : (x != x).any()
