@@ -244,7 +244,8 @@ def finalize_args(parser):
                                        'kernel_sizes': mod_kernel_dict,
                                        'strides': mod_strides_dict,
                                        'padding': mod_padding_dict,
-                                       'mod_connect_dict': mod_connect_dict}
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'spec_norm_reg': False}
             vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
         elif args.architecture == 'ConvBFN_small_4_layers':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
@@ -2459,6 +2460,14 @@ def main():
                              'are being sampled during visualization. '+
                              'Default: %(default)s.')
 
+    vgroup = parser.add_argument_group('Weight Visualization options')
+    vgroup.add_argument('--weight_viz', action='store_true',
+                        help='Whether or not to do visualizations of the '
+                             'weight matrices of the network.'
+                             'Default: %(default)s.')
+    parser.set_defaults(weight_viz=False)
+
+
     mgroup = parser.add_argument_group('Miscellaneous options')
     mgroup.add_argument('--randomize_args', type=str, nargs='+', default=[],
                         help='List of CLI args to pass to the random arg ' +
@@ -2574,6 +2583,14 @@ def main():
         vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
                                   sample_log_dir)
         vm.visualize()
+    if args.weight_viz:
+        wvm = managers.WeightVisualizationManager(args, model, data, buffer,
+                                                  writer,
+                                                  device,
+                                                  sample_log_dir)
+        wvm.visualize_base_weights()
+        wvm.visualize_weight_pretrained()
+
     if args.gen_exp_stim:
         esgm = managers.ExperimentalStimuliGenerationManager()
         esgm.generate_double_gabor_dataset__loc_and_angles()

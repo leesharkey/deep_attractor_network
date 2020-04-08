@@ -124,7 +124,7 @@ class ConvBengioFischerNetwork(BaseModel):
                                           'strides'][i][j_ind],
                                       padding_mode='zeros')
 
-                    if not self.args.no_spec_norm_reg:
+                    if self.args.arch_dict['spec_norm_reg']:
                         f_net = spectral_norm(f_net)
                     self.f_nets.update({f_key: f_net})
 
@@ -134,18 +134,30 @@ class ConvBengioFischerNetwork(BaseModel):
                             output_padding = 1
                         else:
                             output_padding = 0
-                        b_net = nn.ConvTranspose2d(in_channels=f_out_ch,
-                                                   out_channels=f_in_ch,
-                                                   kernel_size=self.args.arch_dict[
-                                                       'kernel_sizes'][i][j_ind],
-                                                   padding=self.args.arch_dict[
-                                                       'padding'][i][j_ind],
-                                                   output_padding=output_padding,
-                                                   stride=self.args.arch_dict[
-                                                       'strides'][i][j_ind]
-                                                   )
-                        if not self.args.no_spec_norm_reg:
-                            b_net = spectral_norm(b_net)
+                        resize = Interpolate(size=self.args.state_sizes[j][2],
+                                             mode='nearest')
+                        back_conv = nn.Conv2d(in_channels=f_out_ch,
+                                           out_channels=f_in_ch,
+                                           kernel_size=self.args.arch_dict[
+                                               'kernel_sizes'][i][j_ind],
+                                           padding=self.args.arch_dict[
+                                               'padding'][i][j_ind],
+                                           stride=self.args.arch_dict[
+                                               'strides'][i][j_ind])
+                        if self.args.arch_dict['spec_norm_reg']:
+                            back_conv = spectral_norm(back_conv)
+                        b_net = nn.Sequential(resize,
+                                              back_conv)
+                        # b_net = nn.ConvTranspose2d(in_channels=f_out_ch,
+                        #                            out_channels=f_in_ch,
+                        #                            kernel_size=self.args.arch_dict[
+                        #                                'kernel_sizes'][i][j_ind],
+                        #                            padding=self.args.arch_dict[
+                        #                                'padding'][i][j_ind],
+                        #                            output_padding=output_padding,
+                        #                            stride=self.args.arch_dict[
+                        #                                'strides'][i][j_ind])
+
                         self.b_nets.update({b_key: b_net})
 
     def forward(self, states, class_id=None, step=None):
@@ -158,7 +170,7 @@ class ConvBengioFischerNetwork(BaseModel):
         outs = []
         labs = []
         for l in range(self.num_state_layers+1):
-                outs.append([None] * (self.num_state_layers+1))
+                outs.append([None] * (self.num_state_layers + 1))
                 labs.append([None] * (self.num_state_layers + 1))
 
         for (i, out_st) in enumerate(states):
