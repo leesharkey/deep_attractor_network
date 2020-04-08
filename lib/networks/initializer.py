@@ -23,8 +23,12 @@ class InitializerNetwork_first_version(torch.nn.Module):
         sigmoid = torch.nn.Sigmoid()
         self.swish = lambda x: x * sigmoid(x)
 
-        hsig = torch.nn.Hardtanh(min_val=0.0)
-        self.initter_states_act = lambda x: hsig(x) + 0.01 * x
+        if self.args.states_activation == 'relu':
+            self.initter_states_act = torch.nn.LeakyReLU()
+        else:
+            hsig = torch.nn.Hardtanh(min_val=0.0)
+            self.initter_states_act = lambda x: hsig(x) + 0.01 * x
+
 
         # Define the base encoder
         if len(self.args.state_sizes[1])==4:
@@ -223,7 +227,7 @@ class InitializerNetwork(torch.nn.Module):
                 if outshape2 < sz[3]:
                     k2 = 7
                     p2 = 0
-                    step_down2 = True
+                    step_down2 = True #TODO get rid of stepdown2 if initter changes turn out okay
                 else:
                     k2 = 7
                     p2 = 3
@@ -238,24 +242,21 @@ class InitializerNetwork(torch.nn.Module):
             self.sides.append(
                 nn.Sequential(layers.CCTBlock(args,
                                               in_channels=ch_out,
-                                               out_channels=max(32, sz[1]*2),
+                                               out_channels=max(self.num_ch,
+                                                                sz[1]*2),
                                                kernel_size=k1,
                                                padding=p1,
                                                only_conv=step_down1),
-                              layers.CCTBlock(args,
-                                              in_channels=max(32, sz[1]*2),
-                                              out_channels=max(32, sz[1] * 2),
-                                              kernel_size=k2,
-                                              padding=p2,
-                                              only_conv=step_down2),
                               layers.Interpolate(size=sz[2:],
                                                  mode='nearest'),
                               layers.CCTBlock(args,
-                                              in_channels=max(32, sz[1] * 2),
-                                              out_channels=max(32, sz[1]),
+                                              in_channels=max(self.num_ch,
+                                                              sz[1] * 2),
+                                              out_channels=max(self.num_ch,
+                                                               sz[1]),
                                               kernel_size=7,
                                               padding=3),
-                              nn.Conv2d(in_channels=max(32, sz[1]),
+                              nn.Conv2d(in_channels=max(self.num_ch, sz[1]),
                                         out_channels=sz[1],
                                         kernel_size=1,
                                         stride=1,
@@ -264,10 +265,13 @@ class InitializerNetwork(torch.nn.Module):
 
 
         # Define the optimizer
-        self.optimizer = optim.SGD(self.parameters(),
-                                   nesterov=True,
-                                   momentum=0.6,
-                                   lr=self.args.initter_network_lr)
+        self.optimizer = optim.Adam(self.parameters(),
+                                    lr=self.args.initter_network_lr,
+                                    betas=(0.9, 0.999))
+        # self.optimizer = optim.SGD(self.parameters(),
+        #                            nesterov=True,
+        #                            momentum=0.6,
+        #                            lr=self.args.initter_network_lr)
 
     def forward(self, inp, x_id):
         print("Initializing with FF net")
