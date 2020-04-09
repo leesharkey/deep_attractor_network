@@ -515,11 +515,11 @@ class TrainingManager(Manager):
         """Every training iteration (i.e. every positive-negative phase pair)
          record the mean negative and positive energies in the histories.
         """
-        if len(self.pos_history) > self.max_history_len:
+        if len(self.pos_history) > self.max_history_len and self.epoch > 1:
             self.pos_history.pop(0)
         self.pos_history.append(self.latest_pos_enrg)
 
-        if len(self.neg_history) > self.max_history_len:
+        if len(self.neg_history) > self.max_history_len and self.epoch > 1:
             self.neg_history.pop(0)
         self.neg_history.append(self.latest_neg_enrg)
 
@@ -529,7 +529,7 @@ class TrainingManager(Manager):
         self.pos_short_term_history.append(self.latest_pos_enrg)
         diff = max(self.pos_short_term_history) - \
                min(self.pos_short_term_history)
-        if diff < 25 and current_iteration > 15:
+        if diff < 20 and current_iteration > 15:
             self.stop_pos_phase = True
             self.writer.add_scalar('train/trunc_pos_at', current_iteration,
                                    self.batch_num)
@@ -579,6 +579,7 @@ class VisualizationManager(Manager):
         self.viz_batch_sizes = self.calc_viz_batch_sizes()
         self.reset_opt_K_its = True
         self.reset_freq = 70
+        self.energy_scaler = 10.
 
     def calc_viz_batch_sizes(self):
         """The batch size is now the number of pixels in the image, and
@@ -770,20 +771,22 @@ class VisualizationManager(Manager):
         from the channel neuron that's being visualized. The gradients for
         other layers come from the energy gradient."""
 
-        energies, outs = self.model(states, ids)  # Outputs energy of neg sample
-        total_energy = energies.sum()
+        energy, outs, energies = self.model(states, ids, obsv_mode=True)  # Outputs energy of neg sample
+        total_energy = energy.sum()
 
         if self.args.viz_type == 'standard':
             # Take gradient wrt states (before addition of noise)
             total_energy.backward()
 
         elif self.args.viz_type == 'neurons' or self.args.viz_type == 'channels':
+            # Reshape energies
+            energies = [enrg.view(state.shape) for enrg, state in zip(energies, states)]
+
             # Get the energy of the specific neuron you want to viz and get the
             # gradient that maximises its value
-            feature_energy = outs[state_layer_idx] # -1 because energies is 0-indexed while the layers we want to visualize are 1-indexed
+            feature_energy = energies[state_layer_idx] # -1 because energies is 0-indexed while the layers we want to visualize are 1-indexed
             feature_energy = feature_energy \
-                             * self.args.energy_weight_mask[state_layer_idx]\
-                             * 1. # Scales up the energy of the neuron/channel that we want to viz
+                             * self.energy_scaler # Scales up the energy of the neuron/channel that we want to viz
             selected_feature_energy = torch.where(clamp_array,
                                                   feature_energy,
                                                   torch.zeros_like(feature_energy))
