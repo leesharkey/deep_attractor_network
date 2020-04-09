@@ -25,7 +25,7 @@ class SGHMC(Optimizer):
     def __init__(self,
                  params,
                  lr: float=1e-2,
-                 num_burn_in_steps: int=3000,
+                 num_burn_in_steps: int=50, #used to be 3000
                  noise: float=0.,
                  mdecay: float=0.05,
                  scale_grad: float=1.) -> None:
