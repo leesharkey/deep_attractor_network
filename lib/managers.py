@@ -44,8 +44,8 @@ class Manager():
 
         # Load old networks and settings if loading an old model
         if self.args.load_model:
-            loaded_model_name = str(self.args.load_model)
-            path = 'exps/models/' + loaded_model_name + '.pt'
+            self.loaded_model_name = str(self.args.load_model)
+            path = 'exps/models/' + self.loaded_model_name + '.pt'
             checkpoint = torch.load(path)
             self.model.load_state_dict(checkpoint['model'])
             self.optimizer.load_state_dict(checkpoint['model_optimizer'])
@@ -64,15 +64,16 @@ class Manager():
                     checkpoint['initializer_optimizer'])
 
             self.batch_num = checkpoint['batch_num']
-            print("Loaded model " + loaded_model_name + ' successfully')
+            print("Loaded model " + self.loaded_model_name + ' successfully')
 
             # Save new settings (doesn't overwrite old csv values)
-            lib.utils.save_configs_to_csv(self.args, loaded_model_name)
+            lib.utils.save_configs_to_csv(self.args, self.loaded_model_name)
         else:
             lib.utils.save_configs_to_csv(self.args, self.model.model_name)
 
             self.num_it_neg_mean = self.args.num_it_neg
             self.num_it_neg = self.args.num_it_neg
+            self.loaded_model_name = None
 
         # Print out param sizes to ensure you aren't using something stupidly
         # large
@@ -569,10 +570,15 @@ class TrainingManager(Manager):
 class VisualizationManager(Manager):
     """A new class because I need to redefine sampler step to clamp certain
     neurons, and need to define a new type of sampling phase."""
-    def __init__(self, args, model, data, buffer, writer, device, sample_log_dir):
-        super(Manager, self).__init__()
+
+    def __init__(self, args, model, data, buffer, writer, device,
+                 sample_log_dir):
+        super().__init__(args, model, data, buffer, writer, device,
+                         sample_log_dir)
 
         self.viz_batch_sizes = self.calc_viz_batch_sizes()
+        self.reset_opt_K_its = True
+        self.reset_freq = 70
 
     def calc_viz_batch_sizes(self):
         """The batch size is now the number of pixels in the image, and
@@ -641,7 +647,7 @@ class VisualizationManager(Manager):
 
         return clamp_array
 
-    def visualize(self):
+    def visualize(self): #TODO try this and if it fails, implement an opposite version where a channel or neuron is let free and the rest are clamped at some value ((0 or 1)
         """Clamps each neuron while sampling the others
 
         Goes through each of the state layers, and each of the channels a kind
@@ -719,6 +725,11 @@ class VisualizationManager(Manager):
 
         # Viz phase sampling
         for k in tqdm(range(self.args.num_it_viz)):
+            if self.reset_opt_K_its and k % self.reset_freq == 0:
+                print('Resetting state optimizers')
+                self.state_optimizers = lib.utils.get_state_optimizers(
+                    self.args, states)
+
             self.viz_sampler_step(states, id, state_layer_idx,
                                   clamp_array)
             if k % self.args.viz_img_logging_step_interval == 0:
@@ -941,6 +952,374 @@ class WeightVisualizationManager(Manager):
                          normalize=True, range=(0, 1))
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+class ExperimentsManager(Manager):
+    def __init__(self, args, model, data, buffer, writer, device,
+                 sample_log_dir):
+        super().__init__(args, model, data, buffer, writer, device,
+                 sample_log_dir)
+
+        # self.latest_pos_enrg = None
+        # self.latest_neg_enrg = None
+        self.num_it_neg_mean = self.args.num_it_neg
+        self.num_it_neg = self.args.num_it_neg
+        self.num_sl  = len(self.args.state_sizes)
+
+        # Define the names of the save directories
+        self.momenta_strs = ['momenta_%i' % i for i in range(self.num_sl)]
+        self.states_strs  = ['state_%i' % i for i in range(self.num_sl)]
+        self.grad_strs    = ['grad_%i' % i for i in range(self.num_sl)]
+        self.bno_strs     = ['bno_%i' % i for i in range(self.num_sl)]
+        self.energy_strs  = ['energy_%i' % i for i in range(self.num_sl)]
+        self.img_str = 'images'
+        # self.save_vars = ['momenta', 'all_states', 'binary_net_outputs',
+        #                   'energies']
+        self.base_save_dir = '/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data'
+        self.save_dir_model = self.base_save_dir + '/' + self.model.model_name + '_loaded' + self.loaded_model_name
+        self.save_dir_exp = None
+        self.data_save_dirs = self.momenta_strs
+        self.data_save_dirs.extend(self.states_strs)
+        self.data_save_dirs.extend(self.grad_strs)
+        self.data_save_dirs.extend(self.bno_strs)
+        self.data_save_dirs.extend(self.energy_strs)
+        self.data_save_dirs.extend([self.img_str])
+
+        # Make the base directories if they do not already exist
+        if not os.path.isdir(self.base_save_dir):
+            os.mkdir(self.base_save_dir)
+        if not os.path.isdir(self.save_dir_model):
+            os.mkdir(self.save_dir_model)
+        self.global_step = 0
+
+
+    def observe_cifar_pos_phase(self):
+        self.save_dir_exp = self.save_dir_model + '/' + 'observeCIFAR10' + '/'
+        self.save_img = True
+        if not os.path.isdir(self.save_dir_exp):
+            os.mkdir(self.save_dir_exp)
+        for data_dir in self.data_save_dirs:
+            full_save_dir = self.save_dir_model + '/' + 'observeCIFAR10' + '/' + data_dir
+            if not os.path.isdir(full_save_dir):
+                os.mkdir(full_save_dir)
+
+        pos_img, pos_id = next(iter(self.data.loader)) #Gets first batch only
+        image_phase_list = [pos_img]
+        self.experiment_len = 250
+        phase_idxs = [0] * self.experiment_len
+        print("Experiment records dynamics when presenting a batch of CIFAR10 images")
+        self.observation_phase(image_phase_list=image_phase_list,
+                               phase_idxs=phase_idxs)
+
+    def initialize_states(self, pos_img=None, pos_id=None,
+                              prev_states=None):
+        """Initializes positive states"""
+
+        pos_states = [pos_img]
+
+        if self.args.initializer == 'zeros':
+            zero_states = [torch.zeros(size, device=self.device,
+                                       requires_grad=True)
+                           for size in self.args.state_sizes[1:]]
+            pos_states.extend(zero_states)
+        if self.args.initializer == 'ff_init':
+            # Later consider implementing a ff_init that is trained as normal
+            # and gives the same output but that only a few (maybe random)
+            # state neurons are changed/clamped by the innitter so that you
+            # can still use the 'previous' initialisation in your experiments
+            self.initter.train()
+            pos_states_new = self.initter.forward(pos_img, pos_id)
+            pos_states.extend(pos_states_new)
+        elif self.args.initializer == 'middle':
+            raise NotImplementedError("You need to find the mean pixel value" +
+                                      " and then use the value as the value " +
+                                      "to init all pixels.")
+        elif self.args.initializer == 'mix_prev_middle':
+            raise NotImplementedError
+        elif self.args.initializer == 'previous' and prev_states is not None:
+            pos_states.extend(prev_states[1:])
+        else:  # i.e. if self.args.initializer == 'random':
+            rand_states = lib.utils.generate_random_states(
+                self.args.state_sizes[1:], self.device)
+            pos_states.extend(rand_states)
+
+        return pos_states
+
+    def observation_phase(self, image_phase_list,
+                          phase_idxs, prev_states=None):
+
+        print('\nStarting observation phase...')
+        # Get the loaded pos samples and put them on the correct device
+        image_phase_list = [img.to(self.device) for img in image_phase_list]
+        lib.utils.requires_grad(image_phase_list, True)
+
+        # Gets the values of the pos states by running an inference phase
+        # with the image state_layer clamped
+        obs_states_init = self.initialize_states(pos_img=image_phase_list[0],
+                                                 prev_states=prev_states)
+        obs_states = [osi.clone().detach() for osi in obs_states_init]
+
+        # Freeze network parameters and take grads w.r.t only the inputs
+        lib.utils.requires_grad(obs_states, True)
+        lib.utils.requires_grad(self.parameters, False)
+        if self.args.initializer == 'ff_init':
+            lib.utils.requires_grad(self.initter.parameters(), False)
+        self.model.eval()
+
+        # Get an optimizer for each statelayer
+        self.state_optimizers = lib.utils.get_state_optimizers(self.args,
+                                                               obs_states)
+
+        # Observation phase sampling
+        for pos_it in tqdm(range(self.experiment_len)):
+            obs_states[0] = image_phase_list[phase_idxs[pos_it]]
+            obs_states = self.sampler_step(obs_states,
+                                           ids=None,
+                                           positive_phase=True,
+                                           pos_it=pos_it,
+                                           step=self.global_step)
+            self.global_step += 1
+
+        # Stop calculting grads w.r.t. images
+        for obs_state in obs_states:
+            obs_state.detach_()
+
+    def sampler_step(self, states, ids, positive_phase=False, pos_it=None,
+                     step=None):
+
+        # Get total energy and energy outputs for indvdual neurons
+        energy, outs, full_enrgs = self.model(states, ids, step, obsv_mode=True)
+        print("Energy: " + str(energy))
+        # Calculate the gradient wrt states for the Langevin step (before
+        # addition of noise)
+        energy.backward()
+        torch.nn.utils.clip_grad_norm_(states,
+                                       self.args.clip_state_grad_norm,
+                                       norm_type=2)
+
+        # Adding noise in the Langevin step (only for non conditional
+        # layers in positive phase)
+        for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
+            if positive_phase and layer_idx == 0:
+                pass
+            else:
+                noise.normal_(0, self.args.sigma)
+                # Note: Just set sigma to a very small value if you don't want to
+                # add noise. It's so inconsequential that it's not worth the
+                # if-statements to accommodate sigma==0.0
+                state.data.add_(noise.data)
+
+        # The gradient step in the Langevin/SGHMC step
+        # It goes through each statelayer and steps back using its associated
+        # optimizer.
+        for layer_idx, optimizer in enumerate(self.state_optimizers):
+            if positive_phase and layer_idx == 0:
+                pass
+            else:
+                optimizer.step()
+
+        # Log data to tensorboard
+        # Energies for layers (mean scalar and all histogram)
+        if step % self.args.scalar_logging_interval == 0 and step is not None:
+            for i, enrg in enumerate(outs):
+                mean_layer_string = 'layers/mean_bnry_%s' % i
+                self.writer.add_scalar(mean_layer_string, enrg.mean(), step)
+                if self.args.log_histograms  and \
+                        step % self.args.histogram_logging_interval == 0:
+                    hist_layer_string = 'layers/hist_bnrys_%s' % i
+                    #print("Logging energy histograms")
+                    self.writer.add_histogram(hist_layer_string, enrg, step)
+
+        ## Pos or Neg total energies
+        if positive_phase and step % self.args.scalar_logging_interval == 0:
+            print('\nEnergy: ' + str(energy.cpu().detach().numpy()))
+            self.writer.add_scalar('train/PosSamplesEnergy', energy,
+                                   self.global_step)
+        elif step % self.args.scalar_logging_interval == 0: #i.e. if negative phase and appropriate step
+            print('\nNeg Energy: ' + str(energy.cpu().detach().numpy()))
+            self.writer.add_scalar('train/NegSamplesEnergy', energy,
+                                   self.global_step)
+
+        ## States and momenta (mean and histograms)
+        if step % self.args.scalar_logging_interval == 0:
+            for i, state in enumerate(states):
+                mean_layer_string = 'layers/mean_states_%s' % i
+                #print("Logging mean energies")
+                self.writer.add_scalar(mean_layer_string, state.mean(), step)
+                if self.args.log_histograms and \
+                        step % self.args.histogram_logging_interval == 0:
+                    hist_layer_string = 'layers/hist_states_%s' % i
+                    #print("Logging energy histograms")
+                    self.writer.add_histogram(hist_layer_string, state, step)
+        # End of tensorboard logging
+
+        # Save experimental data
+        self.save_experimental_data(states, outs, full_enrgs, step, save_img=True)
+
+        # Save latest energy outputs so you can schedule the phase lengths
+        # if positive_phase:
+        #     self.latest_pos_enrg = energy.item()
+        # else:
+        #     self.latest_neg_enrg = energy.item()
+
+
+        # Prepare gradients and sample for next sampling step
+        for i, state in enumerate(states):
+            state.grad.detach_()
+            state.grad.zero_()
+            if self.args.states_activation == 'relu' and i>0:
+                state.data.clamp_(0)
+            else:
+                state.data.clamp_(0, 1)
+
+        return states
+
+    def save_experimental_data(self, states, outs, energies, step, save_img):
+        # layerwise go through states etc. and save arrays
+        for j, (state, out, enrg, opt) in enumerate(zip(states, outs,
+                                                        energies,
+                                                    self.state_optimizers)):
+            if opt.state_dict()['state']: # i.e. if momentum exists isn't empty, because it's only instantiated after 1 steps I think
+                key = list(opt.state_dict()['state'].keys())[0]
+                state_mom = opt.state_dict()['state'][key]['momentum']
+            else:
+                state_mom = torch.zeros_like(state)
+
+            if state.grad is not None:
+                grad = state.grad
+            else:
+                grad = torch.zeros_like(state)
+
+
+            # Convert data from tensors to numpy arrays for saving
+            grad      = grad.clone().detach().cpu().numpy()
+            state_mom = state_mom.clone().detach().cpu().numpy()
+            state     = state.clone().detach().cpu().numpy()
+            bno       = out.clone().detach().cpu().numpy()
+            enrg      = enrg.clone().detach().cpu().numpy()
+
+            grad_str  = self.save_dir_exp + '/' + self.grad_strs[j] + '/' + str(step) + '.npy'
+            state_str = self.save_dir_exp + '/' + self.states_strs[j] + '/' + str(step) + '.npy'
+            bno_str   = self.save_dir_exp + '/' + self.bno_strs[j] + '/' + str(step) + '.npy'
+            enrg_str  = self.save_dir_exp + '/' + self.energy_strs[j] + '/' + str(step) + '.npy'
+            mom_str   = self.save_dir_exp + '/' + self.momenta_strs[j] + '/' + str(step) + '.npy'
+
+            np.save(grad_str,  grad)
+            np.save(state_str, state)
+            np.save(bno_str,   bno)
+            np.save(enrg_str,  enrg)
+            np.save(mom_str,   state_mom)
+
+        if save_img:
+            self.save_image(states, step)
+
+    def save_image(self, states, step):
+        img = states[0]
+        shape = img.shape
+        img_save = img.reshape(shape).detach().to('cpu')
+        utils.save_image(img_save,
+                         self.save_dir_exp + '/' + str(step) + '.png',
+                         nrow=16, normalize=True, range=(0, 1))
+
+    def obs_negative_phase(self):
+        #TODO if necess
+        print('\nStarting observational negative phase...')
+        # Initialize the chain (either as noise or from buffer)
+        neg_states, neg_id = self.buffer.sample_buffer()
+
+        # Freeze network parameters and take grads w.r.t only the inputs
+        lib.utils.requires_grad(neg_states, True)
+        lib.utils.requires_grad(self.parameters, False)
+        self.model.eval()
+
+        # Set up state optimizer
+        self.state_optimizers = lib.utils.get_state_optimizers(self.args,
+                                                               neg_states)
+
+        # Negative phase sampling
+        for _ in tqdm(range(self.num_it_neg)):
+            self.sampler_step(neg_states, neg_id, step=self.global_step)
+            self.global_step += 1
+
+        # Stop calculting grads w.r.t. images
+        for neg_state in neg_states:
+            neg_state.detach_()
+
+        # Send negative samples to the negative buffer
+        # self.buffer.push(neg_states, neg_id)
+
+        return neg_states, neg_id
+
+
+
 class ExperimentalStimuliGenerationManager:
     def __init__(self,
                  base_image_path='mean_cifar10_trainingset_pixels.png',
@@ -1122,368 +1501,3 @@ class ExperimentalStimuliGenerationManager:
         utils.save_image(mean_pos_state,
                          'mean_cifar10_trainingset_pixels.png',
                          nrow=1, normalize=True, range=(0, 1))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-class ExperimentsManager(Manager):
-    def __init__(self, args, model, data, buffer, writer, device,
-                 sample_log_dir):
-        super().__init__(args, model, data, buffer, writer, device,
-                 sample_log_dir)
-
-        self.latest_pos_enrg = None
-        self.latest_neg_enrg = None
-        self.num_it_neg_mean = self.args.num_it_neg
-        self.num_it_neg = self.args.num_it_neg
-        self.num_sl  = len(self.args.state_sizes)
-
-        # Define the names of the save directories
-        self.momenta_strs = ['momenta_%i' % i for i in range(self.num_sl)]
-        self.states_strs  = ['state_%i' % i for i in range(self.num_sl)]
-        self.grad_strs    = ['grad_%i' % i for i in range(self.num_sl)]
-        self.bno_strs     = ['bno_%i' % i for i in range(self.num_sl)]
-        self.energy_strs  = ['energy_%i' % i for i in range(self.num_sl)]
-        self.img_str = 'images'
-        # self.save_vars = ['momenta', 'all_states', 'binary_net_outputs',
-        #                   'energies']
-        self.base_save_dir = '/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data'
-        self.save_dir_model = self.base_save_dir + '/' + self.model.model_name
-        self.save_dir_exp = None
-        self.data_save_dirs = self.momenta_strs
-        self.data_save_dirs.extend(self.states_strs)
-        self.data_save_dirs.extend(self.grad_strs)
-        self.data_save_dirs.extend(self.bno_strs)
-        self.data_save_dirs.extend(self.energy_strs)
-        self.data_save_dirs.extend([self.img_str])
-
-        # Make the directories if they do not already exist
-        if not os.path.isdir(self.base_save_dir):
-            os.mkdir(self.base_save_dir)
-        if not os.path.isdir(self.save_dir_model):
-            os.mkdir(self.save_dir_model)
-        self.global_step = 0
-
-
-    def observe_cifar_pos_phase(self):
-        self.save_dir_exp = self.save_dir_model + '/' + 'observeCIFAR10' + '/'
-        self.save_img = True
-        if not os.path.isdir(self.save_dir_exp):
-            os.mkdir(self.save_dir_exp)
-        for data_dir in self.data_save_dirs:
-            full_save_dir = self.save_dir_model + '/' + 'observeCIFAR10' + '/' + data_dir
-            if not os.path.isdir(full_save_dir):
-                os.mkdir(full_save_dir)
-
-        pos_img, pos_id = next(iter(self.data.loader))
-        image_phase_list = [pos_img]
-        experiment_len = 250
-        phase_idxs = [0] * experiment_len
-        print("Experiment records dynamics when presenting a batch of CIFAR10 images")
-        pos_states, pos_id = self.observation_phase(image_phase_list=image_phase_list,
-                                                    phase_idxs=phase_idxs)
-
-    def initialize_states(self, pos_img=None, pos_id=None,
-                              prev_states=None):
-        """Initializes positive states"""
-
-        pos_states = [pos_img]
-
-        if self.args.initializer == 'zeros':
-            zero_states = [torch.zeros(size, device=self.device,
-                                       requires_grad=True)
-                           for size in self.args.state_sizes[1:]]
-            pos_states.extend(zero_states)
-        if self.args.initializer == 'ff_init':
-            # Later consider implementing a ff_init that is trained as normal
-            # and gives the same output but that only a few (maybe random)
-            # state neurons are changed/clamped by the innitter so that you
-            # can still use the 'previous' initialisation in your experiments
-            self.initter.train()
-            pos_states_new = self.initter.forward(pos_img, pos_id)
-            pos_states.extend(pos_states_new)
-        elif self.args.initializer == 'middle':
-            raise NotImplementedError("You need to find the mean pixel value" +
-                                      " and then use the value as the value " +
-                                      "to init all pixels.")
-        elif self.args.initializer == 'mix_prev_middle':
-            raise NotImplementedError
-        elif self.args.initializer == 'previous' and prev_states is not None:
-            pos_states.extend(prev_states[1:])
-        else:  # i.e. if self.args.initializer == 'random':
-            rand_states = lib.utils.generate_random_states(
-                self.args.state_sizes[1:], self.device)
-            pos_states.extend(rand_states)
-
-        return pos_states
-
-    def observation_phase(self, image_phase_list,
-                          phase_idxs, prev_states=None):
-
-        print('\nStarting observation phase...')
-        # Get the loaded pos samples and put them on the correct device
-        image_phase_list = [img.to(self.device) for img in image_phase_list]
-        lib.utils.requires_grad(image_phase_list, True)
-
-
-
-        # Gets the values of the pos states by running an inference phase
-        # with the image state_layer clamped
-        obs_states_init = self.initialize_states(pos_img=image_phase_list[0],
-                                                 prev_states=prev_states)
-        obs_states = [osi.clone().detach() for osi in obs_states_init]
-
-        # Freeze network parameters and take grads w.r.t only the inputs
-        lib.utils.requires_grad(obs_states, True)
-        lib.utils.requires_grad(self.parameters, False)
-        if self.args.initializer == 'ff_init':
-            lib.utils.requires_grad(self.initter.parameters(), False)
-        self.model.eval()
-
-        # Get an optimizer for each statelayer
-        self.state_optimizers = lib.utils.get_state_optimizers(self.args,
-                                                               obs_states)
-
-        # Observation phase sampling
-        for i in tqdm(range(self.args.num_it_pos)):
-            obs_states[0] = image_phase_list[phase_idxs[i]]
-            obs_states = self.sampler_step(obs_states, ids=0, positive_phase=True, pos_it=i,
-                              step=self.global_step)
-            self.global_step += 1
-
-        # Stop calculting grads w.r.t. images
-        for obs_state in obs_states:
-            obs_state.detach_()
-
-        return obs_states, None
-
-    def obs_negative_phase(self):
-        print('\nStarting negative phase...')
-        # Initialize the chain (either as noise or from buffer)
-        neg_states, neg_id = self.buffer.sample_buffer()
-
-        # Freeze network parameters and take grads w.r.t only the inputs
-        lib.utils.requires_grad(neg_states, True)
-        lib.utils.requires_grad(self.parameters, False)
-        self.model.eval()
-
-        # Set up state optimizer
-        self.state_optimizers = lib.utils.get_state_optimizers(self.args,
-                                                               neg_states)
-
-        # Negative phase sampling
-        for _ in tqdm(range(self.num_it_neg)):
-            self.sampler_step(neg_states, neg_id, step=self.global_step)
-            self.global_step += 1
-
-        # Stop calculting grads w.r.t. images
-        for neg_state in neg_states:
-            neg_state.detach_()
-
-        # Send negative samples to the negative buffer
-        # self.buffer.push(neg_states, neg_id)
-
-        return neg_states, neg_id
-
-    def sampler_step(self, states, ids, positive_phase=False, pos_it=None,
-                     step=None):
-
-        # Get total energy and energy outputs for indvdual neurons
-        energy, outs, full_enrgs = self.model(states, ids, step, obsv_mode=True)
-
-        # Calculate the gradient wrt states for the Langevin step (before
-        # addition of noise)
-        energy.backward()
-        torch.nn.utils.clip_grad_norm_(states,
-                                       self.args.clip_state_grad_norm,
-                                       norm_type=2)
-
-        # Adding noise in the Langevin step (only for non conditional
-        # layers in positive phase)
-        for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-            if positive_phase and layer_idx == 0:
-                pass
-            else:
-                noise.normal_(0, self.args.sigma)
-                # Note: Just set sigma to a very small value if you don't want to
-                # add noise. It's so inconsequential that it's not worth the
-                # if-statements to accommodate sigma==0.0
-                state.data.add_(noise.data)
-
-        # The gradient step in the Langevin/SGHMC step
-        # It goes through each statelayer and steps back using its associated
-        # optimizer.
-        for layer_idx, optimizer in enumerate(self.state_optimizers):
-            if positive_phase and layer_idx == 0:
-                pass
-            else:
-                optimizer.step()
-
-        # Log data to tensorboard
-        # Energies for layers (mean scalar and all histogram)
-        if step % self.args.scalar_logging_interval == 0 and step is not None:
-            for i, enrg in enumerate(outs):
-                mean_layer_string = 'layers/mean_bnry_%s' % i
-                self.writer.add_scalar(mean_layer_string, enrg.mean(), step)
-                if self.args.log_histograms  and \
-                        step % self.args.histogram_logging_interval == 0:
-                    hist_layer_string = 'layers/hist_bnrys_%s' % i
-                    #print("Logging energy histograms")
-                    self.writer.add_histogram(hist_layer_string, enrg, step)
-
-        ## Pos or Neg total energies
-        if positive_phase and step % self.args.scalar_logging_interval == 0:
-            print('\nPos Energy: ' + str(energy.cpu().detach().numpy()))
-            self.writer.add_scalar('train/PosSamplesEnergy', energy,
-                                   self.global_step)
-        elif step % self.args.scalar_logging_interval == 0: #i.e. if negative phase and appropriate step
-            print('\nNeg Energy: ' + str(energy.cpu().detach().numpy()))
-            self.writer.add_scalar('train/NegSamplesEnergy', energy,
-                                   self.global_step)
-
-        ## States and momenta (mean and histograms)
-        if step % self.args.scalar_logging_interval == 0:
-            for i, state in enumerate(states):
-                mean_layer_string = 'layers/mean_states_%s' % i
-                #print("Logging mean energies")
-                self.writer.add_scalar(mean_layer_string, state.mean(), step)
-                if self.args.log_histograms and \
-                        step % self.args.histogram_logging_interval == 0:
-                    hist_layer_string = 'layers/hist_states_%s' % i
-                    #print("Logging energy histograms")
-                    self.writer.add_histogram(hist_layer_string, state, step)
-        # End of tensorboard logging
-
-        # Save experimental data
-        self.save_experimental_data(states, outs, full_enrgs, step, save_img=True)
-
-        # Save latest energy outputs so you can schedule the phase lengths
-        if positive_phase:
-            self.latest_pos_enrg = energy.item()
-        else:
-            self.latest_neg_enrg = energy.item()
-
-
-        # Prepare gradients and sample for next sampling step
-        for i, state in enumerate(states):
-            state.grad.detach_()
-            state.grad.zero_()
-            if self.args.states_activation == 'relu' and i>0:
-                state.data.clamp_(0)
-            else:
-                state.data.clamp_(0, 1)
-
-        return states
-
-    def save_experimental_data(self, states, outs, energies, step, save_img):
-        # layerwise go through states etc. and save arrays
-        for j, (state, out, enrg, opt) in enumerate(zip(states, outs,
-                                                        energies,
-                                                    self.state_optimizers)):
-            if opt.state_dict()['state']: # i.e. if momentum exists isn't empty, because it's only instantiated after 1 steps I think
-                key = list(opt.state_dict()['state'].keys())[0]
-                state_mom = opt.state_dict()['state'][key]['momentum']
-            else:
-                state_mom = torch.zeros_like(state)
-
-            if state.grad is not None:
-                grad = state.grad
-            else:
-                grad = torch.zeros_like(state)
-
-
-            # Convert data from tensors to numpy arrays for saving
-            grad      = grad.clone().detach().cpu().numpy()
-            state_mom = state_mom.clone().detach().cpu().numpy()
-            state     = state.clone().detach().cpu().numpy()
-            bno       = out.clone().detach().cpu().numpy()
-            enrg      = enrg.clone().detach().cpu().numpy()
-
-            grad_str  = self.save_dir_exp + '/' + self.grad_strs[j] + '/' + str(step) + '.npy'
-            state_str = self.save_dir_exp + '/' + self.states_strs[j] + '/' + str(step) + '.npy'
-            bno_str   = self.save_dir_exp + '/' + self.bno_strs[j] + '/' + str(step) + '.npy'
-            enrg_str  = self.save_dir_exp + '/' + self.energy_strs[j] + '/' + str(step) + '.npy'
-            mom_str   = self.save_dir_exp + '/' + self.momenta_strs[j] + '/' + str(step) + '.npy'
-
-            np.save(grad_str,  grad)
-            np.save(state_str, state)
-            np.save(bno_str,   bno)
-            np.save(enrg_str,  enrg)
-            np.save(mom_str,   state_mom)
-
-        if save_img:
-            self.save_image(states, step)
-
-    def save_image(self, states, step):
-        img = states[0]
-        shape = img.shape
-        img_save = img.reshape(shape).detach().to('cpu')
-        utils.save_image(img_save,
-                         self.save_dir_exp + '/' + str(step) + '.png',
-                         nrow=16, normalize=True, range=(0, 1))

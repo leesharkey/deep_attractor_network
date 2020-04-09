@@ -377,7 +377,6 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
             net = DenseCCTBlock(args, i)
             self.quadratic_nets.append(net)
 
-
     def forward(self, states, class_id=None, step=None, obsv_mode=False):
         if not obsv_mode:
             # Squared norm
