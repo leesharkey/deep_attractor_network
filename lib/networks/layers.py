@@ -461,6 +461,143 @@ class DenseCCTBlock(nn.Module):
         return quadr_out, out
 
 
+class DenseCCTBlock_mix42_to_4(nn.Module):
+    """
+    Takes as input the separate input states, passes them through a
+    cct layer, interps then concats the outputs, passes the concatted tensor
+    through an activation, then a 1x1 conv, before passing it to the main
+    DenseCCTMiddle layers, if there are any, otherwise just outputs, and if
+    there are any, then takes the output of the DenseCCTMiddle and passes it
+    through a final 1x1 conv.
+
+    Does not include base layer or final layer of the full DenseCCTBlock"""
+
+    def __init__(self, args, state_layer_idx):
+        super().__init__()
+        self.args = args
+        base_ch      = args.arch_dict['num_ch_base']
+        growth_rate  = args.arch_dict['growth_rate']
+        num_layers   = args.arch_dict['mod_num_lyr_dict'][state_layer_idx]
+        inp_idxs     = args.arch_dict['mod_connect_dict'][state_layer_idx]
+        cct_statuses = args.arch_dict['mod_cct_status_dict'][state_layer_idx]
+        base_kern_pads = args.arch_dict['base_kern_pad_dict'][state_layer_idx]
+        kern = args.arch_dict['main_kern_dict'][state_layer_idx]
+        out_shape    = args.state_sizes[state_layer_idx]
+
+        inp_state_shapes = [self.args.state_sizes[j] for j in inp_idxs]
+
+        self.act = utils.get_activation_function(args)
+
+        for i, inp_shape in enumerate(inp_state_shapes):
+            if len(inp_shape)==2:
+                size = inp_shape[1]
+                h_w_c = size ** (1/3) # cube root to get height, width, channels
+                Reshape(-1, h_w_c, h_w_c, h_w_c)
+
+
+        # Makes the base CCTLayers
+        self.base_cctls = nn.ModuleList([])
+        #TODO if these aren't the same length, raise an issue.
+        for (cct_status, shape, kp) in zip(cct_statuses,
+                                           inp_state_shapes,
+                                           base_kern_pads):
+            if cct_status == 1:
+                only_conv = True
+                only_conv_t = False
+            elif cct_status == 2:
+                only_conv = False
+                only_conv_t = True
+            else:
+                only_conv = only_conv_t = False
+            cctl = nn.Sequential(CCTLayer(args,
+                                          in_channels=shape[1],
+                                          out_channels=base_ch,
+                                          kernel_size=kp[0],
+                                          padding = kp[1],
+                                          only_conv = only_conv,
+                                          only_conv_t = only_conv_t),
+                                 Interpolate(out_shape[2:],
+                                             mode='nearest'),#newsince20200408
+                                 self.act)
+            self.base_cctls.append(cctl)
+
+        # If the num_layers is 0, the final 1x1 conv input channel is
+        # base_ch * num inputs since it just takes the concated outputs of the
+        # base ccts
+        # elif the num layers is greater than 0, the final 1x1 cct has
+        # num_out_ch for the number of in channels, since it's taking the
+        # output of DenseCCTMiddle.
+
+        # If the cct_statuses are all 1 (or all 2), then the status input to the
+        # DenseCCTMiddle is also 1 (or 2). But if there is any mixture,
+        # then the layers in DenseCCTMiddle are also mixtures, even though the
+        # bases get their preferences
+
+        all_same_cct_status = all([cct_statuses[0] == cct_st
+                                    for cct_st in cct_statuses])
+        if all_same_cct_status:
+            if cct_statuses[0] == 1:
+                only_conv = True
+                only_conv_t = False
+            elif cct_statuses[0] == 2:
+                only_conv = False
+                only_conv_t = True
+        else:
+            only_conv = only_conv_t = False
+
+        if num_layers > 0:
+            in_channels = base_ch * len(inp_state_shapes)
+            num_out_ch  = in_channels + (num_layers * growth_rate)
+            dcctm = DenseCCTMiddle(args,
+                                   in_channels=in_channels,
+                                   growth_rate=growth_rate,
+                                   num_layers=num_layers,
+                                   kernel_size=kern,
+                                   only_conv=only_conv,
+                                   only_conv_t=only_conv_t)
+            final_1x1_conv = nn.Conv2d(in_channels=num_out_ch,
+                                       out_channels=out_shape[1],
+                                       kernel_size=1,
+                                       stride=1,
+                                       padding=0)
+            self.top_net = nn.Sequential(dcctm,
+                                         final_1x1_conv)
+        else:
+            num_out_ch = base_ch * len(inp_state_shapes)
+            final_1x1_conv = nn.Conv2d(in_channels=num_out_ch,
+                                       out_channels=base_ch,
+                                       kernel_size=1,
+                                       stride=1,
+                                       padding=0)
+            final_conv = CCTLayer(args,
+                                  in_channels=base_ch,
+                                  out_channels=out_shape[1],
+                                  kernel_size=kern,
+                                  only_conv=True)
+
+            self.top_net = nn.Sequential(final_1x1_conv,
+                                         final_conv)
+
+
+    def forward(self, pre_state, inps):
+        outs = []
+        for base_cctl, inp in zip(self.base_cctls, inps):
+            out = base_cctl(inp)
+            outs.append(out)
+        out = torch.cat(outs, dim=1)
+        out = self.top_net(out)
+
+        # quadr_out = 0.5 * torch.einsum('ba,ba->b',
+        #                                out.view(out.shape[0], -1),
+        #                                pre_state.view(pre_state.shape[0],-1))
+        out = torch.einsum('ba,ba->ba',
+                                 out.view(out.shape[0], -1),
+                                 pre_state.view(pre_state.shape[0],-1))
+        quadr_out = out.sum(dim=1) #almost identical outputs with some differences for unknown numerical reasons
+
+        return quadr_out, out
+
+
 
 
 
@@ -623,7 +760,7 @@ class ConvFCMixturetoFourDim(nn.Module):
         self.state_layer_ch = self.args.state_sizes[layer_idx][1]
         self.state_layer_h_w = self.args.state_sizes[layer_idx][2:]
 
-        self.interp = Interpolate(size=self.state_layer_h_w, mode='bilinear')
+        self.interp = Interpolate(size=self.state_layer_h_w, mode='nearest')
 
         # The summed number of channels of all the input state_layers
         self.in_conv_channels = []
@@ -721,10 +858,11 @@ class ConvFCMixturetoFourDim_Type2(nn.Module):
         # Size values of state_layer of this network
         self.state_layer_ch = self.args.state_sizes[layer_idx][1]
         self.state_layer_h_w = self.args.state_sizes[layer_idx][2:]
-        self.state_layer_ttl_nrns = torch.prod(torch.tensor(
-            self.args.state_sizes[layer_idx][1:])).item()
+        # self.state_layer_ttl_nrns = torch.prod(torch.tensor(
+        #     self.args.state_sizes[layer_idx][1:])).item()
+        self.state_layer_ttl_nrns = self.args.state_sizes[layer_idx][1:].item()
 
-        self.interp = Interpolate(size=self.state_layer_h_w, mode='bilinear')
+        self.interp = Interpolate(size=self.state_layer_h_w, mode='nearest')
 
         # The summed number of channels of all the input state_layers
         self.in_conv_channels = []
@@ -809,6 +947,118 @@ class ConvFCMixturetoFourDim_Type2(nn.Module):
                                        pre_states.view(
                                            int(pre_states.shape[0]), -1))
         return quadr_out, out
+
+
+class ConvFCMixturetoFourDim_Type3(nn.Module):
+    """
+    Takes a mixture of four dimensional and two dimensional inputs and
+    outputs a four dimensional output of the same shape as the current state.
+
+    """
+    def __init__(self, args, layer_idx):
+        super().__init__()
+        self.args = args
+        self.pad_mode = 'zeros'
+        self.layer_idx = layer_idx
+        self.act = utils.get_activation_function(args)
+        #self.num_fc_channels = self.args.arch_dict['num_fc_channels']
+
+        # Gets the indices of the state_layers that will be input to this net.
+        self.input_idxs = self.args.arch_dict['mod_connect_dict'][layer_idx]
+
+        # Size values of state_layer of this network
+        self.state_layer_ch = self.args.state_sizes[layer_idx][1]
+        self.state_layer_h_w = self.args.state_sizes[layer_idx][2:]
+        # self.state_layer_ttl_nrns = torch.prod(torch.tensor(
+        #     self.args.state_sizes[layer_idx][1:])).item()
+        self.state_layer_ttl_nrns = self.args.state_sizes[layer_idx][1:].item()
+
+        self.interp = Interpolate(size=self.state_layer_h_w, mode='nearest')
+
+        # The summed number of channels of all the input state_layers
+        self.in_conv_channels = []
+        self.in_conv_channels = sum([self.args.state_sizes[j][1]
+                                     for j in self.input_idxs
+                                     if len(self.args.state_sizes[j]) == 4])
+
+        self.in_fc_sizes   = [self.args.state_sizes[j][1]
+                                  for j in self.input_idxs
+                                  if len(self.args.state_sizes[j]) == 2]
+        self.in_fc_neurons = sum(self.in_fc_sizes)
+        # fc_channel_fracs   = \
+        #     [int(round(self.num_fc_channels*(sz/sum(self.in_fc_sizes))))
+        #      for sz in self.in_fc_sizes]
+
+        # Define base convs (no max pooling)
+        self.base_conv = spectral_norm(nn.Conv2d(
+            in_channels=self.in_conv_channels,
+            out_channels=self.state_layer_ch,# this used to be self.args.arch_dict['num_ch'], but I decided that it would work better architecturally if I could have several nonlinearities applied to both the 4d and 2d inputs, and this would only work by decoupling the number of internal channels in this layer from the number of channels in the other layers, because I need this to be of a manageable size for FC layers to interface with. I'll only be making such layers when the number of channels in the state layer is manageable for the FC layers, so using the num of ch in this sl seemed like a reasonable number to use.
+            kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][0],
+            padding=self.args.arch_dict['padding'][layer_idx][0],
+            stride=self.args.arch_dict['strides'][0],
+            padding_mode=self.pad_mode,
+            bias=True))
+
+        # Define base FCs (then reshape their output to something that fits a conv)
+        base_fc = nn.Linear(self.in_fc_neurons, self.state_layer_ttl_nrns)
+        if not self.args.no_spec_norm_reg:
+            self.base_fc = spectral_norm(base_fc, bound=True)
+        self.base_fc_to_4dim = nn.Sequential(base_fc,
+                                             self.act,
+                                             Reshape(-1,
+                                                     self.state_layer_ch,
+                                                     self.state_layer_h_w[0],
+                                                     self.state_layer_h_w[1]))
+
+        # self.base_actv_fc_layers = nn.ModuleList([])
+        # for (in_size, out_size) in zip(self.in_fc_sizes, fc_channel_fracs):
+        #     base_fc_layer = nn.Linear(in_size, out_size)
+        #     if not self.args.no_spec_norm_reg:
+        #         base_fc_layer = spectral_norm(base_fc_layer, bound=True)
+        #     self.base_actv_fc_layers.append(nn.Sequential(
+        #                                 base_fc_layer,
+        #                                 self.act,
+        #                                 Reshape(-1, out_size, 1, 1), # makes each neuron a 'channel'
+        #                                 self.interp) # Spreads each 1D channel across the whole sheet of latent neurons
+        #     )
+
+        # Define energy convs (take output of base convs and FCs as input
+        energy_conv = nn.Conv2d(
+            in_channels=(self.state_layer_ch*2)+self.in_conv_channels,  # One for base conv, one for fc layers, and one for
+            out_channels=self.state_layer_ch,
+            kernel_size=self.args.arch_dict['kernel_sizes'][layer_idx][1],
+            padding=self.args.arch_dict['padding'][layer_idx][1],
+            padding_mode=self.pad_mode,
+            bias=True)
+        if not self.args.no_spec_norm_reg:
+            energy_conv = spectral_norm(energy_conv, std=1e-10, bound=True)
+        self.energy_conv = energy_conv
+
+    def forward(self, pre_states, inputs, class_id=None):
+        inps_4d = [inp for inp in inputs if len(inp.shape) == 4]
+        inps_2d = [inp for inp in inputs if len(inp.shape) == 2]
+        reshaped_4dim_inps = [self.interp(inp) for inp in inps_4d
+                              if inp.shape[2:] != self.state_layer_h_w]
+        reshaped_4dim_inps = torch.cat(reshaped_4dim_inps, dim=1)
+        base_conv_out = self.base_conv(reshaped_4dim_inps)
+
+        fc_inputs = torch.cat(inps_2d, dim=1)
+        fc_4dimout = self.base_fc_to_4dim(fc_inputs)
+        # fc_outs = [self.base_actv_fc_layers[i](inp)
+        #            for (i, inp) in enumerate(inps_2d)]
+        # fc_outs = torch.cat(fc_outs, dim=1)
+        energy_input = torch.cat([reshaped_4dim_inps, base_conv_out,
+                                  fc_4dimout], dim=1)
+        out = self.energy_conv(energy_input)
+        if not self.args.no_end_layer_activation:
+            out = self.act(out) #TODO put act in sequential above
+        quadr_out = 0.5 * torch.einsum('ba,ba->b',
+                                       out.view(
+                                           int(out.shape[0]), -1),
+                                       pre_states.view(
+                                           int(pre_states.shape[0]), -1))
+        return quadr_out, out
+
 
 
 class DenseConv(nn.Module):

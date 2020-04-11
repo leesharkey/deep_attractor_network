@@ -67,7 +67,7 @@ class Manager():
             print("Loaded model " + self.loaded_model_name + ' successfully')
 
             # Save new settings (doesn't overwrite old csv values)
-            lib.utils.save_configs_to_csv(self.args, self.loaded_model_name)
+            lib.utils.save_configs_to_csv(self.args, self.loaded_model_name+'viz')
         else:
             lib.utils.save_configs_to_csv(self.args, self.model.model_name)
 
@@ -304,7 +304,7 @@ class TrainingManager(Manager):
                      step=None):
 
         # Get total energy and energy outputs for indvdual neurons
-        energy, outs = self.model(states, ids, step)
+        energy, outs, full_energies = self.model(states, ids, step)
 
         # Calculate the gradient wrt states for the Langevin step (before
         # addition of noise)
@@ -448,8 +448,8 @@ class TrainingManager(Manager):
     def calc_energ_and_loss(self, neg_states, neg_id, pos_states, pos_id):
 
         # Get energies of positive and negative samples
-        pos_energy, _ = self.model(pos_states, pos_id)
-        neg_energy, _ = self.model(neg_states, neg_id)
+        pos_energy, _, _ = self.model(pos_states, pos_id)
+        neg_energy, _, _ = self.model(neg_states, neg_id)
 
         # Calculate the loss
         ## L2 penalty on energy magnitudes
@@ -578,8 +578,11 @@ class VisualizationManager(Manager):
 
         self.viz_batch_sizes = self.calc_viz_batch_sizes()
         self.reset_opt_K_its = True
-        self.reset_freq = 70
-        self.energy_scaler = 10.
+        self.reset_freq = 100
+        self.energy_scaler = 1.0
+        self.one_or_zero = 1.0
+        for i, s in enumerate(self.args.state_sizes):
+            vars(self.args)['state_sizes'][i][0] = 128
 
     def calc_viz_batch_sizes(self):
         """The batch size is now the number of pixels in the image, and
@@ -587,13 +590,6 @@ class VisualizationManager(Manager):
 
         if self.args.viz_type == 'standard':
             batch_sizes = self.args.state_sizes
-        elif self.args.viz_type == 'neurons':
-            batch_sizes = []
-            for size in self.args.state_sizes:
-                if len(size) == 4:
-                    batch_sizes.append(size[2] * size[3])
-                if len(size) == 2:
-                    batch_sizes.append(size[1])
         elif self.args.viz_type == 'channels':
             batch_sizes = []
             for size in self.args.state_sizes:
@@ -616,35 +612,28 @@ class VisualizationManager(Manager):
                                    size[1],
                                    size[2],
                                    size[3]]]
-            if len(size) == 2:
-                new_state_sizes += [[self.viz_batch_sizes[sl_idx],
-                                   size[1]]]
         self.args.state_sizes = new_state_sizes
         self.model.args.state_sizes = new_state_sizes
 
-    def calc_clamp_array_conv(self, state_layer_idx=None):
-
+    def calc_clamp_array_conv(self, state_layer_idx=None, one_or_zero=1.0):
         if state_layer_idx is not None:
             size = self.args.state_sizes[state_layer_idx]
-            clamp_array = torch.zeros(
-                size=size,
-                dtype=torch.uint8,
-                device=self.device)
+            if one_or_zero == 1.0:
+                clamp_array = torch.zeros(size=size,
+                                          dtype=torch.uint8,
+                                          device=self.device)
+            else:
+                clamp_array = torch.ones(size=size,
+                                          dtype=torch.uint8,
+                                          device=self.device)
         else:
             size = None
             clamp_array = None
 
-        if self.args.viz_type == 'neurons':
-            # Sets to 1 the next pixel in each batch element
-            mg = np.meshgrid(np.arange(0, size[2]),
-                             np.arange(0, size[3]))
-            idxs = list(zip(mg[1].flatten(), mg[0].flatten()))
-            for i0 in range(size[0]):
-                clamp_array[i0, 0][idxs[i0]] = 1.0
-        elif self.args.viz_type == 'channels':
+        if self.args.viz_type == 'channels':
             # In batch i, sets the ith channel to 1.0
             for i in range(size[0]):
-                clamp_array[i,i,:,:] = 1.0
+                clamp_array[i,i,:,:] = one_or_zero
 
         return clamp_array
 
@@ -670,43 +659,10 @@ class VisualizationManager(Manager):
                     self.noises = lib.utils.generate_random_states(
                         self.args.state_sizes,
                         self.device)
-                    clamp_array = self.calc_clamp_array_conv(state_layer_idx)
+                    clamp_array = self.calc_clamp_array_conv(state_layer_idx, self.one_or_zero)
                     self.visualization_phase(state_layer_idx,
                                              channel_idx=None,
                                              clamp_array=clamp_array)
-        elif self.args.viz_type == 'neurons':
-            for state_layer_idx, size in enumerate(self.args.state_sizes[:]):#, start=1):Lee
-                if state_layer_idx == 0:
-                    continue
-                if len(size) == 4:
-                    for channel_idx in range(size[1]): #[1] for num of channels
-                        print("Visualizing channel %s of state layer %s" % \
-                              (str(channel_idx), state_layer_idx))
-                        self.update_state_size_bs(state_layer_idx)
-                        self.noises = lib.utils.generate_random_states(
-                            self.args.state_sizes,
-                            self.device)
-                        clamp_array = self.calc_clamp_array_conv(state_layer_idx)
-                        self.visualization_phase(state_layer_idx,
-                                                 channel_idx,
-                                                 clamp_array)
-                elif len(size) == 2:
-                    if self.args.viz_type == 'neurons':
-                        # not if 'channels' because FC layers have no channels
-                        print("Visualizing FC layer %s" % state_layer_idx)
-                        self.update_state_size_bs(state_layer_idx)
-                        self.noises  = lib.utils.generate_random_states(
-                                                 self.args.state_sizes,
-                                                 self.device)
-                        clamp_array  = torch.eye(n=size[0], m=size[1],
-                                                 dtype=torch.uint8,
-                                                 device=self.device)
-                        self.visualization_phase(state_layer_idx,
-                                                 channel_idx=None,
-                                                 clamp_array=clamp_array)
-                    else:
-                        print('Not visualizing FC layer because we\'re '
-                              'visualizing channels')
 
     def visualization_phase(self, state_layer_idx=0, channel_idx=None,
                             clamp_array=None):
@@ -771,14 +727,15 @@ class VisualizationManager(Manager):
         from the channel neuron that's being visualized. The gradients for
         other layers come from the energy gradient."""
 
-        energy, outs, energies = self.model(states, ids, obsv_mode=True)  # Outputs energy of neg sample
+        energy, outs, energies = self.model(states, ids)  # Outputs energy of neg sample
         total_energy = energy.sum()
+        total_energies = sum([e.sum() for e in energies])
 
         if self.args.viz_type == 'standard':
             # Take gradient wrt states (before addition of noise)
-            total_energy.backward()
+            total_energies.backward()
 
-        elif self.args.viz_type == 'neurons' or self.args.viz_type == 'channels':
+        elif self.args.viz_type == 'channels':
             # Reshape energies
             energies = [enrg.view(state.shape) for enrg, state in zip(energies, states)]
 
@@ -791,11 +748,9 @@ class VisualizationManager(Manager):
                                                   feature_energy,
                                                   torch.zeros_like(feature_energy))
             selected_feature_energy = -selected_feature_energy.sum()
-            # print(state_layer_idx)
-            # print([fe.sum() for fe in outs])
-            #selected_feature_energy.backward(retain_graph=True)
 
             # Take gradient wrt states (before addition of noise)
+            #selected_feature_energy.backward()
             total_energy.backward()
 
             # Zero the grads above the layer that we're visualizing

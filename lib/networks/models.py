@@ -377,87 +377,56 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
             net = DenseCCTBlock(args, i)
             self.quadratic_nets.append(net)
 
-    def forward(self, states, class_id=None, step=None, obsv_mode=False):
-        if not obsv_mode:
-            # Squared norm
-            sq_terms = []
-            for i, layer in enumerate(states):
-                sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2).sum()
-                sq_terms.append(sq_term)
-            sq_nrm = sum(sq_terms)
+    def forward(self, states, class_id=None, step=None):
 
-            # Linear terms
-            lin_terms = []
-            for i, (layer, bias) in enumerate(zip(states, self.biases)):
-                lin_term = bias(self.st_act(layer.view(layer.shape[0], -1)))
-                lin_term = lin_term.sum()
-                lin_terms.append(lin_term)
-            lin_terms = - sum(lin_terms)
+        # Takes extra effort to calculate energy of each nrn individually
+        # Squared norm
+        sq_terms = []
+        full_sq_terms = []
+        for i, layer in enumerate(states):
+            full_sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2)
+            sq_term = full_sq_term.sum()
 
-            # Quadratic terms
-            quadr_outs = []
-            outs = []
-            for i, (pre_state, net) in enumerate(zip(states, self.quadratic_nets)):
-                post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
-                pos_inp_states = [states[j] for j in post_inp_idxs]
-                pos_inp_states = [self.st_act(state)
-                                  for state in pos_inp_states]
-                quadr_out, out = net(pre_state, pos_inp_states)
-                quadr_outs.append(quadr_out)
-                outs.append(out)
+            full_sq_terms.append(full_sq_term)
+            sq_terms.append(sq_term)
+        sq_nrm = sum(sq_terms)
+        #print("sq: " + str(sq_nrm==sum([st.sum() for st in full_sq_terms])))
 
-            quadratic_terms = - sum(sum(quadr_outs))  # Note the minus here
+        # Linear terms
+        lin_terms = []
+        full_lin_terms = []
+        for i, (layer, bias) in enumerate(zip(states, self.biases)):
+            full_lin_term = - torch.mul(bias.weight, layer.view(layer.shape[0], -1))
+            #full_lin_term = bias.weight * layer.view(layer.shape[0],-1)
+            #lin_term = bias(self.st_act(layer.view(layer.shape[0], -1))).sum() #in case of any numerical instab
+            full_lin_terms.append(full_lin_term)
+            lin_terms.append(full_lin_term.sum())
+        lin_term = - sum(lin_terms)
+        #print("lt: " + str(lin_term==sum([lt.sum() for lt in full_lin_terms])))
 
-            # Get the final energy
-            energy = sq_nrm + lin_terms + quadratic_terms
+        # Quadratic terms
+        quadr_outs = []
+        outs = []
+        for i, (pre_state, net) in enumerate(
+                zip(states, self.quadratic_nets)):
+            post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
+            pos_inp_states = [states[j] for j in post_inp_idxs]
+            pos_inp_states = [self.st_act(state)
+                              for state in pos_inp_states]
+            quadr_out, full_out = net(pre_state, pos_inp_states)
+            quadr_outs.append(quadr_out)
+            outs.append(-full_out)
 
-            return energy, outs
-        else:
-            # Takes extra effort to calculate energy of each nrn individually
-            # Squared norm
-            sq_terms = []
-            full_sq_terms = []
-            for i, layer in enumerate(states):
-                full_sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2)
-                sq_term = full_sq_term.sum()
+        quadratic_term = - sum(sum(quadr_outs))  # Note the minus here
+        #print("qt: " + str(quadratic_term==sum([qt.sum() for qt in outs])))
 
-                full_sq_terms.append(full_sq_term)
-                sq_terms.append(sq_term)
-            sq_nrm = sum(sq_terms)
+        full_energies = [sq+qt+lt for sq, qt, lt in zip(full_sq_terms,
+                                                             outs,
+                                                             full_lin_terms)]
+        # Get the final energy
+        energy = sq_nrm + lin_term + quadratic_term
 
-            # Linear terms
-            lin_terms = []
-            full_lin_terms = []
-            for i, (layer, bias) in enumerate(zip(states, self.biases)):
-
-                full_lin_term = bias.weight * layer.view(layer.shape[0],-1)
-                lin_term = bias(self.st_act(layer.view(layer.shape[0], -1))).sum() #in case of any numerical instab
-                full_lin_terms.append(full_lin_term)
-                lin_terms.append(lin_term)
-            lin_term = - sum(lin_terms)
-
-            # Quadratic terms
-            quadr_outs = []
-            outs = []
-            for i, (pre_state, net) in enumerate(
-                    zip(states, self.quadratic_nets)):
-                post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
-                pos_inp_states = [states[j] for j in post_inp_idxs]
-                pos_inp_states = [self.st_act(state)
-                                  for state in pos_inp_states]
-                quadr_out, out = net(pre_state, pos_inp_states)
-                quadr_outs.append(quadr_out)
-                outs.append(out)
-
-            quadratic_term = - sum(sum(quadr_outs))  # Note the minus here
-
-            full_energies = [sq+qt+lt for sq, qt, lt in zip(full_sq_terms,
-                                                                 outs,
-                                                                 full_lin_terms)]
-            # Get the final energy
-            energy = sq_nrm + lin_term + quadratic_term
-
-            return energy, outs, full_energies
+        return energy, outs, full_energies
 
 
 
