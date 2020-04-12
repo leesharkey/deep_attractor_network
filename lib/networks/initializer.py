@@ -270,7 +270,7 @@ class InitializerNetwork(torch.nn.Module):
         #                             betas=(0.9, 0.999))
         self.optimizer = optim.SGD(self.parameters(),
                                    nesterov=True,
-                                   momentum=0.,
+                                   momentum=0.85,
                                    lr=self.args.initter_network_lr)
 
     def forward(self, inp, x_id):
