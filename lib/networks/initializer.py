@@ -265,13 +265,13 @@ class InitializerNetwork(torch.nn.Module):
 
 
         # Define the optimizer
-        self.optimizer = optim.Adam(self.parameters(),
-                                    lr=self.args.initter_network_lr,
-                                    betas=(0.9, 0.999))
-        # self.optimizer = optim.SGD(self.parameters(),
-        #                            nesterov=True,
-        #                            momentum=0.6,
-        #                            lr=self.args.initter_network_lr)
+        # self.optimizer = optim.Adam(self.parameters(),
+        #                             lr=self.args.initter_network_lr,
+        #                             betas=(0.9, 0.999))
+        self.optimizer = optim.SGD(self.parameters(),
+                                   nesterov=True,
+                                   momentum=0.,
+                                   lr=self.args.initter_network_lr)
 
     def forward(self, inp, x_id):
         print("Initializing with FF net")
