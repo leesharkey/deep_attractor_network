@@ -28,7 +28,7 @@ class Manager():
                                     betas=(0.0, 0.999))  # betas=(0.9, 0.999))
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                    step_size=1,
-                                                   gamma=0.999)
+                                                   gamma=0.9) #By epoch 10, lr is 35% of starting value1
         self.noises = lib.utils.generate_random_states(self.args.state_sizes,
                                                        self.device)
         self.global_step = 0
