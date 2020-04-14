@@ -353,7 +353,13 @@ class DenseCCTBlock(nn.Module):
         kern = args.arch_dict['main_kern_dict'][state_layer_idx]
         out_shape    = args.state_sizes[state_layer_idx]
 
+        # Throw away info for FC nets
+        inp_idxs         = args.arch_dict['mod_connect_dict'][state_layer_idx]
         inp_state_shapes = [self.args.state_sizes[j] for j in inp_idxs]
+        inp_state_shapes = [ii for (ii, cct_s) in zip(inp_state_shapes, cct_statuses) if cct_s != 3]
+        base_kern_pads   = [bkp for (bkp, cct_s) in zip(base_kern_pads, cct_statuses) if cct_s != 3]
+        cct_statuses     = [cct_s for cct_s in cct_statuses if cct_s != 3]
+
 
         self.act = utils.get_activation_function(args)
 
@@ -460,140 +466,92 @@ class DenseCCTBlock(nn.Module):
 
         return quadr_out, out
 
+class FC2(nn.Module):
+    def __init__(self, args, state_layer_idx):
+        super().__init__()
+        self.args = args
+        self.act = utils.get_activation_function(args)
+        self.state_layer_idx = state_layer_idx
+        self.internal_size = 64
 
-class DenseCCTBlock_mix42_to_4(nn.Module):
+        # Get the indices of the state_layers that will be input to this net
+        # and their sizes. They may be flattened conv outputs.
+        input_idxs   = self.args.arch_dict['mod_connect_dict'][state_layer_idx]
+        cct_statuses = args.arch_dict['mod_cct_status_dict'][state_layer_idx]
+        num_layers   = args.arch_dict['mod_num_lyr_dict'][state_layer_idx]
+
+        self.input_idxs = [ii for (ii, cct_s) in zip(input_idxs, cct_statuses) if cct_s == 3]
+        self.in_sizes = [torch.prod(torch.tensor(self.args.state_sizes[j][1:]))
+                         for j in self.input_idxs]
+        self.in_size = sum(self.in_sizes)
+        self.out_size = torch.prod(torch.tensor(self.args.state_sizes[state_layer_idx][1:])).item()
+
+        # Define the networks
+        fc_1 = nn.Linear(self.in_size, self.internal_size)
+        layers = [fc_1, self.act]
+        ## if num layers is not 0, then add internal layers
+        for l in range(num_layers):
+            fc_i = nn.Linear(self.internal_size,
+                             self.internal_size)
+            layers.append(fc_i)
+            layers.append(self.act)
+        fc_end = nn.Linear(self.internal_size, self.out_size)
+        layers.append(fc_end)
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, pre_states, actv_post_states, class_id=None): #I think I might have misnamed the pre and post states.
+        inputs = actv_post_states
+        reshaped_inps = [inp.view(inp.shape[0], -1) for inp in inputs]
+        inputs = torch.cat(reshaped_inps, dim=1)
+        out = self.net(inputs)
+        quadr_out = 0.5 * torch.einsum('ba,ba->b', out,
+                                     pre_states.view(pre_states.shape[0], -1))
+        return quadr_out, out
+
+class ContainerFCandDenseCCTBlock(nn.Module):
     """
     Takes as input the separate input states, passes them through a
-    cct layer, interps then concats the outputs, passes the concatted tensor
-    through an activation, then a 1x1 conv, before passing it to the main
-    DenseCCTMiddle layers, if there are any, otherwise just outputs, and if
-    there are any, then takes the output of the DenseCCTMiddle and passes it
-    through a final 1x1 conv.
-
-    Does not include base layer or final layer of the full DenseCCTBlock"""
+    DenseCCTBlock and FC network if both are indicated.
+    """
 
     def __init__(self, args, state_layer_idx):
         super().__init__()
         self.args = args
-        base_ch      = args.arch_dict['num_ch_base']
-        growth_rate  = args.arch_dict['growth_rate']
-        num_layers   = args.arch_dict['mod_num_lyr_dict'][state_layer_idx]
+
         inp_idxs     = args.arch_dict['mod_connect_dict'][state_layer_idx]
-        cct_statuses = args.arch_dict['mod_cct_status_dict'][state_layer_idx]
-        base_kern_pads = args.arch_dict['base_kern_pad_dict'][state_layer_idx]
-        kern = args.arch_dict['main_kern_dict'][state_layer_idx]
-        out_shape    = args.state_sizes[state_layer_idx]
-
-        inp_state_shapes = [self.args.state_sizes[j] for j in inp_idxs]
-
-        self.act = utils.get_activation_function(args)
-
-        for i, inp_shape in enumerate(inp_state_shapes):
-            if len(inp_shape)==2:
-                size = inp_shape[1]
-                h_w_c = size ** (1/3) # cube root to get height, width, channels
-                Reshape(-1, h_w_c, h_w_c, h_w_c)
-
-
-        # Makes the base CCTLayers
-        self.base_cctls = nn.ModuleList([])
-        #TODO if these aren't the same length, raise an issue.
-        for (cct_status, shape, kp) in zip(cct_statuses,
-                                           inp_state_shapes,
-                                           base_kern_pads):
-            if cct_status == 1:
-                only_conv = True
-                only_conv_t = False
-            elif cct_status == 2:
-                only_conv = False
-                only_conv_t = True
-            else:
-                only_conv = only_conv_t = False
-            cctl = nn.Sequential(CCTLayer(args,
-                                          in_channels=shape[1],
-                                          out_channels=base_ch,
-                                          kernel_size=kp[0],
-                                          padding = kp[1],
-                                          only_conv = only_conv,
-                                          only_conv_t = only_conv_t),
-                                 Interpolate(out_shape[2:],
-                                             mode='nearest'),#newsince20200408
-                                 self.act)
-            self.base_cctls.append(cctl)
-
-        # If the num_layers is 0, the final 1x1 conv input channel is
-        # base_ch * num inputs since it just takes the concated outputs of the
-        # base ccts
-        # elif the num layers is greater than 0, the final 1x1 cct has
-        # num_out_ch for the number of in channels, since it's taking the
-        # output of DenseCCTMiddle.
-
-        # If the cct_statuses are all 1 (or all 2), then the status input to the
-        # DenseCCTMiddle is also 1 (or 2). But if there is any mixture,
-        # then the layers in DenseCCTMiddle are also mixtures, even though the
-        # bases get their preferences
-
-        all_same_cct_status = all([cct_statuses[0] == cct_st
-                                    for cct_st in cct_statuses])
-        if all_same_cct_status:
-            if cct_statuses[0] == 1:
-                only_conv = True
-                only_conv_t = False
-            elif cct_statuses[0] == 2:
-                only_conv = False
-                only_conv_t = True
+        self.cct_statuses = args.arch_dict['mod_cct_status_dict'][state_layer_idx]
+        if 0 in self.cct_statuses or 1 in self.cct_statuses or 2 in self.cct_statuses:
+            self.densecctblock = DenseCCTBlock(args, state_layer_idx)
         else:
-            only_conv = only_conv_t = False
-
-        if num_layers > 0:
-            in_channels = base_ch * len(inp_state_shapes)
-            num_out_ch  = in_channels + (num_layers * growth_rate)
-            dcctm = DenseCCTMiddle(args,
-                                   in_channels=in_channels,
-                                   growth_rate=growth_rate,
-                                   num_layers=num_layers,
-                                   kernel_size=kern,
-                                   only_conv=only_conv,
-                                   only_conv_t=only_conv_t)
-            final_1x1_conv = nn.Conv2d(in_channels=num_out_ch,
-                                       out_channels=out_shape[1],
-                                       kernel_size=1,
-                                       stride=1,
-                                       padding=0)
-            self.top_net = nn.Sequential(dcctm,
-                                         final_1x1_conv)
+            self.densecctblock = None
+        if 3 in self.cct_statuses:
+            self.fc_net = FC2(args, state_layer_idx)
         else:
-            num_out_ch = base_ch * len(inp_state_shapes)
-            final_1x1_conv = nn.Conv2d(in_channels=num_out_ch,
-                                       out_channels=base_ch,
-                                       kernel_size=1,
-                                       stride=1,
-                                       padding=0)
-            final_conv = CCTLayer(args,
-                                  in_channels=base_ch,
-                                  out_channels=out_shape[1],
-                                  kernel_size=kern,
-                                  only_conv=True)
-
-            self.top_net = nn.Sequential(final_1x1_conv,
-                                         final_conv)
-
+            self.fc_net = None
 
     def forward(self, pre_state, inps):
+        #split inputs
+        conv_inps = [inp for (inp, cct_s) in zip(inps, self.cct_statuses) if cct_s != 3]
+        fc_inps = [inp for (inp, cct_s) in zip(inps, self.cct_statuses) if cct_s == 3]
+        quadr_outs = []
         outs = []
-        for base_cctl, inp in zip(self.base_cctls, inps):
-            out = base_cctl(inp)
+        if self.densecctblock is not None:
+            quadr_out, out = self.densecctblock(pre_state, conv_inps)
+            quadr_outs.append(quadr_out)
             outs.append(out)
-        out = torch.cat(outs, dim=1)
-        out = self.top_net(out)
+        if self.fc_net is not None:
+            quadr_out, out = self.fc_net(pre_state, fc_inps)
+            quadr_outs.append(quadr_out)
+            outs.append(out)
 
-        # quadr_out = 0.5 * torch.einsum('ba,ba->b',
-        #                                out.view(out.shape[0], -1),
-        #                                pre_state.view(pre_state.shape[0],-1))
-        out = torch.einsum('ba,ba->ba',
-                                 out.view(out.shape[0], -1),
-                                 pre_state.view(pre_state.shape[0],-1))
-        quadr_out = out.sum(dim=1) #almost identical outputs with some differences for unknown numerical reasons
+        quadr_outs = torch.stack(quadr_outs)
+        outs = torch.stack(outs)
+
+        quadr_out = torch.sum(quadr_outs, dim=0)
+        out       = torch.sum(outs, dim=0)
+
+
+        #quadr_out = out.sum(dim=1) #almost identical outputs with some differences for unknown numerical reasons
 
         return quadr_out, out
 

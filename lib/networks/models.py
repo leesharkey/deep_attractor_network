@@ -374,7 +374,7 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
         # Define the networks that output the quadratic terms
         self.quadratic_nets = nn.ModuleList([])
         for i in range(len(self.args.state_sizes)):
-            net = DenseCCTBlock(args, i)
+            net = ContainerFCandDenseCCTBlock(args, i)
             self.quadratic_nets.append(net)
 
     def forward(self, states, class_id=None, step=None):
