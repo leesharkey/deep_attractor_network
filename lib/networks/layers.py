@@ -214,7 +214,7 @@ class CCTLayer(nn.Module):
             self.padding = 1
         elif kernel_size == 7:
             self.padding = 3
-        elif kernel_size == 9:
+        elif kernel_size == 11:
             self.padding = 5
         else:
             self.padding = padding
