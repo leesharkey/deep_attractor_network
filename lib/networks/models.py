@@ -26,6 +26,12 @@ class BaseModel(nn.Module):
         for bias in self.biases:
             torch.nn.init.zeros_(bias.weight)
 
+        if self.args.energy_scaling:
+            self.energy_masks = \
+                [torch.ones(state_size, device=self.device)
+                 for state_size in self.args.state_sizes]
+
+
 
 class BengioFischerNetwork(BaseModel):
     """Defines the attractor network studied by Bengio and Fischer
@@ -423,6 +429,17 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
         full_energies = [sq+qt+lt for sq, qt, lt in zip(full_sq_terms,
                                                              outs,
                                                              full_lin_terms)]
+
+        if self.args.energy_scaling:
+            if self.args.energy_scaling_noise:
+                self.energy_masks = \
+                    [mask + torch.randn_like(
+                        mask) * self.args.energy_scaling_noise_var
+                     for mask in self.energy_masks]
+            for i, (mask, full_energy) in enumerate(zip(self.energy_masks, full_energies)):
+                full_energies[i] = full_energy * mask.view(mask.shape[0], -1)
+
+
         # Get the final energy
         energy = sq_nrm + lin_term + quadratic_term
 

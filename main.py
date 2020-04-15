@@ -2604,6 +2604,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
         elif args.architecture == 'DAN2_small_light_4SL_FC_top1.5':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
@@ -2905,9 +2906,15 @@ def main():
                              'to the argument will be 10 to the power of the' +
                              'float selected from the range. '+
                              'Options: [-3, 0].')
-    ngroup.add_argument('--energy_weight_min', type=float, default=0.001,
-                        help='The minimum value that weights in the energy ' +
-                             'weights layer may take.')
+    ngroup.add_argument('--energy_scaling', action='store_true',
+                        help='Whether or not scale the energy outputs.')
+    parser.set_defaults(energy_scaling=False)
+    ngroup.add_argument('--energy_scaling_noise', action='store_true',
+                        help='Whether or not add noise to the energy scaling.')
+    parser.set_defaults(energy_scaling_noise=False)
+    ngroup.add_argument('--energy_scaling_noise_var', type=float, default=0.5,
+                        help='The variance of the noise that will be added ' +
+                        'to the energy mask, if noise is added at all.')
     ngroup.add_argument('--energy_weight_mask', type=int, nargs='+',
                         default=[1,1,1], help='A list that will be used to' +
                         'define a Boolean mask over the energy weights, ' +
