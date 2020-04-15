@@ -67,7 +67,7 @@ class Manager():
             print("Loaded model " + self.loaded_model_name + ' successfully')
 
             # Save new settings (doesn't overwrite old csv values)
-            lib.utils.save_configs_to_csv(self.args, self.loaded_model_name+'viz')
+            lib.utils.save_configs_to_csv(self.args, self.loaded_model_name+'loaded')
         else:
             lib.utils.save_configs_to_csv(self.args, self.model.model_name)
 
@@ -290,6 +290,13 @@ class TrainingManager(Manager):
         for _ in tqdm(range(self.num_it_neg)):
             self.sampler_step(neg_states, neg_id, step=self.global_step)
             self.global_step += 1
+            # #TODO remove when done debugging viz
+            # neg_imgs_save = neg_states[0].detach().to('cpu')
+            # utils.save_image(neg_imgs_save,
+            #                  os.path.join(self.sample_log_dir,
+            #                               str(self.batch_num).zfill(
+            #                                   6) + str(_) + '.png'),
+            #                  nrow=16, normalize=True, range=(0, 1))
 
         # Stop calculting grads w.r.t. images
         for neg_state in neg_states:
@@ -733,7 +740,7 @@ class VisualizationManager(Manager):
 
         if self.args.viz_type == 'standard':
             # Take gradient wrt states (before addition of noise)
-            total_energies.backward()
+            total_energy.backward() #total_energies.backward()
 
         elif self.args.viz_type == 'channels':
             # Reshape energies
