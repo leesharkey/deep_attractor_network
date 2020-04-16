@@ -344,14 +344,21 @@ class TrainingManager(Manager):
         # Log data to tensorboard
         # Energies for layers (mean scalar and all histogram)
         if step % self.args.scalar_logging_interval == 0 and step is not None:
-            for i, enrg in enumerate(outs):
+            for i, (nrgy, out) in enumerate(zip(full_energies, outs)):
                 mean_layer_string = 'layers/mean_bnry_%s' % i
-                self.writer.add_scalar(mean_layer_string, enrg.mean(), step)
+                mean_full_enrg_string = 'layers/mean_energies_%s' % i
+                self.writer.add_scalar(mean_layer_string, out.mean(), step)
+                self.writer.add_scalar(mean_full_enrg_string, nrgy.mean(), step)
+
                 if self.args.log_histograms  and \
                         step % self.args.histogram_logging_interval == 0:
                     hist_layer_string = 'layers/hist_bnrys_%s' % i
+                    hist_full_enrg_string = 'layers/hist_energies_%s' % i
+
                     #print("Logging energy histograms")
-                    self.writer.add_histogram(hist_layer_string, enrg, step)
+                    self.writer.add_histogram(hist_layer_string, out, step)
+                    self.writer.add_histogram(hist_full_enrg_string, nrgy, step)
+
 
         ## Pos or Neg total energies
         if positive_phase and step % self.args.scalar_logging_interval == 0:
@@ -536,7 +543,8 @@ class TrainingManager(Manager):
         self.pos_short_term_history.append(self.latest_pos_enrg)
         diff = max(self.pos_short_term_history) - \
                min(self.pos_short_term_history)
-        if diff < 20 and current_iteration > 15:
+        if diff < self.args.truncate_pos_its_threshold \
+                and current_iteration > 15:
             self.stop_pos_phase = True
             self.writer.add_scalar('train/trunc_pos_at', current_iteration,
                                    self.batch_num)

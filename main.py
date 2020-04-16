@@ -2963,6 +2963,10 @@ def main():
                              'the energy stops decreasing. ' +
                              'Default: %(default)s.')
     parser.set_defaults(truncate_pos_its=False)
+    tgroup.add_argument('--truncate_pos_its_threshold', type=int, default=20,
+                        help='If true, the positive phase is cut short if ' +
+                             'the energy stops decreasing. ' +
+                             'Default: %(default)s.')
 
 
     ngroup = parser.add_argument_group('Network and states options')
