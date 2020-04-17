@@ -513,20 +513,20 @@ class FC2(nn.Module):
 
         # Define the networks
         fc_1 = nn.Linear(self.in_size, self.internal_size)
+        # Apply normalisation layers if appropriate
+        if weight_norm:
+            fc_1 = torch.nn.utils.weight_norm(fc_1)
         layers = [fc_1, self.act]
         ## if num layers is not 0, then add internal layers
         for l in range(num_layers):
             fc_i = nn.Linear(self.internal_size,
                              self.internal_size)
+            if weight_norm:
+                fc_i = torch.nn.utils.weight_norm(fc_i)
             layers.append(fc_i)
             layers.append(self.act)
 
-        # Apply normalisation layers if appropriate
-        if weight_norm:
-            layers = [torch.nn.utils.weight_norm(layer)
-                      for layer in layers]
-        if layer_norm:
-            layers = [torch.nn.LayerNorm(layer) for layer in layers]
+
 
 
         fc_end = nn.Linear(self.internal_size, self.out_size)
