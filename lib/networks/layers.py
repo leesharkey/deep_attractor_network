@@ -523,7 +523,7 @@ class FC2(nn.Module):
 
         # Apply normalisation layers if appropriate
         if weight_norm:
-            layers = [torch.nn.utils.weight_norm(layer, name='weight_norm')
+            layers = [torch.nn.utils.weight_norm(layer)
                       for layer in layers]
         if layer_norm:
             layers = [torch.nn.LayerNorm(layer) for layer in layers]
