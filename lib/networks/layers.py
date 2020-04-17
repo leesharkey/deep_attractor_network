@@ -188,7 +188,8 @@ class CCTLayer(nn.Module):
 
     """
     def __init__(self, args, in_channels, out_channels, kernel_size,
-                 padding=None, only_conv=False, only_conv_t=False):
+                 padding=None, only_conv=False, only_conv_t=False,
+                 layer_norm=False, weight_norm=False):
         super().__init__()
 
         if only_conv and only_conv_t:
@@ -197,6 +198,7 @@ class CCTLayer(nn.Module):
         self.only_conv   = only_conv
         self.only_conv_t = only_conv_t
         spec_norm_reg = args.arch_dict['spec_norm_reg']
+
 
         # Define padding values
         # Padding of 0 is for when the architecture is compressing or expanding
@@ -230,6 +232,10 @@ class CCTLayer(nn.Module):
                                   padding_mode='zeros')
             if spec_norm_reg:
                 self.conv   = spectral_norm(self.conv)
+            if weight_norm:
+                self.conv = torch.nn.utils.weight_norm(self.conv)
+            if layer_norm:
+                self.conv = torch.nn.LayerNorm(self.conv)
         elif self.only_conv_t:
             self.conv_T = nn.ConvTranspose2d(in_channels=in_channels,
                                              out_channels=out_channels,
@@ -240,6 +246,10 @@ class CCTLayer(nn.Module):
                                              output_padding=self.output_pad)
             if spec_norm_reg:
                 self.conv_T = spectral_norm(self.conv_T)
+            if weight_norm:
+                self.conv_T = torch.nn.utils.weight_norm(self.conv_T)
+            if layer_norm:
+                self.conv_T = torch.nn.LayerNorm(self.conv_T)
         else:
             out_channels_half = out_channels // 2
             self.conv = nn.Conv2d(in_channels=in_channels,
@@ -258,6 +268,13 @@ class CCTLayer(nn.Module):
             if spec_norm_reg:
                 self.conv   = spectral_norm(self.conv)
                 self.conv_T = spectral_norm(self.conv_T)
+            if weight_norm:
+                self.conv = torch.nn.utils.weight_norm(self.conv)
+                self.conv_T = torch.nn.utils.weight_norm(self.conv_T)
+            if layer_norm: #TODO consider removing
+                self.conv_T = torch.nn.LayerNorm(self.conv_T)
+                self.conv = torch.nn.LayerNorm(self.conv)
+
 
     def forward(self, inp):
         if self.only_conv:
@@ -274,7 +291,8 @@ class CCTLayer(nn.Module):
 class CCTBlock(nn.Module):
     """"""
     def __init__(self, args, in_channels, out_channels, kernel_size,
-                 only_conv=False, only_conv_t=False, padding=None):
+                 only_conv=False, only_conv_t=False, padding=None,
+                 layer_norm=False, weight_norm=False):
         super().__init__()
 
         self.one_by_one_conv = nn.Conv2d(in_channels=in_channels,
@@ -289,12 +307,11 @@ class CCTBlock(nn.Module):
                                   kernel_size,
                                   padding=padding,
                                   only_conv=only_conv,
-                                  only_conv_t=only_conv_t)
+                                  only_conv_t=only_conv_t,
+                                  layer_norm=layer_norm,
+                                  weight_norm=weight_norm)
         self.act = utils.get_activation_function(args)
-        # TODO
-        #  if no batch norm
-        #  else:
-        #  put in batch norm
+
         self.block = nn.Sequential(self.one_by_one_conv,
                                    self.cct_layer,
                                    self.act)
@@ -310,7 +327,8 @@ class DenseCCTMiddle(nn.Module):
     Does not include base layer or final layer of the full DenseCCTBlock"""
 
     def __init__(self, args, in_channels, growth_rate, num_layers,
-                 kernel_size, only_conv=False, only_conv_t=False,):
+                 kernel_size, only_conv=False, only_conv_t=False,
+                 layer_norm=False, weight_norm=False):
         super().__init__()
         self.cctb_blocks = nn.ModuleList([])
         for i in range(num_layers):
@@ -320,7 +338,9 @@ class DenseCCTMiddle(nn.Module):
                             out_channels=growth_rate,
                             kernel_size=kernel_size,
                             only_conv=only_conv,
-                            only_conv_t=only_conv_t,)
+                            only_conv_t=only_conv_t,
+                            layer_norm=layer_norm,
+                            weight_norm=weight_norm)
             self.cctb_blocks.append(cctb)
     def forward(self, inp):
         outs = [inp]
@@ -343,19 +363,19 @@ class DenseCCTBlock(nn.Module):
 
     Does not include base layer or final layer of the full DenseCCTBlock"""
 
-    def __init__(self, args, state_layer_idx):
+    def __init__(self, args, state_layer_idx, layer_norm=False,
+                 weight_norm=False):
         super().__init__()
         self.args = args
         base_ch      = args.arch_dict['num_ch_base']
         growth_rate  = args.arch_dict['growth_rate']
         num_layers   = args.arch_dict['mod_num_lyr_dict'][state_layer_idx]
-        inp_idxs     = args.arch_dict['mod_connect_dict'][state_layer_idx]
         cct_statuses = args.arch_dict['mod_cct_status_dict'][state_layer_idx]
         base_kern_pads = args.arch_dict['base_kern_pad_dict'][state_layer_idx]
         kern = args.arch_dict['main_kern_dict'][state_layer_idx]
         out_shape    = args.state_sizes[state_layer_idx]
 
-        # Throw away info for FC nets
+        # Throw away info for FC nets, since we're only making convs here
         inp_idxs         = args.arch_dict['mod_connect_dict'][state_layer_idx]
         inp_state_shapes = [self.args.state_sizes[j] for j in inp_idxs]
         inp_state_shapes = [ii for (ii, cct_s) in zip(inp_state_shapes, cct_statuses) if cct_s != 3]
@@ -368,7 +388,12 @@ class DenseCCTBlock(nn.Module):
 
         # Makes the base CCTLayers
         self.base_cctls = nn.ModuleList([])
-        #TODO if these aren't the same length, raise an issue.
+        if not len(cct_statuses)==len(inp_state_shapes) or not \
+            len(inp_state_shapes)==len(base_kern_pads):
+            raise ValueError("cct_statuses, inp_state_shapes, and " +
+                             "base_kern_pads must be the same length. Check " +
+                             "that the architecture dictionary defines these "+
+                             "correctly.")
         for (cct_status, shape, kp) in zip(cct_statuses,
                                            inp_state_shapes,
                                            base_kern_pads):
@@ -386,9 +411,11 @@ class DenseCCTBlock(nn.Module):
                                           kernel_size=kp[0],
                                           padding = kp[1],
                                           only_conv = only_conv,
-                                          only_conv_t = only_conv_t),
+                                          only_conv_t = only_conv_t,
+                                          layer_norm=layer_norm,
+                                          weight_norm=weight_norm),
                                  Interpolate(out_shape[2:],
-                                             mode='nearest'),#newsince20200408
+                                             mode='nearest'),
                                  self.act)
             self.base_cctls.append(cctl)
 
@@ -425,7 +452,9 @@ class DenseCCTBlock(nn.Module):
                                    num_layers=num_layers,
                                    kernel_size=kern,
                                    only_conv=only_conv,
-                                   only_conv_t=only_conv_t)
+                                   only_conv_t=only_conv_t,
+                                   layer_norm=layer_norm,
+                                   weight_norm=weight_norm)
             final_1x1_conv = nn.Conv2d(in_channels=num_out_ch,
                                        out_channels=out_shape[1],
                                        kernel_size=1,
@@ -444,32 +473,26 @@ class DenseCCTBlock(nn.Module):
                                   in_channels=base_ch,
                                   out_channels=out_shape[1],
                                   kernel_size=kern,
-                                  only_conv=True)
+                                  only_conv=True,
+                                  layer_norm=False,
+                                  weight_norm=False)
 
             self.top_net = nn.Sequential(final_1x1_conv,
                                          final_conv)
 
 
-    def forward(self, pre_state, inps):
+    def forward(self, inps):
         outs = []
         for base_cctl, inp in zip(self.base_cctls, inps):
             out = base_cctl(inp)
             outs.append(out)
         out = torch.cat(outs, dim=1)
-        out = self.top_net(out)
-
-        # quadr_out = 0.5 * torch.einsum('ba,ba->b',
-        #                                out.view(out.shape[0], -1),
-        #                                pre_state.view(pre_state.shape[0],-1))
-        out = torch.einsum('ba,ba->ba',
-                                 out.view(out.shape[0], -1),
-                                 pre_state.view(pre_state.shape[0],-1))
-        quadr_out = out.sum(dim=1) #almost identical outputs with some differences for unknown numerical reasons
-
-        return quadr_out, out
+        pre_quad_out = self.top_net(out)
+        return pre_quad_out
 
 class FC2(nn.Module):
-    def __init__(self, args, state_layer_idx):
+    def __init__(self, args, state_layer_idx, layer_norm=False,
+                 weight_norm=False):
         super().__init__()
         self.args = args
         self.act = utils.get_activation_function(args)
@@ -497,18 +520,24 @@ class FC2(nn.Module):
                              self.internal_size)
             layers.append(fc_i)
             layers.append(self.act)
+
+        # Apply normalisation layers if appropriate
+        if weight_norm:
+            layers = [torch.nn.utils.weight_norm(layer, name='weight_norm')
+                      for layer in layers]
+        if layer_norm:
+            layers = [torch.nn.LayerNorm(layer) for layer in layers]
+
+
         fc_end = nn.Linear(self.internal_size, self.out_size)
         layers.append(fc_end)
         self.net = nn.Sequential(*layers)
 
-    def forward(self, pre_states, actv_post_states, class_id=None): #I think I might have misnamed the pre and post states.
-        inputs = actv_post_states
+    def forward(self, inputs, class_id=None): #I think I might have misnamed the pre and post states.
         reshaped_inps = [inp.view(inp.shape[0], -1) for inp in inputs]
         inputs = torch.cat(reshaped_inps, dim=1)
-        out = self.net(inputs)
-        quadr_out = 0.5 * torch.einsum('ba,ba->b', out,
-                                     pre_states.view(pre_states.shape[0], -1))
-        return quadr_out, out
+        pre_quad_out = self.net(inputs)
+        return pre_quad_out
 
 class ContainerFCandDenseCCTBlock(nn.Module):
     """
@@ -516,46 +545,55 @@ class ContainerFCandDenseCCTBlock(nn.Module):
     DenseCCTBlock and FC network if both are indicated.
     """
 
-    def __init__(self, args, state_layer_idx):
+    def __init__(self, args, state_layer_idx, layer_norm=False,
+                 weight_norm=False):
         super().__init__()
         self.args = args
 
         inp_idxs     = args.arch_dict['mod_connect_dict'][state_layer_idx]
         self.cct_statuses = args.arch_dict['mod_cct_status_dict'][state_layer_idx]
         if 0 in self.cct_statuses or 1 in self.cct_statuses or 2 in self.cct_statuses:
-            self.densecctblock = DenseCCTBlock(args, state_layer_idx)
+            self.densecctblock = DenseCCTBlock(args, state_layer_idx,
+                                               layer_norm=layer_norm,
+                                               weight_norm=weight_norm)
         else:
             self.densecctblock = None
         if 3 in self.cct_statuses:
-            self.fc_net = FC2(args, state_layer_idx)
+            self.fc_net = FC2(args, state_layer_idx,
+                              layer_norm=layer_norm,
+                              weight_norm=weight_norm)
         else:
             self.fc_net = None
 
-    def forward(self, pre_state, inps):
-        #split inputs
-        conv_inps = [inp for (inp, cct_s) in zip(inps, self.cct_statuses) if cct_s != 3]
-        fc_inps = [inp for (inp, cct_s) in zip(inps, self.cct_statuses) if cct_s == 3]
-        quadr_outs = []
-        outs = []
+    def forward(self, state, inps):
+
+        full_pre_quad_outs = []
         if self.densecctblock is not None:
-            quadr_out, out = self.densecctblock(pre_state, conv_inps)
-            quadr_outs.append(quadr_out)
-            outs.append(out)
+            conv_inps = [inp for (inp, cct_s) in zip(inps, self.cct_statuses)
+                         if cct_s != 3]
+            full_pre_quad_out = self.densecctblock(conv_inps)
+            full_pre_quad_out = full_pre_quad_out.view(state.shape[0], -1)
+            full_pre_quad_outs.append(full_pre_quad_out)
         if self.fc_net is not None:
-            quadr_out, out = self.fc_net(pre_state, fc_inps)
-            quadr_outs.append(quadr_out)
-            outs.append(out)
+            fc_inps = [inp for (inp, cct_s) in zip(inps, self.cct_statuses) if
+                       cct_s == 3]
+            full_pre_quad_out = self.fc_net(fc_inps)
+            full_pre_quad_outs.append(full_pre_quad_out)
 
-        quadr_outs = torch.stack(quadr_outs)
-        outs = torch.stack(outs)
+        full_pre_quad_outs = torch.stack(full_pre_quad_outs)
+        full_pre_quad_out  = torch.sum(full_pre_quad_outs, dim=0)
 
-        quadr_out = torch.sum(quadr_outs, dim=0)
-        out       = torch.sum(outs, dim=0)
+        # Make the prequad terms into quadratic terms
+        full_quadr_out = 0.5 * torch.mul(full_pre_quad_out, # elementwise mult
+                                         state.view(state.shape[0], -1))
 
+        # Reshape to size of state layer
+        full_quadr_out    = full_quadr_out.view(state.shape)
+        full_pre_quad_out = full_pre_quad_out.view(state.shape)
 
         #quadr_out = out.sum(dim=1) #almost identical outputs with some differences for unknown numerical reasons
 
-        return quadr_out, out
+        return full_quadr_out, full_pre_quad_out
 
 
 

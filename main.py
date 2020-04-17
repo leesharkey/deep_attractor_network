@@ -2936,6 +2936,14 @@ def main():
                         help='Learning rate to pass to the Adam optimizer ' +
                              'used to train the InitializerNetwork. Default: ' +
                              '%(default)s.')
+    tgroup.add_argument('--initter_network_layer_norm', action='store_true',
+                        help='Puts layer normalization on the layers of the initter network'+
+                             'Default: %(default)s.') #TODO consider removing
+    parser.set_defaults(initter_network_layer_norm=False)
+    tgroup.add_argument('--initter_network_weight_norm', action='store_true',
+                        help='Puts weight normalization on the layers of the inittier network'+
+                             'Default: %(default)s.')
+    parser.set_defaults(initter_network_weight_norm=False)
     tgroup.add_argument('--pretrain_initializer', action='store_true',
                         help='If true, trains the feedforward initializer '+
                              'for a given number of steps before the training '
@@ -3035,6 +3043,11 @@ def main():
                              'final layer of the quadratic nets in the DAN. ' +
                              'Default: %(default)s.')
     parser.set_defaults(no_end_layer_activation=False)
+    ngroup.add_argument('--model_weight_norm', action='store_true',
+                        help='If true, weight normalization is placed on ' +
+                             'the quadratic networks of the DAN. ' +
+                             'Default: %(default)s.')
+    parser.set_defaults(model_weight_norm=False)
 
     vgroup = parser.add_argument_group('Visualization options')
     vgroup.add_argument('--viz', action='store_true',

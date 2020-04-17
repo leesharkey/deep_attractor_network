@@ -175,7 +175,8 @@ class InitializerNetwork_first_version(torch.nn.Module):
 
 
 class InitializerNetwork(torch.nn.Module):
-    def __init__(self, args, writer, device):
+    def __init__(self, args, writer, device, layer_norm=False,
+                 weight_norm=False):
         super(InitializerNetwork, self).__init__()
         self.args = args
         self.writer = writer
@@ -188,8 +189,8 @@ class InitializerNetwork(torch.nn.Module):
         self.num_ch = self.args.arch_dict['num_ch_initter']
         #self.encs = nn.ModuleList([])
         self.sides = nn.ModuleList([])
-        self.growth_rate = 16
-        self.num_layers_dense = len(self.output_sizes)
+        self.growth_rate = self.num_ch #was 16
+        self.num_layers_dense = len(self.output_sizes) + 2
 
         # Define the activation functions for the network and the state vars
         sigmoid = torch.nn.Sigmoid()
@@ -202,11 +203,13 @@ class InitializerNetwork(torch.nn.Module):
             self.initter_states_act = torch.nn.LeakyReLU()
 
         # Define the encoder
-        self.enc = layers.DenseCCTMiddle(args, #TODO batchnorm option
+        self.enc = layers.DenseCCTMiddle(args,
                                          in_channels=self.in_channels,
                                          growth_rate=self.growth_rate,
                                          num_layers=self.num_layers_dense,
-                                         kernel_size=7)
+                                         kernel_size=7,
+                                         layer_norm=layer_norm,
+                                         weight_norm=weight_norm)
         ch_out = self.in_channels + (self.num_layers_dense * self.growth_rate)
 
 
@@ -246,7 +249,9 @@ class InitializerNetwork(torch.nn.Module):
                                                                 sz[1]*2),
                                                kernel_size=k1,
                                                padding=p1,
-                                               only_conv=step_down1),
+                                               only_conv=step_down1,
+                                               layer_norm=layer_norm,
+                                               weight_norm=weight_norm),
                               layers.Interpolate(size=sz[2:],
                                                  mode='nearest'),
                               layers.CCTBlock(args,
@@ -255,7 +260,9 @@ class InitializerNetwork(torch.nn.Module):
                                               out_channels=max(self.num_ch,
                                                                sz[1]),
                                               kernel_size=7,
-                                              padding=3),
+                                              padding=3,
+                                              layer_norm=layer_norm,
+                                              weight_norm=weight_norm),
                               nn.Conv2d(in_channels=max(self.num_ch, sz[1]),
                                         out_channels=sz[1],
                                         kernel_size=1,

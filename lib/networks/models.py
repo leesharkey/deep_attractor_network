@@ -361,7 +361,8 @@ class DeepAttractorNetwork(BaseModel):
 
 #####################################################
 class DeepAttractorNetworkTakeTwo(BaseModel):
-    """Defines the Deep Attractor Network of the second kind(Sharkey 2019)
+    """Defines the Deep Attractor Network of the second kind(Sharkey 2019) #TODO change doc strings
+    # TODO change name of DAN to NRF
 
     The network is a generalisation of the vector field network used in
     Scellier et al. (2018) relaxation of the continuous Hopfield-like network
@@ -380,7 +381,8 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
         # Define the networks that output the quadratic terms
         self.quadratic_nets = nn.ModuleList([])
         for i in range(len(self.args.state_sizes)):
-            net = ContainerFCandDenseCCTBlock(args, i)
+            net = ContainerFCandDenseCCTBlock(
+                    args, i, weight_norm=self.args.model_weight_norm)
             self.quadratic_nets.append(net)
 
     def forward(self, states, class_id=None, step=None):
@@ -389,8 +391,8 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
         # Squared norm
         sq_terms = []
         full_sq_terms = []
-        for i, layer in enumerate(states):
-            full_sq_term = 0.5 * (layer.view(layer.shape[0], -1) ** 2)
+        for i, state in enumerate(states):
+            full_sq_term = 0.5 * (state.view(state.shape[0], -1) ** 2)
             sq_term = full_sq_term.sum()
 
             full_sq_terms.append(full_sq_term)
@@ -402,48 +404,50 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
         lin_terms = []
         full_lin_terms = []
         for i, (layer, bias) in enumerate(zip(states, self.biases)):
-            full_lin_term = - torch.mul(bias.weight, layer.view(layer.shape[0], -1))
-            #full_lin_term = bias.weight * layer.view(layer.shape[0],-1)
-            #lin_term = bias(self.st_act(layer.view(layer.shape[0], -1))).sum() #in case of any numerical instab
+            full_lin_term = torch.mul(bias.weight, layer.view(layer.shape[0], -1))
+            full_lin_term = -full_lin_term
             full_lin_terms.append(full_lin_term)
             lin_terms.append(full_lin_term.sum())
-        lin_term = - sum(lin_terms)
+        lin_term = sum(lin_terms)
         #print("lt: " + str(lin_term==sum([lt.sum() for lt in full_lin_terms])))
 
         # Quadratic terms
-        quadr_outs = []
-        outs = []
+        full_quadr_outs = []
+        full_pre_quadr_outs = []
         for i, (pre_state, net) in enumerate(
                 zip(states, self.quadratic_nets)):
             post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
             pos_inp_states = [states[j] for j in post_inp_idxs]
             pos_inp_states = [self.st_act(state)
                               for state in pos_inp_states]
-            quadr_out, full_out = net(pre_state, pos_inp_states)
-            quadr_outs.append(quadr_out)
-            outs.append(-full_out)
+            full_quadr_out, full_pre_quadr_out = net(pre_state, pos_inp_states)
+            full_quadr_out     = -full_quadr_out #minus
+            full_pre_quadr_out = -full_pre_quadr_out
+            full_quadr_outs.append(full_quadr_out)
+            full_pre_quadr_outs.append(full_pre_quadr_out)
 
-        quadratic_term = - sum(sum(quadr_outs))  # Note the minus here
-        #print("qt: " + str(quadratic_term==sum([qt.sum() for qt in outs])))
+        quadratic_term = sum([fqo.sum() for fqo in full_quadr_outs])
 
-        full_energies = [sq+qt+lt for sq, qt, lt in zip(full_sq_terms,
-                                                             outs,
-                                                             full_lin_terms)]
-
-        if self.args.energy_scaling:
-            if self.args.energy_scaling_noise:
-                self.energy_masks = \
-                    [mask + torch.randn_like(
-                        mask) * self.args.energy_scaling_noise_var
-                     for mask in self.energy_masks]
-            for i, (mask, full_energy) in enumerate(zip(self.energy_masks, full_energies)):
-                full_energies[i] = full_energy * mask.view(mask.shape[0], -1)
-
+        #print("qt: " + str(quadratic_term == sum([qt.sum() for qt in full_quadr_outs])))
 
         # Get the final energy
         energy = sq_nrm + lin_term + quadratic_term
 
-        return energy, outs, full_energies
+        #Full version
+        full_energies = [sq + qt.view(qt.shape[0],-1) + lt
+                         for sq, qt, lt in zip(full_sq_terms,
+                                               full_quadr_outs,
+                                               full_lin_terms)]
+        if self.args.energy_scaling:
+            if self.args.energy_scaling_noise:
+                self.energy_masks = \
+                    [mask + (torch.randn_like(mask) * \
+                             self.args.energy_scaling_noise_var)
+                     for mask in self.energy_masks]
+            for i, (mask, full_energy) in enumerate(zip(self.energy_masks, full_energies)):
+                full_energies[i] = full_energy * mask.view(mask.shape[0], -1)
+
+        return energy, full_pre_quadr_outs, full_energies
 
 
 

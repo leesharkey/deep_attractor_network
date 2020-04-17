@@ -37,7 +37,9 @@ class Manager():
 
         # Load initializer network (initter)
         if args.initializer == 'ff_init':
-            self.initter = initializer.InitializerNetwork(args, writer, device)
+            self.initter = initializer.InitializerNetwork(args, writer, device,
+                              layer_norm=self.args.initter_network_layer_norm,
+                                weight_norm=self.args.initter_network_weight_norm)
             self.initter.to(device)
         else:
             self.initter = None
@@ -593,7 +595,7 @@ class VisualizationManager(Manager):
 
         self.viz_batch_sizes = self.calc_viz_batch_sizes()
         self.reset_opt_K_its = True
-        self.reset_freq = 100
+        self.reset_freq = 50
         self.energy_scaler = 1.0
         self.one_or_zero = 1.0
         for i, s in enumerate(self.args.state_sizes):
@@ -608,10 +610,7 @@ class VisualizationManager(Manager):
         elif self.args.viz_type == 'channels':
             batch_sizes = []
             for size in self.args.state_sizes:
-                if len(size) == 4:
-                    batch_sizes.append(size[1])
-                if len(size) == 2:
-                    batch_sizes.append(size[1])
+                batch_sizes.append(size[1])
         else:
             batch_sizes = None
             ValueError("Invalid CLI argument 'viz type'.")
@@ -622,11 +621,10 @@ class VisualizationManager(Manager):
         self.model.batch_size = self.viz_batch_sizes[sl_idx]
         new_state_sizes = []
         for size in self.args.state_sizes:
-            if len(size) == 4:
-                new_state_sizes += [[self.viz_batch_sizes[sl_idx],
-                                   size[1],
-                                   size[2],
-                                   size[3]]]
+            new_state_sizes += [[self.viz_batch_sizes[sl_idx],
+                               size[1],
+                               size[2],
+                               size[3]]]
         self.args.state_sizes = new_state_sizes
         self.model.args.state_sizes = new_state_sizes
 
@@ -667,17 +665,16 @@ class VisualizationManager(Manager):
             self.visualization_phase()
         elif self.args.viz_type == 'channels':
             for state_layer_idx, size in enumerate(self.args.state_sizes[0:]):#, start=1):Lee
-                if len(size) == 4:
-                    print("Visualizing channels in state layer %s" % \
-                          (state_layer_idx))
-                    self.update_state_size_bs(state_layer_idx)
-                    self.noises = lib.utils.generate_random_states(
-                        self.args.state_sizes,
-                        self.device)
-                    clamp_array = self.calc_clamp_array_conv(state_layer_idx, self.one_or_zero)
-                    self.visualization_phase(state_layer_idx,
-                                             channel_idx=None,
-                                             clamp_array=clamp_array)
+                print("Visualizing channels in state layer %s" % \
+                      (state_layer_idx))
+                self.update_state_size_bs(state_layer_idx)
+                self.noises = lib.utils.generate_random_states(
+                    self.args.state_sizes,
+                    self.device)
+                clamp_array = self.calc_clamp_array_conv(state_layer_idx, self.one_or_zero)
+                self.visualization_phase(state_layer_idx,
+                                         channel_idx=None,
+                                         clamp_array=clamp_array)
 
     def visualization_phase(self, state_layer_idx=0, channel_idx=None,
                             clamp_array=None):
@@ -715,7 +712,7 @@ class VisualizationManager(Manager):
                     ch_str = 'fc' + '_'
                 elif len(size) == 4:
                     nrow = size[2]
-                    if channel_idx is None:
+                    if channel_idx is None: #TODO figure out what channel index is for
                         ch_str = ''
                     else:
                         ch_str = str(channel_idx) + '_'
@@ -731,8 +728,8 @@ class VisualizationManager(Manager):
             self.global_step += 1
 
         # Stop calculting grads w.r.t. images
-        for neg_state in states:
-            neg_state.detach_()
+        for state in states:
+            state.detach_()
 
         return states, id
 
@@ -748,8 +745,8 @@ class VisualizationManager(Manager):
 
         if self.args.viz_type == 'standard':
             # Take gradient wrt states (before addition of noise)
-            total_energy.backward() #total_energies.backward()
-
+            #total_energy.backward() #
+            total_energies.backward()
         elif self.args.viz_type == 'channels':
             # Reshape energies
             energies = [enrg.view(state.shape) for enrg, state in zip(energies, states)]
