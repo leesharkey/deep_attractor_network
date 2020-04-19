@@ -597,7 +597,7 @@ class VisualizationManager(Manager):
         self.viz_batch_sizes = self.calc_viz_batch_sizes()
         self.reset_opt_K_its = True
         self.reset_freq = 50
-        self.energy_scaler = 1.0
+        self.energy_scaler = 10.0
         self.one_or_zero = 1.0
         for i, s in enumerate(self.args.state_sizes):
             vars(self.args)['state_sizes'][i][0] = 128

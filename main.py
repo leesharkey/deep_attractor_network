@@ -3147,7 +3147,7 @@ def main():
     ngroup.add_argument('--no_end_layer_activation', action='store_true',
                         help='If true, there is no activation place on the ' +
                              'final layer of the quadratic nets in the DAN. ' +
-                             'Default: %(default)s.')
+                             'Default: %(default)s.') #For old DAN
     parser.set_defaults(no_end_layer_activation=False)
     ngroup.add_argument('--model_weight_norm', action='store_true',
                         help='If true, weight normalization is placed on ' +
