@@ -115,10 +115,10 @@ class TrainingManager(Manager):
         self.pos_short_term_history = []
         self.pos_history = []
         self.neg_history = []
-        self.max_history_len = 5000
-        self.mean_neg_pos_margin = 5000
-        self.neg_it_schedule_cooldown = 0
-        self.cooldown_len = 10 #epochs
+        self.max_history_len = 200
+        self.mean_neg_pos_margin = 200
+        self.neg_it_schedule_cooldown = 0  # Always set this to 0
+        self.cooldown_len = 5 #epochs
         self.latest_pos_enrg = None
         self.latest_neg_enrg = None
         self.num_it_neg_mean = self.args.num_it_neg
@@ -152,8 +152,9 @@ class TrainingManager(Manager):
                 if self.batch_num % self.args.img_logging_interval == 0:
                     self.log_images(pos_img, pos_states, neg_states)
 
-                self.save_energies_to_histories()
-                self.log_mean_energy_histories()
+                if self.epoch > 1:
+                    self.save_energies_to_histories()
+                    self.log_mean_energy_histories()
 
                 # Save network(s) and settings
                 if self.batch_num % self.args.model_save_interval == 0:
@@ -531,11 +532,11 @@ class TrainingManager(Manager):
         """Every training iteration (i.e. every positive-negative phase pair)
          record the mean negative and positive energies in the histories.
         """
-        if len(self.pos_history) > self.max_history_len and self.epoch > 1:
+        if len(self.pos_history) > self.max_history_len:
             self.pos_history.pop(0)
         self.pos_history.append(self.latest_pos_enrg)
 
-        if len(self.neg_history) > self.max_history_len and self.epoch > 1:
+        if len(self.neg_history) > self.max_history_len:
             self.neg_history.pop(0)
         self.neg_history.append(self.latest_neg_enrg)
 
@@ -569,7 +570,7 @@ class TrainingManager(Manager):
             mean_pos = sum(self.pos_history)/len(self.pos_history)
             mean_neg = sum(self.neg_history)/len(self.neg_history)
             if mean_neg > mean_pos + self.mean_neg_pos_margin \
-                    and self.epoch > 10: # so never updates before 11th epoch
+                    and self.epoch > 5: # so never updates before 6th epoch
 
                 # Scale up num it neg mean
                 self.num_it_neg_mean = int(self.num_it_neg_mean * 1.25)

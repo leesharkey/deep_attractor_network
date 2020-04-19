@@ -14,6 +14,24 @@ def calc_enrg_masks(args):
     print(m)
     return m
 
+def dict_len_check(args):
+    # check the dicts are the right len
+    num_layers = len(args.state_sizes)
+    for l in range(num_layers):
+        inps           = args.arch_dict['mod_connect_dict'][l]
+        cct_statuses   = args.arch_dict['mod_cct_status_dict'][l]
+        base_kern_pads = args.arch_dict['base_kern_pad_dict'][l]
+
+        if not len(cct_statuses)==len(inps) or not \
+            len(inps)==len(base_kern_pads):
+            str1 = "Layer %i architecture dictionaries invalid. " % l
+            raise ValueError(str1 +
+                             "cct_statuses, inp_state_shapes, and " +
+                             "base_kern_pads must be the same length. Check " +
+                             "that the architecture dictionary defines these "+
+                             "correctly.")
+
+
 def finalize_args(parser):
 
     args = parser.parse_args()
@@ -2767,8 +2785,8 @@ def finalize_args(parser):
                                          [args.batch_size, 5, 5, 5]]
             mod_connect_dict = {0: [1, 2,3,4],
                                 1: [0, 1, 2],
-                                2: [1, 2, 3],
-                                3: [2, 3, 4],
+                                2: [1, 2],
+                                3: [2, 3],
                                 4: [3]}
             mod_cct_status_dict = {0: [1, 1,1,3],  # 0 for cct, 1 for oc, 2 for oct
                                    1: [1, 1],
@@ -2801,6 +2819,51 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
+            #dict_len_check(args)
+        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_densebackw_corrected':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 10, 10],
+                                         [args.batch_size, 32, 5, 5],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2, 3, 4],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3, 4],
+                                4: [3,4]}
+            mod_cct_status_dict = {0: [1, 1, 1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 1],
+                                   2: [1, 1, 1],
+                                   3: [1, 1, 3],
+                                   4: [3,3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3], [7, 3], []],
+                                  1: [[7, 3], [7, 3], [7, 3]],
+                                  2: [[7, 3], [7, 3], [5, 3]],
+                                  3: [[7, 3], [7, 3], []],
+                                  4: [[],[]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3,
+                              4: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
         elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_bigkern':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
@@ -2843,6 +2906,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
+            dict_len_check(args)
         elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_above2all':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
@@ -2885,6 +2949,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
+            dict_len_check(args)
 
 
 
@@ -3012,7 +3077,7 @@ def main():
                              'the energy stops decreasing. ' +
                              'Default: %(default)s.')
     parser.set_defaults(truncate_pos_its=False)
-    tgroup.add_argument('--truncate_pos_its_threshold', type=int, default=20,
+    tgroup.add_argument('--truncate_pos_its_threshold', type=float, default=20.,
                         help='If true, the positive phase is cut short if ' +
                              'the energy stops decreasing. ' +
                              'Default: %(default)s.')
