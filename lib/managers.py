@@ -607,7 +607,7 @@ class VisualizationManager(Manager):
         # value of 1. I think it makes most sense to set the clamp_index1or0
         # to 1 and the clamp_value1or0 to 1.
         self.clamp_idx_one_or_zero = 1.0
-        self.clamp_value_one_or_zero = 1.0
+        self.clamp_value = 0.8
 
         for i, s in enumerate(self.args.state_sizes):
             vars(self.args)['state_sizes'][i][0] = 128
@@ -906,18 +906,18 @@ class VisualizationManager(Manager):
 
             # Clamp the state values to some chosen value
             if i == state_layer_idx:
-                if self.clamp_value_one_or_zero == 1.0:
+                if self.clamp_value == 1.0:
                     clamped_values = torch.ones_like(state.data)
                     opp_clamped_values = torch.zeros_like(state.data)
-                elif self.clamp_value_one_or_zero == 0.0:
+                elif self.clamp_value == 0.0:
                     clamped_values = torch.zeros_like(state.data)
                     opp_clamped_values = torch.ones_like(state.data)
-                elif self.clamp_value_one_or_zero not in [0.0, 1.0]:
+                elif self.clamp_value not in [0.0, 1.0]:
                     clamped_values = torch.ones_like(state.data) * \
-                                     self.clamp_value_one_or_zero
+                                     self.clamp_value
                     opp_clamped_values = torch.zeros_like(state.data)
                 else:
-                    raise ValueError("Invalid value for self.clamp_value_one_or_zero")
+                    raise ValueError("Invalid value for self.clamp_value")
 
                 state.data = torch.where(clamp_array,
                                          clamped_values,
