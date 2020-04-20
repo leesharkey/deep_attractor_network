@@ -596,7 +596,7 @@ class VisualizationManager(Manager):
 
         #self.viz_batch_sizes = self.calc_viz_batch_sizes()
         self.reset_opt_K_its = True
-        self.reset_freq = 50
+        self.reset_freq = 5000
         self.energy_scaler = 100.0
 
         # Defines what the index under investigation will be set as in the
