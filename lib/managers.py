@@ -597,7 +597,7 @@ class VisualizationManager(Manager):
         #self.viz_batch_sizes = self.calc_viz_batch_sizes()
         self.reset_opt_K_its = True
         self.reset_freq = 100
-        self.energy_scaler = 100.0
+        self.energy_scaler = 1.0
 
         # Defines what the index under investigation will be set as in the
         # clamp array. If 1, and clamp_value1or0 is 1, then during
@@ -728,16 +728,16 @@ class VisualizationManager(Manager):
                 size = self.args.state_sizes[state_layer_idx]
                 nrow = int(round(np.sqrt(size[0])))
 
-                if clamp_array is None:
+                if self.args.viz_type is 'standard':
                     # Clamp array should be none during 'standard' viz
                     ch_str = ''
                 else:
-                    ch_str = str(channel_idx) + '_'
+                    ch_str = '_ch' + str(channel_idx) + '_'
 
                 utils.save_image(states[0].detach().to('cpu'),
                                  os.path.join(self.sample_log_dir,
                                               'lyr' + str(state_layer_idx) +
-                                              '_ch' + ch_str +
+                                              ch_str +
                                               str(k).zfill(6)      + '.png'),
                                  nrow=16,
                                  normalize=True,
