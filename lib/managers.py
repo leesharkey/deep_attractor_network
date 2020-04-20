@@ -594,7 +594,6 @@ class VisualizationManager(Manager):
         super().__init__(args, model, data, buffer, writer, device,
                          sample_log_dir)
 
-        #self.viz_batch_sizes = self.calc_viz_batch_sizes()
         self.reset_opt_K_its = True
         self.reset_freq = 100
         self.energy_scaler = 0.5
@@ -611,33 +610,6 @@ class VisualizationManager(Manager):
 
         for i, s in enumerate(self.args.state_sizes):
             vars(self.args)['state_sizes'][i][0] = 128
-
-    # def calc_viz_batch_sizes(self):
-    #     """The batch size is now the number of pixels in the image, and
-    #     there is only one channel because we only visualize one at a time."""
-    #
-    #     if self.args.viz_type == 'standard':
-    #         batch_sizes = self.args.state_sizes
-    #     elif self.args.viz_type in ['channels_energy', 'channels_state']:
-    #         batch_sizes = []
-    #         for size in self.args.state_sizes:
-    #             batch_sizes.append(size[1])
-    #     else:
-    #         batch_sizes = None
-    #         ValueError("Invalid CLI argument 'viz type'.")
-    #
-    #     return batch_sizes
-
-    # def update_state_size_bs(self, sl_idx):
-    #     self.model.batch_size = self.viz_batch_sizes[sl_idx]
-    #     new_state_sizes = []
-    #     for size in self.args.state_sizes:
-    #         new_state_sizes += [[self.viz_batch_sizes[sl_idx],
-    #                            size[1],
-    #                            size[2],
-    #                            size[3]]]
-    #     self.args.state_sizes = new_state_sizes
-    #     self.model.args.state_sizes = new_state_sizes
 
     def calc_clamp_array_conv(self, state_layer_idx=None, current_ch=None):
         if state_layer_idx is not None:
@@ -660,7 +632,7 @@ class VisualizationManager(Manager):
 
         return clamp_array
 
-    def visualize(self): #TODO try this and if it fails, implement an opposite version where a channel or neuron is let free and the rest are clamped at some value ((0 or 1)
+    def visualize(self):
         """Clamps each neuron while sampling the others
 
         Goes through each of the state layers, and each of the channels a kind
@@ -816,18 +788,27 @@ class VisualizationManager(Manager):
         selected_feature_energy = torch.where(clamp_array,
                                               feature_energy,
                                               torch.zeros_like(feature_energy))
-        selected_feature_energy = -selected_feature_energy.sum()#should not be minus
+        selected_feature_energy = selected_feature_energy.sum()
 
         # Take gradient wrt states and then zero them
         total_energies.backward(retain_graph=True)
+        stategrads = [st.grad.data for st in states]
+
+        # Reset all gradients to zero
         for s in states:
             s.grad.zero_()
 
+        # Get the gradients of the selected feature
         selected_feature_energy.backward()
 
-        # Zero the grads above the layer that we're visualizing
-        # for s in states[state_layer_idx+1:]:
-        #     s.grad.zero_()
+        # Fill in the gradients below the layer that you're currently
+        # visualizing only if the gradients would be 0 otherwise.
+        for i, state in enumerate(states):
+            if torch.all(torch.eq(state.grad.data,
+                   torch.zeros_like(state.grad.data))) and i < state_layer_idx:
+
+                state.grad.data = stategrads[i]
+
 
         # The rest of the sampler step function is no different from the
         # negative step used in training
@@ -932,8 +913,23 @@ class WeightVisualizationManager(Manager):
                  sample_log_dir)
         self.params = [p for p in self.model.parameters()]
         self.quad_nets = self.model.quadratic_nets
-        self.forward_net  = self.model.quadratic_nets[0]
-        self.backward_net = self.model.quadratic_nets[1]
+
+        # Get the forward network(s)
+        forward_net  = self.model.quadratic_nets[1]
+        backward_net = self.model.quadratic_nets[0]
+        self.f_net_conv = None
+        self.f_net_fc = None
+        self.b_net_conv = None
+        self.b_net_fc = None
+        if hasattr(forward_net, 'densecctblock'):
+            self.f_net_conv = forward_net.densecctblock
+        if hasattr(backward_net, 'densecctblock'):
+            self.b_net_conv = backward_net.densecctblock
+        if hasattr(forward_net, 'fc_net'):
+            self.f_net_fc = forward_net.fc_net
+        if hasattr(backward_net, 'fc_net'):
+            self.b_net_fc = backward_net.fc_net
+
         self.base_save_dir = 'exps/weight_visualizations'
         self.save_dir = self.base_save_dir + '/' + self.model.model_name
 
@@ -944,7 +940,9 @@ class WeightVisualizationManager(Manager):
 
 
     def visualize_base_weights(self):
-        nets = [('forward', self.forward_net), ('backward', self.backward_net)]
+        lbls = ['densecctblock']
+        nets = [self.f_net_conv]
+        nets = [(lbl, net) for lbl, net in zip(lbls, nets) if net is not None]
         for lbl, net in nets:
             print("Visualizing %s" % lbl)
             self.visualize_cctblock(net, nrow=8, label=lbl)
@@ -960,6 +958,7 @@ class WeightVisualizationManager(Manager):
         # Get the conv and/or transposed conv weight tensor
         if block.base_cctls[0][0].only_conv:
             conv = block.base_cctls[0][0].conv
+            top = block.top_net
             weight = conv.weight
             bias = conv.bias
 
@@ -970,6 +969,7 @@ class WeightVisualizationManager(Manager):
                 torch.prod(torch.tensor(weight.shape[1:])))
             bias = torch.cat(bias, dim=0)
             bias = bias.view(weight.shape)
+            bias = bias.to('cpu')
             stdzd_biases = self.standardize(bias)
 
             w_b = weight + bias
