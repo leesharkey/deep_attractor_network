@@ -610,7 +610,7 @@ class VisualizationManager(Manager):
         self.clamp_value_one_or_zero = 1.0
 
         for i, s in enumerate(self.args.state_sizes):
-            vars(self.args)['state_sizes'][i][0] = 128
+            vars(self.args)['state_sizes'][i][0] = 8
 
     # def calc_viz_batch_sizes(self):
     #     """The batch size is now the number of pixels in the image, and
