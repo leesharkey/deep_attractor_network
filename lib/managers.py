@@ -596,7 +596,7 @@ class VisualizationManager(Manager):
 
         #self.viz_batch_sizes = self.calc_viz_batch_sizes()
         self.reset_opt_K_its = True
-        self.reset_freq = 5000
+        self.reset_freq = 100
         self.energy_scaler = 100.0
 
         # Defines what the index under investigation will be set as in the
@@ -610,7 +610,7 @@ class VisualizationManager(Manager):
         self.clamp_value_one_or_zero = 1.0
 
         for i, s in enumerate(self.args.state_sizes):
-            vars(self.args)['state_sizes'][i][0] = 8
+            vars(self.args)['state_sizes'][i][0] = 128
 
     # def calc_viz_batch_sizes(self):
     #     """The batch size is now the number of pixels in the image, and
