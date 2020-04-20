@@ -656,7 +656,7 @@ class VisualizationManager(Manager):
 
         if self.args.viz_type in ['channels_energy', 'channels_state']:
             # In batch i, sets the ith channel to 1.0
-            clamp_array[current_ch,current_ch,:,:] = self.clamp_idx_one_or_zero
+            clamp_array[:,current_ch,:,:] = self.clamp_idx_one_or_zero
 
         return clamp_array
 
