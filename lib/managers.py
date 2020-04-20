@@ -760,31 +760,9 @@ class VisualizationManager(Manager):
         total_energy = energy.sum()
         total_energies = sum([e.sum() for e in energies])
 
-        if self.args.viz_type == 'standard':
-            # Take gradient wrt states (before addition of noise)
-            #total_energy.backward() #
-            total_energies.backward()
-        elif self.args.viz_type == 'channels_energy':
-            # Reshape energies
-            energies = [enrg.view(state.shape) for enrg, state in zip(energies, states)]
-
-            # Get the energy of the specific neuron you want to viz and get the
-            # gradient that maximises its value
-            feature_energy = energies[state_layer_idx] # -1 because energies is 0-indexed while the layers we want to visualize are 1-indexed
-            feature_energy = feature_energy \
-                             * self.energy_scaler # Scales up the energy of the neuron/channel that we want to viz
-            selected_feature_energy = torch.where(clamp_array,
-                                                  feature_energy,
-                                                  torch.zeros_like(feature_energy))
-            selected_feature_energy = selected_feature_energy.sum() #Unusre whether this should be minus or not
-
-            # Take gradient wrt states (before addition of noise)
-            selected_feature_energy.backward(retain_graph=True)
-            total_energies.backward()
-
-            # Zero the grads above the layer that we're visualizing
-            # for s in states[state_layer_idx+1:]:
-            #     s.grad.zero_()
+        # Take gradient wrt states (before addition of noise)
+        #total_energy.backward() #
+        total_energies.backward()
 
         # The rest of the sampler step function is no different from the
         # negative step used in training
@@ -838,11 +816,14 @@ class VisualizationManager(Manager):
         selected_feature_energy = torch.where(clamp_array,
                                               feature_energy,
                                               torch.zeros_like(feature_energy))
-        selected_feature_energy = -selected_feature_energy.sum()
+        selected_feature_energy = selected_feature_energy.sum()
 
-        # Take gradient wrt states (before addition of noise)
-        selected_feature_energy.backward(retain_graph=True)
-        total_energies.backward()
+        # Take gradient wrt states and then zero them
+        total_energies.backward(retain_graph=True)
+        for s in states:
+            s.grad.zero_()
+
+        selected_feature_energy.backward()
 
         # Zero the grads above the layer that we're visualizing
         # for s in states[state_layer_idx+1:]:
