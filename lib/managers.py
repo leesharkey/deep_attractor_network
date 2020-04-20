@@ -597,7 +597,7 @@ class VisualizationManager(Manager):
         #self.viz_batch_sizes = self.calc_viz_batch_sizes()
         self.reset_opt_K_its = True
         self.reset_freq = 100
-        self.energy_scaler = 1.0
+        self.energy_scaler = 0.5
 
         # Defines what the index under investigation will be set as in the
         # clamp array. If 1, and clamp_value1or0 is 1, then during
