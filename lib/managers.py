@@ -597,7 +597,7 @@ class VisualizationManager(Manager):
         #self.viz_batch_sizes = self.calc_viz_batch_sizes()
         self.reset_opt_K_its = True
         self.reset_freq = 50
-        self.energy_scaler = 10.0
+        self.energy_scaler = 100.0
 
         # Defines what the index under investigation will be set as in the
         # clamp array. If 1, and clamp_value1or0 is 1, then during
@@ -927,17 +927,20 @@ class VisualizationManager(Manager):
             if i == state_layer_idx:
                 if self.clamp_value_one_or_zero == 1.0:
                     clamped_values = torch.ones_like(state.data)
+                    opp_clamped_values = torch.zeros_like(state.data)
                 elif self.clamp_value_one_or_zero == 0.0:
-                    clamped_values = torch.ones_like(state.data)
+                    clamped_values = torch.zeros_like(state.data)
+                    opp_clamped_values = torch.ones_like(state.data)
                 elif self.clamp_value_one_or_zero not in [0.0, 1.0]:
                     clamped_values = torch.ones_like(state.data) * \
                                      self.clamp_value_one_or_zero
+                    opp_clamped_values = torch.zeros_like(state.data)
                 else:
                     raise ValueError("Invalid value for self.clamp_value_one_or_zero")
 
                 state.data = torch.where(clamp_array,
                                          clamped_values,
-                                         state.data)
+                                         opp_clamped_values)
             elif i > state_layer_idx:
                 state.data = torch.zeros_like(state.data)
 
