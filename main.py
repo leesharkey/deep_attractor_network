@@ -3325,7 +3325,7 @@ def main():
                                                   device,
                                                   sample_log_dir)
         wvm.visualize_base_weights()
-        wvm.visualize_weight_pretrained()
+        #wvm.visualize_weight_pretrained()
 
     if args.gen_exp_stim:
         esgm = managers.ExperimentalStimuliGenerationManager()

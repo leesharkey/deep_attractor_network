@@ -28,7 +28,7 @@ class Manager():
                                     betas=(0.0, 0.999))  # betas=(0.9, 0.999))
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                    step_size=1,
-                                                   gamma=0.9) #By epoch 10, lr is 35% of starting value1
+                                                   gamma=0.97)
         self.noises = lib.utils.generate_random_states(self.args.state_sizes,
                                                        self.device)
         self.global_step = 0
@@ -116,7 +116,7 @@ class TrainingManager(Manager):
         self.pos_history = []
         self.neg_history = []
         self.max_history_len = 200
-        self.mean_neg_pos_margin = 200
+        self.mean_neg_pos_margin = 0 #somewhere between -100 and 200 seems sensible  ## mean_neg > mean_pos + self.mean_neg_pos_margin
         self.neg_it_schedule_cooldown = 0  # Always set this to 0
         self.cooldown_len = 5 #epochs
         self.latest_pos_enrg = None
@@ -816,7 +816,7 @@ class VisualizationManager(Manager):
         selected_feature_energy = torch.where(clamp_array,
                                               feature_energy,
                                               torch.zeros_like(feature_energy))
-        selected_feature_energy = selected_feature_energy.sum()
+        selected_feature_energy = -selected_feature_energy.sum()#should not be minus
 
         # Take gradient wrt states and then zero them
         total_energies.backward(retain_graph=True)
