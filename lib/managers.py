@@ -941,8 +941,8 @@ class VisualizationManager(Manager):
                 state.data = torch.where(clamp_array,
                                          clamped_values,
                                          opp_clamped_values)
-            elif i > state_layer_idx:
-                state.data = torch.zeros_like(state.data)
+            # elif i > state_layer_idx:
+            #     state.data = torch.zeros_like(state.data)
 
 class WeightVisualizationManager(Manager):
     def __init__(self, args, model, data, buffer, writer, device,
