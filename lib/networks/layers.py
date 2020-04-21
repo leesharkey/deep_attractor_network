@@ -248,7 +248,7 @@ class CCTLayer(nn.Module):
                 self.conv_T = spectral_norm(self.conv_T)
             if weight_norm:
                 self.conv_T = torch.nn.utils.weight_norm(self.conv_T)
-            if layer_norm:
+            if layer_norm: #TODO fix layer norm, think you just take shape of conv. Then put in sequential.
                 self.conv_T = torch.nn.LayerNorm(self.conv_T)
         else:
             out_channels_half = out_channels // 2

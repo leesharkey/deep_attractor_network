@@ -646,7 +646,7 @@ class VisualizationManager(Manager):
             clamp_array = None
             self.visualization_phase()
         elif self.args.viz_type in ['channels_energy', 'channels_state']:
-            start_layer = 1
+            start_layer = self.args.viz_start_layer
             for state_layer_idx, size in enumerate(
                     self.args.state_sizes[start_layer:], start=start_layer):
                 print("Visualizing channels in state layer %s" % \
@@ -792,7 +792,7 @@ class VisualizationManager(Manager):
 
         # Take gradient wrt states and then zero them
         total_energies.backward(retain_graph=True)
-        stategrads = [st.grad.data for st in states]
+        stategrads = [st.grad.data.clone() for st in states]
 
         # Reset all gradients to zero
         for s in states:

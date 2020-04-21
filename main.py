@@ -2963,6 +2963,10 @@ def finalize_args(parser):
 def main():
     ### Parse CLI arguments.
     parser = argparse.ArgumentParser(description='Deep Attractor Network.')
+    #TODO before github publication, put options in here for directory strings
+    # so that it's obvious where people need to put in local-dependent input.
+    # Note that you should already have instructed them to make a directory
+    # structure, so may be able to use the same strings as in your system.
     sgroup = parser.add_argument_group('Sampling options')
     sgroup.add_argument('--sampling_step_size', type=float, default=10,
                         help='The amount that the network is moves forward ' +
@@ -3186,6 +3190,10 @@ def main():
                         help='The interval at which to save images that ' +
                              'are being sampled during visualization. '+
                              'Default: %(default)s.')
+    vgroup.add_argument('--viz_start_layer', type=int, default=1,
+                        help='The state layer on which to start visualization. ' +
+                             'Default: %(default)s.')
+
 
     vgroup = parser.add_argument_group('Weight Visualization options')
     vgroup.add_argument('--weight_viz', action='store_true',
