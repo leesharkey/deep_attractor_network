@@ -1,6 +1,3 @@
-"""Based on https://github.com/rosinality/igebm-pytorch/blob/master/model.py
-which is available under an MIT OSI licence."""
-
 import torch
 from torch import nn
 import lib.utils
