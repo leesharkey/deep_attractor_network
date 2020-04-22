@@ -595,7 +595,7 @@ class VisualizationManager(Manager):
                          sample_log_dir)
 
         self.reset_opt_K_its = True
-        self.reset_freq = 100
+        self.reset_freq = 10000
         self.energy_scaler = 0.5
 
         # Defines what the index under investigation will be set as in the
