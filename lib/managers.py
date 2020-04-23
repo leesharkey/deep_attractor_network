@@ -39,7 +39,7 @@ class Manager():
         if args.initializer == 'ff_init':
             self.initter = initializer.InitializerNetwork(args, writer, device,
                               layer_norm=self.args.initter_network_layer_norm,
-                                weight_norm=self.args.initter_network_weight_norm)
+                              weight_norm=self.args.initter_network_weight_norm)
             self.initter.to(device)
         else:
             self.initter = None
@@ -147,7 +147,7 @@ class TrainingManager(Manager):
                                         pos_states,
                                         pos_id)
 
-                prev_states = pos_states  # In case pos init uses prev states
+                prev_states = [ps.clone().detach() for ps in pos_states] # In case pos init uses prev states
 
                 if self.batch_num % self.args.img_logging_interval == 0:
                     self.log_images(pos_img, pos_states, neg_states)
@@ -1167,7 +1167,7 @@ class ExperimentsManager(Manager):
 
         pos_img, pos_id = next(iter(self.data.loader)) #Gets first batch only
         image_phase_list = [pos_img]
-        self.experiment_len = 250
+        self.experiment_len = 10
         phase_idxs = [0] * self.experiment_len
         print("Experiment records dynamics when presenting a batch of CIFAR10 images")
         self.observation_phase(image_phase_list=image_phase_list,
@@ -1250,7 +1250,7 @@ class ExperimentsManager(Manager):
                      step=None):
 
         # Get total energy and energy outputs for indvdual neurons
-        energy, outs, full_enrgs = self.model(states, ids, step, obsv_mode=True)
+        energy, outs, full_enrgs = self.model(states, ids, step)
         print("Energy: " + str(energy))
         # Calculate the gradient wrt states for the Langevin step (before
         # addition of noise)
