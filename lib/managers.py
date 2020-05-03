@@ -28,7 +28,7 @@ class Manager():
                                     betas=(0.0, 0.999))  # betas=(0.9, 0.999))
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                    step_size=1,
-                                                   gamma=0.97)
+                                                   gamma=self.args.lr_decay_gamma)
         self.noises = lib.utils.generate_random_states(self.args.state_sizes,
                                                        self.device)
         self.global_step = 0
@@ -162,7 +162,7 @@ class TrainingManager(Manager):
 
                 self.batch_num += 1
 
-                if self.num_it_neg_mean > 1000:
+                if self.num_it_neg_mean > 5000:
                     stop = True
                 else:
                     stop = False
@@ -288,6 +288,8 @@ class TrainingManager(Manager):
 
         if self.args.randomize_neg_its:
             self.num_it_neg = max(1, np.random.poisson(self.num_it_neg_mean))
+        else:
+            self.num_it_neg = self.num_it_neg_mean
 
         # Negative phase sampling
         for _ in tqdm(range(self.num_it_neg)):
@@ -1152,7 +1154,17 @@ class ExperimentsManager(Manager):
             os.mkdir(self.base_save_dir)
         if not os.path.isdir(self.save_dir_model):
             os.mkdir(self.save_dir_model)
+
         self.global_step = 0
+
+        # Get base image, which is just the image with the avg pixel values of
+        # CIFAR10
+        base_image_path = 'mean_cifar10_trainingset_pixels.png'
+        base_image = Image.open(base_image_path)
+        self.base_image = \
+            torchvision.transforms.functional.to_tensor(base_image)
+        base_im_batch = [self.base_image] * 128
+        self.base_im_batch = torch.stack(base_im_batch)
 
 
     def observe_cifar_pos_phase(self):
@@ -1165,11 +1177,72 @@ class ExperimentsManager(Manager):
             if not os.path.isdir(full_save_dir):
                 os.mkdir(full_save_dir)
 
+        from lib.data import Dataset
+        # Use test set instead of train set and use fixed data batch
+        self.data = Dataset(self.args, train_set=False, shuffle=False)
         pos_img, pos_id = next(iter(self.data.loader)) #Gets first batch only
         image_phase_list = [pos_img]
-        self.experiment_len = 10
-        phase_idxs = [0] * self.experiment_len
+
+
+        # Determine how long each stim will be displayed for
+        self.phase_lens = [2]
+
+        phase_idxs = []
+        for phase, phase_len in enumerate(self.phase_lens):
+            phase_idxs.extend([phase] * phase_len)
+
         print("Experiment records dynamics when presenting a batch of CIFAR10 images")
+        self.observation_phase(image_phase_list=image_phase_list,
+                               phase_idxs=phase_idxs)
+
+    def orientations_present_single_gabor(self):
+        self.save_dir_exp = self.save_dir_model + '/' + 'orientations_present_single_gabor' + '/'
+        self.save_img = True
+        if not os.path.isdir(self.save_dir_exp):
+            os.mkdir(self.save_dir_exp)
+        for data_dir in self.data_save_dirs:
+            full_save_dir = self.save_dir_model + '/' + 'orientations_present_single_gabor' + '/' + data_dir
+            if not os.path.isdir(full_save_dir):
+                os.mkdir(full_save_dir)
+
+        from lib.data import Dataset
+        # Because the sampler burns in depending on the statistics of the input
+        # we use images from the test set to get the images for the burn in
+        # phase. Use test set instead of train set and use fixed data batch
+        self.data = Dataset(self.args, train_set=False, shuffle=False)
+        pos_img, pos_id = next(
+            iter(self.data.loader))  # Gets first batch only
+        image_phase_list = [pos_img]
+
+        # The next image is a blank image
+        image_phase_list.append(self.base_im_batch)
+
+        # Then get the experimental images
+        exp_stim_path = "data/gabor_filters/single/contrast_and_angle"
+        (_, _, filenames) = next(os.walk(exp_stim_path))
+        exp_stims = []
+        for flnm in filenames:
+            im = Image.open(os.path.join(exp_stim_path, flnm))
+            im = torchvision.transforms.functional.to_tensor(im)
+            exp_stims.append(im)
+        exp_stims = torch.stack(exp_stims) # should have generated only 128 images
+
+        # Then a gabor filter stimulus is displayed
+        image_phase_list.append(exp_stims)
+
+        # Then a blank image is displayed
+        image_phase_list.append(self.base_im_batch)
+
+        # Determine how long each stim will be displayed for
+        #self.experiment_len = 200
+        self.phase_lens = [50,500,250,1000]
+
+        phase_idxs = []
+        for phase, phase_len in enumerate(self.phase_lens):
+            phase_idxs.extend([phase] * phase_len)
+
+        print("Experiment records dynamics when presenting a batch of "+
+              "images of single gabor filters")
         self.observation_phase(image_phase_list=image_phase_list,
                                phase_idxs=phase_idxs)
 
@@ -1233,7 +1306,7 @@ class ExperimentsManager(Manager):
                                                                obs_states)
 
         # Observation phase sampling
-        for pos_it in tqdm(range(self.experiment_len)):
+        for pos_it in tqdm(range(sum(self.phase_lens))):
             obs_states[0] = image_phase_list[phase_idxs[pos_it]]
             obs_states = self.sampler_step(obs_states,
                                            ids=None,
@@ -1338,9 +1411,10 @@ class ExperimentsManager(Manager):
 
     def save_experimental_data(self, states, outs, energies, step, save_img):
         # layerwise go through states etc. and save arrays
-        for j, (state, out, enrg, opt) in enumerate(zip(states, outs,
-                                                        energies,
-                                                    self.state_optimizers)):
+        end = 2
+        for j, (state, out, enrg, opt) in enumerate(zip(states[:end], outs[:end],
+                                                        energies[:end],
+                                                    self.state_optimizers[:end])): # LEE only saving the bottom two
             if opt.state_dict()['state']: # i.e. if momentum exists isn't empty, because it's only instantiated after 1 steps I think
                 key = list(opt.state_dict()['state'].keys())[0]
                 state_mom = opt.state_dict()['state'][key]['momentum']
@@ -1360,11 +1434,13 @@ class ExperimentsManager(Manager):
             bno       = out.clone().detach().cpu().numpy()
             enrg      = enrg.clone().detach().cpu().numpy()
 
-            grad_str  = self.save_dir_exp + '/' + self.grad_strs[j] + '/' + str(step) + '.npy'
-            state_str = self.save_dir_exp + '/' + self.states_strs[j] + '/' + str(step) + '.npy'
-            bno_str   = self.save_dir_exp + '/' + self.bno_strs[j] + '/' + str(step) + '.npy'
-            enrg_str  = self.save_dir_exp + '/' + self.energy_strs[j] + '/' + str(step) + '.npy'
-            mom_str   = self.save_dir_exp + '/' + self.momenta_strs[j] + '/' + str(step) + '.npy'
+            step_str = '%.6i' % step
+
+            grad_str  = self.save_dir_exp + '/' + self.grad_strs[j] + '/' + step_str + '.npy'
+            state_str = self.save_dir_exp + '/' + self.states_strs[j] + '/' + step_str + '.npy'
+            bno_str   = self.save_dir_exp + '/' + self.bno_strs[j] + '/' + step_str + '.npy'
+            enrg_str  = self.save_dir_exp + '/' + self.energy_strs[j] + '/' + step_str + '.npy'
+            mom_str   = self.save_dir_exp + '/' + self.momenta_strs[j] + '/' + step_str + '.npy'
 
             np.save(grad_str,  grad)
             np.save(state_str, state)
@@ -1380,7 +1456,7 @@ class ExperimentsManager(Manager):
         shape = img.shape
         img_save = img.reshape(shape).detach().to('cpu')
         utils.save_image(img_save,
-                         self.save_dir_exp + '/' + str(step) + '.png',
+                         self.save_dir_exp + '/images/' + str(step) + '.png',
                          nrow=16, normalize=True, range=(0, 1))
 
     def obs_negative_phase(self):
@@ -1415,16 +1491,50 @@ class ExperimentsManager(Manager):
 
 
 class ExperimentalStimuliGenerationManager:
+    # TODO function that creates a single long bar image
     def __init__(self,
                  base_image_path='mean_cifar10_trainingset_pixels.png',
                  save_path_root='data/gabor_filters/'):
         self.nstds = 3  # Number of standard deviation sigma of bounding box
         # Get base image
+
+        if not os.path.isdir(save_path_root):
+            os.mkdir(save_path_root)
+
+        if not os.path.exists(base_image_path):
+            self.get_dataset_avg_pixels(base_image_path=base_image_path)
+
         base_image = Image.open(base_image_path)
         self.base_image = \
             torchvision.transforms.functional.to_tensor(base_image)
         self.save_path_root = save_path_root
         self.center = np.array([int(32 / 2), int(32 / 2)])
+
+    def get_dataset_avg_pixels(self, base_image_path):
+        """Create base image that is the mean pixel value for all images in
+        the training set."""
+        dataset = datasets.CIFAR10('./data',
+                                   download=True,
+                                   transform=transforms.ToTensor())
+        loader = DataLoader(dataset,
+                            batch_size=1024,
+                            shuffle=True,
+                            drop_last=False,
+                            )
+        sum_pos_state = None
+        counter = 0
+        for pos_state, pos_id in loader:
+            if sum_pos_state is None:
+                sum_pos_state = torch.sum(pos_state, dim=0)
+            else:
+                sum_pos_state += torch.sum(pos_state, dim=0)
+            counter += pos_state.shape[0]
+
+        mean_pos_state = sum_pos_state / counter
+
+        utils.save_image(mean_pos_state,
+                         base_image_path,
+                         nrow=1, normalize=True, range=(0, 1))
 
     def gabor(self, sigma, theta, Lambda, psi, gamma, contrast):
         """Gabor feature extraction."""
@@ -1519,21 +1629,48 @@ class ExperimentalStimuliGenerationManager:
 
 
         contrast_min = 0.0
-        contrast_max = 3.0
-        contrast_incr = 0.3
+        contrast_max = 2.80001
+        contrast_incr = 0.4
         angle_min = 0.0
         angle_max = np.pi * 2
-        angle_incr = (np.pi * 2) / 15
+        angle_incr = (np.pi * 2) / 16
+
+        # Make the folders to save the images in
+        folder_name1 = 'single'
+        folder_name2 = 'contrast_and_angle'
+        full_folder_name = os.path.join(self.save_path_root,
+                                        folder_name1,
+                                        folder_name2)
+
+        if not os.path.exists(full_folder_name):
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1))
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1,
+                                  folder_name2))
 
         for c in np.arange(start=contrast_min, stop=contrast_max,
                        step=contrast_incr):
             for a in np.arange(start=angle_min, stop=angle_max, step=angle_incr):
                 im = self.single_gabor_image(angle=a,
                                              contrast=c,
-                                             folder_name='single/contrast_and_angle')
+                                             folder_name=os.path.join(folder_name1,
+                                                                      folder_name2))
 
     def generate_double_gabor_dataset__loc_and_angles(self):
-        folder_name = 'double/loc_and_angles'
+        folder_name1 = 'double'
+        folder_name2 = 'loc_and_angles'
+
+        full_folder_name = os.path.join(self.save_path_root,
+                                        folder_name1,
+                                        folder_name2)
+
+        if not os.path.exists(full_folder_name):
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1))
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1,
+                                  folder_name2))
 
         angle_min = 0.0
         angle_max = np.pi * 2
@@ -1551,50 +1688,35 @@ class ExperimentalStimuliGenerationManager:
         centred_base_im = single_base_im - self.base_image
         for angle in angle_range:
             for loc in locs:
+                # Create second gabor filter
                 new_im = self.single_gabor_image(angle=angle,
                                                  loc=loc,
                                                  save_image=False)
+
+                # Combine first and second images into one
                 centred_new_im = new_im - self.base_image
                 centred_combo = centred_new_im + centred_base_im
                 new_im = centred_combo + self.base_image
 
+                # Create name of image based on attributes
                 loc_string = ''
                 for l in loc:
                     loc_string += str(l) + '-'
                 loc_string = loc_string[:-1]
                 save_string = 'gf_loc%s_th%s' % (loc_string, '%.5f' % angle)
                 save_string = os.path.join(self.save_path_root,
-                                           folder_name, save_string)
+                                           folder_name1,
+                                           folder_name2,
+                                           save_string)
                 save_string += '.png'
                 print(save_string)
+
+                # Save image
                 utils.save_image(new_im,
                                  save_string,
                                  nrow=1, normalize=True, range=(0, 1))
 
-    @staticmethod
-    def get_dataset_avg_pixels(self):
-        dataset = datasets.CIFAR10('./data',
-                                   download=True,
-                                   transform=transforms.ToTensor())
-        loader = DataLoader(dataset,
-                            batch_size=1024,
-                            shuffle=True,
-                            drop_last=False,
-                            )
-        sum_pos_state = None
-        counter = 0
-        for pos_state, pos_id in loader:
-            if sum_pos_state is None:
-                sum_pos_state = torch.sum(pos_state, dim=0)
-            else:
-                sum_pos_state += torch.sum(pos_state, dim=0)
-            counter += pos_state.shape[0]
 
-        mean_pos_state = sum_pos_state / counter
-
-        utils.save_image(mean_pos_state,
-                         'mean_cifar10_trainingset_pixels.png',
-                         nrow=1, normalize=True, range=(0, 1))
 
 
 shapes = lambda x : [y.shape for y in x]

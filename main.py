@@ -3202,6 +3202,10 @@ def main():
                              'a range of indices and the random value assigned'+
                              'to the argument will be 10 to the power of the'+
                              'float selected from the range. Options: [-3, 0.2].')
+    tgroup.add_argument('--lr_decay_gamma', type=float, default=0.97,
+                        help='The rate fo decay for the learning rate. Default: ' +
+                             '%(default)s.')
+
     tgroup.add_argument('--dataset', type=str, default="CIFAR10",
                         help='The dataset the network will be trained on.' +
                              ' Default: %(default)s.')
@@ -3519,15 +3523,33 @@ def main():
 
     if args.gen_exp_stim:
         esgm = managers.ExperimentalStimuliGenerationManager()
-        esgm.generate_double_gabor_dataset__loc_and_angles()
+        # esgm.generate_double_gabor_dataset__loc_and_angles()
         # esgm.generate_single_gabor_dataset__contrast_and_angle()
 
     if args.experiment:
+        # Re-instantiate dataset now using no randomness so that the same batch
+        # is used for all experiments
         expm = managers.ExperimentsManager(args, model, data, buffer,
                                                   writer,
                                                   device,
                                                   sample_log_dir)
-        expm.observe_cifar_pos_phase()
+        expm.orientations_present_single_gabor()
+        # expm.observe_cifar_pos_phase()
+        #
+        # # Reset parameters and create new model so that
+        # # previous experiment isn't overwritten
+        # vars(args)['state_optimizer'] = 'sgd'
+        # vars(args)['momentum_param']  = 0.0
+        # model_name = lib.utils.datetimenow() + '__rndidx_' + str(
+        #     np.random.randint(0, 99999))
+        #
+        # model = models.DeepAttractorNetworkTakeTwo(args, device, model_name,
+        #                                            writer).to(device)
+        # expm = managers.ExperimentsManager(args, model, data, buffer,
+        #                                           writer,
+        #                                           device,
+        #                                           sample_log_dir)
+        # expm.observe_cifar_pos_phase()
 
 shapes = lambda x : [y.shape for y in x]
 nancheck = lambda x : (x != x).any()

@@ -10,20 +10,20 @@ import lib.utils
 
 
 class Dataset():
-    def __init__(self, args):
+    def __init__(self, args, train_set=True, shuffle=True):
         if args.dataset == 'CIFAR10':
             self.dataset = datasets.CIFAR10('./data',
-                                            download=True,
+                                            download=train_set,
                                             transform=transforms.ToTensor())
         elif args.dataset == 'MNIST':
             self.dataset = datasets.MNIST('./data',
-                                            download=True,
+                                            download=train_set,
                                             transform=transforms.ToTensor())
 
         self.dataset = self.dataset
         self.loader = DataLoader(self.dataset,
                                  batch_size=args.batch_size,
-                                 shuffle=True,
+                                 shuffle=shuffle,
                                  drop_last=True
                                  )
                             #num_workers=4) #this makes debugging very very slow
