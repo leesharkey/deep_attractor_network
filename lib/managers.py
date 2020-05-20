@@ -320,7 +320,10 @@ class TrainingManager(Manager):
 
         # Calculate the gradient wrt states for the Langevin step (before
         # addition of noise)
-        energy.backward()
+        if self.args.state_optimizer == 'sghmc':
+            energy.backward()
+        else:
+            (-energy).backward()
         torch.nn.utils.clip_grad_norm_(states,
                                        self.args.clip_state_grad_norm,
                                        norm_type=2)
@@ -1185,7 +1188,7 @@ class ExperimentsManager(Manager):
 
 
         # Determine how long each stim will be displayed for
-        self.phase_lens = [2]
+        self.phase_lens = [7000]
 
         phase_idxs = []
         for phase, phase_len in enumerate(self.phase_lens):
@@ -1196,30 +1199,48 @@ class ExperimentsManager(Manager):
                                phase_idxs=phase_idxs)
 
     def orientations_present_single_gabor(self):
-        self.save_dir_exp = self.save_dir_model + '/' + 'orientations_present_single_gabor' + '/'
+        exp_stim_path_base = "data/gabor_filters/single/"
+
+        # To measure oscillations, use experiment with varied contrast & angle
+        #exp_stim_stem = "contrast_and_angle"
+
+        # To measure orientation preferences, use exp that varies only angle
+        exp_stim_stem = "just_angle"
+
+        exp_stim_path = exp_stim_path_base + exp_stim_stem
+
+        self.save_dir_exp = self.save_dir_model + '/' + \
+                            'orientations_present_single_gabor_' + \
+                            exp_stim_stem + '/'
         self.save_img = True
         if not os.path.isdir(self.save_dir_exp):
             os.mkdir(self.save_dir_exp)
         for data_dir in self.data_save_dirs:
-            full_save_dir = self.save_dir_model + '/' + 'orientations_present_single_gabor' + '/' + data_dir
+            full_save_dir = self.save_dir_exp + data_dir
             if not os.path.isdir(full_save_dir):
                 os.mkdir(full_save_dir)
+
 
         from lib.data import Dataset
         # Because the sampler burns in depending on the statistics of the input
         # we use images from the test set to get the images for the burn in
-        # phase. Use test set instead of train set and use fixed data batch
+        # phase. Use test set instead of train set and use fixed data batch.
+        # Shuffle is set to false so that every experiment uses the same burn-
+        # in stimuli.
         self.data = Dataset(self.args, train_set=False, shuffle=False)
         pos_img, pos_id = next(
             iter(self.data.loader))  # Gets first batch only
+
+        # Images for first 50 timesteps are from data distribution
         image_phase_list = [pos_img]
 
         # The next image is a blank image
         image_phase_list.append(self.base_im_batch)
 
-        # Then get the experimental images
-        exp_stim_path = "data/gabor_filters/single/contrast_and_angle"
+        # Get the experimental images
+
         (_, _, filenames) = next(os.walk(exp_stim_path))
+        filenames = sorted(filenames)
         exp_stims = []
         for flnm in filenames:
             im = Image.open(os.path.join(exp_stim_path, flnm))
@@ -1235,7 +1256,7 @@ class ExperimentsManager(Manager):
 
         # Determine how long each stim will be displayed for
         #self.experiment_len = 200
-        self.phase_lens = [50,500,250,1000]
+        self.phase_lens = [50, 1000, 2500, 3000]
 
         phase_idxs = []
         for phase, phase_len in enumerate(self.phase_lens):
@@ -1388,15 +1409,11 @@ class ExperimentsManager(Manager):
                     self.writer.add_histogram(hist_layer_string, state, step)
         # End of tensorboard logging
 
-        # Save experimental data
-        self.save_experimental_data(states, outs, full_enrgs, step, save_img=True)
-
         # Save latest energy outputs so you can schedule the phase lengths
         # if positive_phase:
         #     self.latest_pos_enrg = energy.item()
         # else:
         #     self.latest_neg_enrg = energy.item()
-
 
         # Prepare gradients and sample for next sampling step
         for i, state in enumerate(states):
@@ -1407,14 +1424,20 @@ class ExperimentsManager(Manager):
             else:
                 state.data.clamp_(0, 1)
 
+        # Save experimental data
+        self.save_experimental_data(states, outs, full_enrgs, step,
+                                    save_img=True)
+
         return states
 
     def save_experimental_data(self, states, outs, energies, step, save_img):
         # layerwise go through states etc. and save arrays
+        start = 1
         end = 2
-        for j, (state, out, enrg, opt) in enumerate(zip(states[:end], outs[:end],
-                                                        energies[:end],
-                                                    self.state_optimizers[:end])): # LEE only saving the bottom two
+        for j, (state, out, enrg, opt) in enumerate(zip(states[start:end], outs[start:end],
+                                                        energies[start:end],
+                                                    self.state_optimizers[start:end]),
+                                                    start=start): # LEE only saving the bottom two
             if opt.state_dict()['state']: # i.e. if momentum exists isn't empty, because it's only instantiated after 1 steps I think
                 key = list(opt.state_dict()['state'].keys())[0]
                 state_mom = opt.state_dict()['state'][key]['momentum']
@@ -1656,6 +1679,39 @@ class ExperimentalStimuliGenerationManager:
                                              contrast=c,
                                              folder_name=os.path.join(folder_name1,
                                                                       folder_name2))
+
+    def generate_single_gabor_dataset__just_angle(self):
+        print("Careful, running this function might overwrite your "+
+              "previously generated data. Cancel if you wish, or enter "+
+              "any input")
+
+
+        contrast = 2.4
+        angle_min = 0.0
+        angle_max = np.pi * 2
+        angle_incr = (np.pi * 2) / 128
+
+        # Make the folders to save the images in
+        folder_name1 = 'single'
+        folder_name2 = 'just_angle'
+        full_folder_name = os.path.join(self.save_path_root,
+                                        folder_name1,
+                                        folder_name2)
+
+        if not os.path.exists(full_folder_name):
+            if not os.path.exists(os.path.join(self.save_path_root,
+                                  folder_name1)):
+                os.mkdir(os.path.join(self.save_path_root,
+                                      folder_name1))
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1,
+                                  folder_name2))
+
+        for a in np.arange(start=angle_min, stop=angle_max, step=angle_incr):
+            im = self.single_gabor_image(angle=a,
+                                         contrast=contrast,
+                                         folder_name=os.path.join(folder_name1,
+                                                                 folder_name2))
 
     def generate_double_gabor_dataset__loc_and_angles(self):
         folder_name1 = 'double'

@@ -3524,7 +3524,8 @@ def main():
     if args.gen_exp_stim:
         esgm = managers.ExperimentalStimuliGenerationManager()
         # esgm.generate_double_gabor_dataset__loc_and_angles()
-        # esgm.generate_single_gabor_dataset__contrast_and_angle()
+        esgm.generate_single_gabor_dataset__just_angle()
+        #esgm.generate_single_gabor_dataset__contrast_and_angle()
 
     if args.experiment:
         # Re-instantiate dataset now using no randomness so that the same batch
@@ -3534,8 +3535,8 @@ def main():
                                                   device,
                                                   sample_log_dir)
         expm.orientations_present_single_gabor()
-        # expm.observe_cifar_pos_phase()
-        #
+        #expm.observe_cifar_pos_phase()
+
         # # Reset parameters and create new model so that
         # # previous experiment isn't overwritten
         # vars(args)['state_optimizer'] = 'sgd'
