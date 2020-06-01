@@ -3563,3 +3563,5 @@ divl = lambda l1, l2: torch.prod(torch.tensor(l1)).float()/torch.prod(torch.tens
 
 if __name__ == '__main__':
     main()
+    #TODO go through all the code and fix the comments and docstrings. Some
+    # of the comments are inaccurate.
