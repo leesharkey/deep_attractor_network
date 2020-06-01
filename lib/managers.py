@@ -633,7 +633,7 @@ class VisualizationManager(Manager):
 
         if self.args.viz_type in ['channels_energy', 'channels_state']:
             # In batch i, sets the ith channel to 1.0
-            clamp_array[:,current_ch,:,:] = self.clamp_idx_one_or_zero
+            clamp_array[:,current_ch,13:19,13:19] = self.clamp_idx_one_or_zero
 
         return clamp_array
 
@@ -672,8 +672,18 @@ class VisualizationManager(Manager):
     def visualization_phase(self, state_layer_idx=0, channel_idx=None,
                             clamp_array=None):
 
+
         states = lib.utils.generate_random_states(self.args.state_sizes,
                                                   self.device)
+        # states = [s * 0.25 for s in states]
+        # if self.args.initializer == 'ff_init':
+        #     states_new = [states[0]]
+        #     self.initter.eval()
+        #     initted_states = self.initter.forward(states[0], [])
+        #     states_new.extend(initted_states)
+        #     states = states_new
+        #     states = [s.detach() for s in states]
+
         id = None
 
         # Freeze network parameters and take grads w.r.t only the inputs
@@ -798,8 +808,6 @@ class VisualizationManager(Manager):
         # Take gradient wrt states and then zero them
         total_energies.backward(retain_graph=True)
         stategrads = [st.grad.data.clone() for st in states]
-
-        # Reset all gradients to zero
         for s in states:
             s.grad.zero_()
 
