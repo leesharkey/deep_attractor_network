@@ -34,7 +34,7 @@ def main():
     session_name = lib.utils.datetimenow()
 
     am = analysismanager.AnalysisManager(args, session_name)
-    #am.print_stimuli()
+    # am.print_stimuli()
     # am.find_active_neurons('primary')
     # am.plot_pixel_vs_activity()
     # am.print_activity_map()
@@ -42,9 +42,10 @@ def main():
     # TODO change data processing pipeline so each function here is adding
     #  columns to a single dataframe. Only if it won't fit in the main
     #  dataframe should it be saved in its own df
-    # am.find_orientation_preferences()
-
-    #am.find_oscillating_neurons() #memory error?
+    #am.find_orientation_preferences()
+    am.assign_ori_info()
+    am.plot_combined_state_traces()
+    am.find_oscillating_neurons() #memory error?
     am.plot_contrast_frequency_plots()
     # #am.single_neuron_dynamics_plot_Ham_case()
     # #am.single_neuron_autocorrelation()

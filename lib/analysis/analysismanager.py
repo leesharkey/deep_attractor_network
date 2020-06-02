@@ -64,6 +64,41 @@ class AnalysisManager:
             for c in self.just_angle_contrasts:
                 self.just_angle_angle_contrast_pairs.append((a, c))
 
+        self.get_contrasts_from_images()
+
+    def get_contrasts_from_images(self):
+        print("Calculating true contrasts from images")
+        exp_type = 'primary'
+        var_names = ['state']
+
+        true_contrasts = []
+
+        for exp_type in ['just_angles', 'primary']:
+            if exp_type == 'just_angles':
+                exp_stim_path = 'data/gabor_filters/single/just_angle'
+            elif exp_type == 'primary':
+                exp_stim_path = 'data/gabor_filters/single/contrast_and_angle'
+
+            # Get the experimental images
+
+            (_, _, filenames) = next(os.walk(exp_stim_path))
+            filenames = sorted(filenames)
+            exp_stims = []
+            for flnm in filenames:
+                im = Image.open(os.path.join(exp_stim_path, flnm))
+                im = transforms.functional.to_tensor(im)
+                exp_stims.append(im)
+            exp_stims = torch.stack(exp_stims) # should have generated only 128 images
+
+            # Calculate true contrasts
+            pixel_intensities = exp_stims.mean(dim=1)
+            max_intens = pixel_intensities.max(dim=1)[0].max(dim=1)[0]
+            min_intens = pixel_intensities.min(dim=1)[0].min(dim=1)[0]
+            true_contrast = (max_intens - min_intens)/(max_intens + min_intens)
+            true_contrasts.append(true_contrast)
+
+        self.true_just_angle_contrasts = true_contrasts[0]
+        self.true_contrast_and_angle_contrasts = true_contrasts[1]
 
 
     def print_stimuli(self):
@@ -455,29 +490,10 @@ class AnalysisManager:
         activity_df.to_pickle(os.path.join(
             self.base_analysis_results_dir, 'neuron_activity_results%s.pkl'  % exp_type))
 
-    def find_oscillating_neurons(self):
-        """Looks at a target subset of the data and returns the indices of the
-        neurons whose responses qualify as oscillating."""
-
-        print("Finding oscillating neurons")
-
-        # Make dir to save plots for this experiment
-        exp_dir = os.path.join(self.base_analysis_results_dir,
-                               'Fitted gabors and PSD plot')
-        if not os.path.isdir(exp_dir):
-            os.mkdir(exp_dir)
-
+    def assign_ori_info(self):
         # Prepare general variables
-        model_exp_name = self.primary_model_exp_name
         angle_contrast_pairs = self.contrast_and_angle_angle_contrast_pairs
-        during_or_outside_names = ['during', 'outside']
-        result_names = ['freq_power_product', 'peak_freqs', 'peak_freq_powers']
 
-        # Prepare variables used for processing data
-        stim_on_start = 1050   #TODO change these to class variables
-        stim_on_stop = 3550
-        num_ch = 32
-        activity_df_created = False
 
         # Load info on which neurons are active
         print("Loading priorly processed data...")
@@ -489,16 +505,15 @@ class AnalysisManager:
         ori_pref = pd.read_pickle(
             os.path.join(self.base_analysis_results_dir,
                          'orientation_pref_results_just_angles.pkl'))
-        ori_pref.at[17, 'amplitude'] = 0.0 #TODO remove on main run
+        ori_pref.at[17, 'amplitude'] = 0.0  # TODO remove on main run
         print("Done loading presaved data.")
 
         # Rearrange activity info so that we can identify channels and
         # pixels that are active for a given stim
         nrnact = pd.melt(nrnact, id_vars=['batch_idx', 'height', 'width'],
-                          value_vars=list(range(32)))
+                         value_vars=list(range(32)))
         nrnact = nrnact.rename(columns={'variable': 'channel',
-                                          'value':'active'})
-
+                                        'value': 'active'})
 
         # Decide which channels qualify as having an orientation preference
         ori_amp_threshold = 0.04  # TODO I can't think of a principled way to choose this. I've just done it by visual inspection of the orientation preference plots but I think better would be to demonstrate that some sine fits are significantly better than a linear fit
@@ -514,14 +529,14 @@ class AnalysisManager:
 
         k = list(ori_dict.keys())
         v = list(ori_dict.values())
-        ori_dict  = [x for _, x in sorted(zip(k, v))]  # becomes list
+        ori_dict = [x for _, x in sorted(zip(k, v))]  # becomes list
         ori_prefs = [ori_dict[ch] for ch in list(nrnact['channel'])]
 
         # Decide which neurons in each channel and batch are being presented
         # orientation-matched stimuli
         stim_angle_contrasts = [angle_contrast_pairs[b] for b in
                                 nrnact['batch_idx']]
-        stim_angles    = [sac[0] for sac in stim_angle_contrasts]
+        stim_angles = [sac[0] for sac in stim_angle_contrasts]
         stim_contrasts = [sac[1] for sac in stim_angle_contrasts]
         orientation_diffs_0 = [np.abs(stim_angle - ori_pref) for
                                (stim_angle, ori_pref) in
@@ -536,10 +551,173 @@ class AnalysisManager:
                              zip(orientation_diffs_0, orientation_diffs_180)]
 
         # Add columns to the df for new data
-        nrnact['ori_pref']      = ori_prefs
-        nrnact['stim_ori']      = stim_angles
+        nrnact['ori_pref'] = ori_prefs
+        nrnact['stim_ori'] = stim_angles
         nrnact['stim_contrast'] = stim_contrasts
         nrnact['matched_stim_ori_pref'] = orientation_match
+
+        # Save the df
+        nrnact.to_pickle(os.path.join(
+            self.base_analysis_results_dir, 'neuron act ori.pkl'))
+
+    def plot_combined_state_traces(self):
+        # Load data
+        nrnact = pd.read_pickle(
+            os.path.join(self.base_analysis_results_dir,
+                         'neuron act ori.pkl'))
+
+
+        # Prepare general variables
+        num_ch = 32
+        model_exp_name = self.primary_model_exp_name
+
+
+        for ch in range(num_ch):
+
+            print("Channel %s" % str(ch))
+            # Prepare/reset variables for data managers
+            var_names = ['state']   #TODO change these to class variables
+            h = 9
+            hh = 9
+            w = 22
+            ww = 22
+
+            # Get data
+            dm = datamanager.DataManager(root_path=self.args.root_path,
+                                         model_exp_name=model_exp_name,
+                                         var_names=var_names,
+                                         state_layers=[1],
+                                         batches=None,
+                                         channels=[ch],
+                                         hw=[[h, hh], [w, ww]],
+                                         timesteps=None)
+
+            # Process data
+            dm.data['state_1'] = dm.data[
+                'state_1'].squeeze()  # get rid of ch dim
+            reshaped_activities = [np.arange(len(dm.timesteps)).reshape(
+                len(dm.timesteps), 1)]  # make TS data
+            reshaped_activities.extend([
+                dm.data['state_1'].reshape(len(dm.timesteps),
+                                           -1)])  # extend TS data with actual data
+            arr_sh = dm.data['state_1'].shape[1:]
+
+            # Make column names from indices of batches, height, and width
+            inds = np.meshgrid(np.arange(arr_sh[0]),
+                               # TODO change these to class variables
+                               np.arange(arr_sh[1]),
+                               np.arange(arr_sh[2]),
+                               sparse=False, indexing='ij')
+            inds = [i.reshape(-1) for i in inds]
+
+            colnames = ['Timestep']
+            for i, j, k in zip(*inds):
+                colnames.append(
+                    'state_1__b%s_h%s_w%s' % (i, h + j, hh + k))
+
+            activities = np.concatenate(reshaped_activities, axis=1)
+            activities_df = pd.DataFrame(activities, columns=colnames)
+
+
+            # Find the subset of the nrnact df for this channel only and get
+            # the h, w values for on neurons in each batch
+            nrnact_ch = nrnact.loc[nrnact['channel'] == ch]
+            nrnact_ch = nrnact_ch.loc[nrnact_ch['active']]
+            nrnact_ch = nrnact_ch.loc[nrnact_ch['height'] >= 15]
+            nrnact_ch = nrnact_ch.loc[nrnact_ch['height'] <= 17]
+            nrnact_ch = nrnact_ch.loc[nrnact_ch['width'] >= 15]
+            nrnact_ch = nrnact_ch.loc[nrnact_ch['width'] <= 17]
+            nrnact_ch = nrnact_ch.reset_index()
+
+
+            # Get the names of the columns where the neuron is on and the
+            # orientation preference and stimuli are matched
+
+            print("Defining names of columns where the neuron is on and the "+\
+                  "orientation preference and stimuli are matched")
+
+            on_colnames = []
+            on_col_inds = []
+            for i in range(len(nrnact_ch)):
+                bhw = tuple(nrnact_ch.loc[i][1:4])
+                matched_ori = nrnact_ch.loc[i][9]
+                on_colname = 'state_1__b%i_h%i_w%i' % bhw
+                if matched_ori:
+                    on_colnames.append(on_colname)
+                    on_col_inds.append(bhw)
+            if len(on_colnames) == 0:
+                print("No on neurons for channel %s. Moving to next channel")
+
+            # For the on neurons in the above-defined subset of nrnact, get
+            # their timeseries from the arrays during_stim and outside_stim
+            on_nrn_acts = activities_df[on_colnames].sum(axis=1)
+
+            # Explore the states and their oscillations for each channel
+            fig, ax = plt.subplots(4)
+            fig.set_size_inches(14.5, 8.5)
+
+            # spec_data = (df[name] - np.mean(df[name]))
+            # spec_data = spec_data / np.linalg.norm(spec_data)
+
+            # Denoise
+            # spec_data = self.butter_lowpass_filter(spec_data,cutoff=0.1,fs=100)
+
+            ax[0].plot(on_nrn_acts.index, on_nrn_acts)
+            ax[0].set_ylabel('State [a.u.]')
+            ax[0].set_xlabel('Timesteps')
+
+            ax[1].specgram(on_nrn_acts, NFFT=512, Fs=100, Fc=0, detrend=None,
+                           noverlap=511, xextent=None, pad_to=None,
+                           sides='default',
+                           scale_by_freq=True, scale='dB', mode='default',
+                           cmap=plt.get_cmap('hsv'))
+            ax[1].set_ylabel('Frequency [a.u.]')
+
+            lags1, acorrs1, plot11, plot12 = ax[2].acorr(
+                on_nrn_acts[1050:3550],
+                detrend=plt.mlab.detrend_linear,
+                # lambda x: x - np.mean(x)
+                maxlags=2499)
+            lags2, acorrs2, plot21, plot22 = ax[3].acorr(
+                on_nrn_acts[3550:6050],
+                detrend=plt.mlab.detrend_linear,
+                maxlags=2499)
+            plt.ticklabel_format(axis="y", style="sci", scilimits=(
+                0, 0))  # Uses sci notation for units
+            plt.tight_layout()  # Stops y label being cut off
+
+            # plt.title('STFT Magnitude')
+            plt.savefig('summed states for centre of ch%i.png' % ch)
+            plt.close()
+
+
+    def find_oscillating_neurons(self):
+        """Looks at a target subset of the data and returns the indices of the
+        neurons whose responses qualify as oscillating."""
+
+        print("Finding oscillating neurons")
+
+        # Make dir to save plots for this experiment
+        exp_dir = os.path.join(self.base_analysis_results_dir,
+                               'Fitted gabors and PSD plot')
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+
+        # Load data
+        nrnact = pd.read_pickle(
+            os.path.join(self.base_analysis_results_dir,
+                         'neuron act ori.pkl'))
+
+
+        # Prepare general variables
+        model_exp_name = self.primary_model_exp_name
+        during_or_outside_names = ['during', 'outside']
+        result_names = ['freq_power_product', 'peak_freqs', 'peak_freq_powers']
+
+        # Prepare variables used for processing data
+        stim_on_start = 1050
+        stim_on_stop = 3550
+        num_ch = 32
 
         # Create empty columns in df to save PSD results
         for d_o_name in during_or_outside_names:
@@ -548,7 +726,7 @@ class AnalysisManager:
                 nrnact[new_col_name] = np.nan
                 nrnact[new_col_name] = nrnact[new_col_name].astype('object')
 
-
+        # Perform analysis on the selected neurons in each channel
         for ch in range(num_ch):
 
             print("Channel %s" % str(ch))
@@ -717,6 +895,8 @@ class AnalysisManager:
             self.base_analysis_results_dir, 'neuron act and osc.pkl'))
         print('burp')
         # Then move on to a new function plot_contrast_frequency_plots()
+
+
 
     def plot_contrast_frequency_plots(self):
         print("Plotting contrast/frequency plots")

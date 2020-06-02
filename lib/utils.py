@@ -222,7 +222,7 @@ def get_state_optimizers(args, params):
                             lr=args.sampling_step_size,
                             noise=args.sigma,
                             mdecay=args.momentum_param,
-                            scale_grad=128) for prm in params]
+                            scale_grad=1.) for prm in params]
     if args.state_optimizer == 'sgd':
         return [optim.SGD([prm], args.sampling_step_size) for prm in params]
     if args.state_optimizer == 'sgd_momentum':
