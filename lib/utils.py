@@ -85,7 +85,7 @@ def conv_t_output_shape(h_w, kernel_size=1, stride=1, padding=0,
                         output_padding=0):
     return (h_w -1)*stride - 2*padding + kernel_size + output_padding
 
-def generate_random_states(shapes, device): #TODO if states_activation is relu then this needs to be multiplied by something like the variance of the negative phase states.
+def generate_random_states(shapes, device, scales): #TODO if states_activation is relu then this needs to be multiplied by something like the variance of the negative phase states.
     rand_states = []
     for shape in shapes:
         if len(shape)==4:
@@ -102,6 +102,10 @@ def generate_random_states(shapes, device): #TODO if states_activation is relu t
             raise ValueError("Shape error. " +
                              "Must be either 4 (for conv) or 2 (for FC).")
         rand_states.append(rs)
+
+    rand_states= [rs * scale for (rs, scale) in zip(rand_states, scales)] # Since in the CIFAR10
+    # networks almost no state layer ever has a mean above 0.5, most being
+    # significantly below.
 
     return rand_states
 
@@ -222,7 +226,9 @@ def get_state_optimizers(args, params):
                             lr=args.sampling_step_size,
                             noise=args.sigma,
                             mdecay=args.momentum_param,
-                            scale_grad=1.) for prm in params]
+                            num_burn_in_steps=args.num_burn_in_steps,
+                            scale_grad=args.scale_grad,
+                            min_sq_sigma=args.min_sq_sigma) for prm in params]
     if args.state_optimizer == 'sgd':
         return [optim.SGD([prm], args.sampling_step_size) for prm in params]
     if args.state_optimizer == 'sgd_momentum':
