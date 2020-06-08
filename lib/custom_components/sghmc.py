@@ -25,10 +25,11 @@ class SGHMC(Optimizer):
     def __init__(self,
                  params,
                  lr: float=1e-2,
-                 num_burn_in_steps: int=50, #used to be 3000
+                 num_burn_in_steps: int=0, #used to be 3000 #50
                  noise: float=0.,
                  mdecay: float=0.05,
-                 scale_grad: float=1.) -> None:
+                 scale_grad: float=1.,
+                 min_sq_sigma: float=1e-5) -> None:
         """ Set up a SGHMC Optimizer.
 
         Parameters
@@ -69,6 +70,9 @@ class SGHMC(Optimizer):
             noise=noise
         )
         super().__init__(params, defaults)
+
+        self.batch_size = 128  # TODO soft-code
+        self.min_sq_sigma = min_sq_sigma
 
 
     def step(self, closure=None):
@@ -116,10 +120,13 @@ class SGHMC(Optimizer):
                     tau.add_(1. - tau * (g * g / v_hat))
                     g.add_(-g * r_t + r_t * gradient)
                     v_hat.add_(-v_hat * r_t + r_t * (gradient ** 2))
+
                 #  }}} Burn-in updates #
 
                 lr_scaled = lr / torch.sqrt(scale_grad)
 
+                minv_t = minv_t.mean(dim=0) # average the variances over batches #lee
+                minv_t = torch.stack(self.batch_size * [minv_t])
                 #  Draw random sample {{{ #
 
                 noise_scale = (
@@ -128,11 +135,21 @@ class SGHMC(Optimizer):
                     (lr_scaled ** 4)
                 )
 
-                sigma = torch.sqrt(torch.clamp(noise_scale, min=1e-16))
+                sigma = torch.sqrt(torch.clamp(noise_scale,
+                                               min=self.min_sq_sigma))
 
                 # sample_t = torch.normal(mean=0., std=torch.tensor(1.)) * sigma
                 sample_t = torch.normal(mean=0., std=sigma)
                 #  }}} Draw random sample #
+
+                # Note: for the mostpart, minv_t should basically be identical
+                # (currently during viz mean is identical for all channels
+                # up until the 3rd decimal point)
+                # for all variables, so it shouldn't differentially affect them
+                # on different training/visualization runs.
+                #minv_t.mean(dim=[0,2,3])
+                #minv_t.var(dim=[0,2,3])
+
 
                 #  SGHMC Update {{{ #
                 momentum_t = momentum.add_(
