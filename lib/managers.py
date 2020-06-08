@@ -30,7 +30,8 @@ class Manager():
                                                    step_size=1,
                                                    gamma=self.args.lr_decay_gamma)
         self.noises = lib.utils.generate_random_states(self.args.state_sizes,
-                                                       self.device)
+                                                       self.device,
+                                                       self.args.state_scales)
         self.global_step = 0
         self.batch_num = 0
         self.epoch = 0
@@ -84,6 +85,7 @@ class Manager():
         param_sizes.sort()
         top10_params = param_sizes[-10:]
         print("Top 10 network param sizes: \n %s" % str(top10_params))
+
 
     def make_save_dict(self):
         """Assembles the dictionary of objects to be saved"""
@@ -296,12 +298,12 @@ class TrainingManager(Manager):
             self.sampler_step(neg_states, neg_id, step=self.global_step)
             self.global_step += 1
             # #TODO remove when done debugging viz
-            # neg_imgs_save = neg_states[0].detach().to('cpu')
-            # utils.save_image(neg_imgs_save,
-            #                  os.path.join(self.sample_log_dir,
-            #                               str(self.batch_num).zfill(
-            #                                   6) + str(_) + '.png'),
-            #                  nrow=16, normalize=True, range=(0, 1))
+            neg_imgs_save = neg_states[0].detach().to('cpu')
+            utils.save_image(neg_imgs_save,
+                             os.path.join(self.sample_log_dir,
+                                          str(self.batch_num).zfill(
+                                              6) + str(_) + '.png'),
+                             nrow=16, normalize=True, range=(0, 1))
 
         # Stop calculting grads w.r.t. images
         for neg_state in neg_states:
@@ -647,7 +649,8 @@ class VisualizationManager(Manager):
         if self.args.viz_type == 'standard':
             self.noises = lib.utils.generate_random_states(
                 self.args.state_sizes,
-                self.device)
+                self.device,
+                scales=self.args.state_scales)
             clamp_array = None
             self.visualization_phase()
         elif self.args.viz_type in ['channels_energy', 'channels_state']:
@@ -674,8 +677,9 @@ class VisualizationManager(Manager):
 
 
         states = lib.utils.generate_random_states(self.args.state_sizes,
-                                                  self.device)
-        # states = [s * 0.25 for s in states]
+                                                  self.device,
+                                                  self.args.state_scales)
+        # states = [s * 0.05 for s in states] ##TODO remvove after debugging viz
         # if self.args.initializer == 'ff_init':
         #     states_new = [states[0]]
         #     self.initter.eval()
@@ -744,8 +748,12 @@ class VisualizationManager(Manager):
         other layers come from the energy gradient."""
 
         energy, outs, energies = self.model(states, ids)  # Outputs energy of neg sample
-        total_energy = energy.sum()
-        total_energies = sum([e.sum() for e in energies])
+        #total_energy = energy.sum()
+        total_energies = [e.sum() for e in energies]
+
+        # total_energies = [e*scale for (e, scale) in zip(total_energies,
+        #                                                 self.energy_masks)]
+        total_energies = sum(total_energies)
 
         # Take gradient wrt states (before addition of noise)
         #total_energy.backward() #
@@ -1210,10 +1218,10 @@ class ExperimentsManager(Manager):
         exp_stim_path_base = "data/gabor_filters/single/"
 
         # To measure oscillations, use experiment with varied contrast & angle
-        #exp_stim_stem = "contrast_and_angle"
+        exp_stim_stem = "contrast_and_angle"
 
         # To measure orientation preferences, use exp that varies only angle
-        exp_stim_stem = "just_angle"
+        #exp_stim_stem = "just_angle"
 
         exp_stim_path = exp_stim_path_base + exp_stim_stem
 
