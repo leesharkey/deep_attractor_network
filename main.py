@@ -3344,6 +3344,18 @@ def main():
                              'the quadratic networks of the DAN. ' +
                              'Default: %(default)s.')
     parser.set_defaults(model_weight_norm=False)
+    ngroup.add_argument('--scale_grad', type=float, default=1.0,
+                        help='The scale_grad parameter for the adaptive '+
+                             'sghmc optimizer')
+    ngroup.add_argument('--num_burn_in_steps', type=float, default=0.0,
+                        help='The number of burnin steps for the adaptive ' +
+                             'sghmc optimizer')
+    ngroup.add_argument('--min_sq_sigma', type=float, default=1e-16,
+                        help='The minimum variance of the noise added in ' +
+                             'every step of the sghmc optimizer')
+    ngroup.add_argument('--state_scales', type=float, default=[1,1,1,1,1,1], nargs='+',
+                        help='The amount by which to scale the [0,1] noise ' +
+                             'used to initialise the ')
 
     vgroup = parser.add_argument_group('Visualization options')
     vgroup.add_argument('--viz', action='store_true',
