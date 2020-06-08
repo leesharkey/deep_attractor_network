@@ -142,7 +142,8 @@ class SampleBuffer: #TODO init that uses biases
         if len(self.neg_buffer) < 1:
             # Generate all rand states and class_ids when buffers are empty
             rand_states = lib.utils.generate_random_states(self.args.state_sizes,
-                                                           self.device)
+                                                           self.device,
+                                                           self.args.state_scales)
             return (rand_states,
                 torch.randint(0, 10, (self.args.batch_size,),
                               device=self.device),

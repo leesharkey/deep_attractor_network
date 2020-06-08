@@ -30,8 +30,7 @@ class Manager():
                                                    step_size=1,
                                                    gamma=self.args.lr_decay_gamma)
         self.noises = lib.utils.generate_random_states(self.args.state_sizes,
-                                                       self.device,
-                                                       self.args.state_scales)
+                                                       self.device)
         self.global_step = 0
         self.batch_num = 0
         self.epoch = 0
@@ -677,8 +676,7 @@ class VisualizationManager(Manager):
 
 
         states = lib.utils.generate_random_states(self.args.state_sizes,
-                                                  self.device,
-                                                  self.args.state_scales)
+                                                  self.device)
         # states = [s * 0.05 for s in states] ##TODO remvove after debugging viz
         # if self.args.initializer == 'ff_init':
         #     states_new = [states[0]]
