@@ -21,11 +21,12 @@ import lib.analysis.datamanager as datamanager
 class AnalysisManager:
     def __init__(self, args, session_name):
         self.args = args
-        self.primary_model = '20200508-115243__rndidx_37562_loaded20200423-154227__rndidx_15605'
+        self.primary_model = '20200602-194603__rndidx_61473_loaded20200508-141652__rndidx_82930'
+        #self.primary_model = '20200508-115243__rndidx_37562_loaded20200423-154227__rndidx_15605'
         self.just_angles_model = '20200512-075955__rndidx_62111_loaded20200423-154227__rndidx_15605'
         self.just_angles_exp_name = "/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data/20200512-075955__rndidx_62111_loaded20200423-154227__rndidx_15605/orientations_present_single_gabor_just_angle"
 
-        exp_stem = '/orientations_present_single_gabor'
+        exp_stem = '/orientations_present_single_gabor_contrast_and_angle'
         self.primary_model_exp_name = self.primary_model + exp_stem
         self.just_angles_exp = self.just_angles_model + exp_stem + '_just_angle'
         self.session_name = session_name
@@ -104,6 +105,9 @@ class AnalysisManager:
     def print_stimuli(self):
         model_exp_name = self.primary_model_exp_name
         var_names = ['state']
+
+        # Note: Unless you've saved the bottom layer ([0]), which you might
+        # not have due to storage constraints, this function won't work
         dm = datamanager.DataManager(root_path=self.args.root_path,
                                      model_exp_name=model_exp_name,
                                      var_names=var_names,
@@ -156,6 +160,10 @@ class AnalysisManager:
         num_ch = 32
         activity_df_created = False
 
+        results_colnames = ['batch_idx', 'height', 'width', 'active',
+                            'shapiro_during', 'shapiro_outside']
+        results_df_2 = pd.DataFrame(columns=results_colnames)
+
         for ch in range(num_ch):
             print("Channel %s" % str(ch))
             # Gets data
@@ -197,9 +205,12 @@ class AnalysisManager:
             outside_stim = outside_stim.drop(activities_df.index[0:50])
 
             # Test for normality
-            shap_test_during = shapiro(during_stim)
-            shap_test_outside = shapiro(outside_stim)
-            print("Still not saving shapiro-wilks test results") #TODO this
+            during_cols  = during_stim.columns[1:] #[1:] slice to remove timesteps
+            outside_cols = outside_stim.columns[1:]
+            shap_test_during = [shapiro(during_stim[col])
+                                for col in during_cols]
+            shap_test_outside = [shapiro(outside_stim[col])
+                                for col in outside_cols]
 
             # Test whether mean during stim is signif different than outside
             # of stim and if it is higher, then it is considered 'active'
@@ -222,6 +233,15 @@ class AnalysisManager:
             else:
                 activity_df = activity_df.append(comb_results,
                                                  ignore_index=True)
+
+
+            # Making a nicer df
+            results_df_2['batch_idx'] = inds[0]
+            results_df_2['height']    = inds[1]
+            results_df_2['width']     = inds[2]
+            results_df_2['active'] = np.array(comb_results[comb_results.columns[1:]]).squeeze()
+            results_df_2['shapiro_during']  = shap_test_during
+            results_df_2['shapiro_outside'] = shap_test_outside
         print("Done finding active neurons")
 
         # Finish adding b, ch, h, w labels
@@ -233,6 +253,12 @@ class AnalysisManager:
         activity_df.to_pickle(
             os.path.join(self.base_analysis_results_dir,
             'neuron_activity_results_%s.pkl') % exp_type)
+
+
+
+        results_df_2.to_pickle(
+            os.path.join(self.base_analysis_results_dir,
+            'neuron_activity_results_alternativeformat_%s.pkl') % exp_type)
 
     def plot_pixel_vs_activity(self):
         print("Plotting pixel vs activity map")
