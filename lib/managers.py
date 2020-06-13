@@ -105,6 +105,40 @@ class Manager():
         path = 'exps/models/' + self.model.model_name + '.pt'
         torch.save(save_dict, path)
 
+    def initialize_pos_states(self, pos_img=None, pos_id=None,
+                              prev_states=None):
+        """Initializes states for the positive phase (or for viz)"""
+
+        pos_states = [pos_img]
+
+        if self.args.initializer == 'zeros':
+            zero_states = [torch.zeros(size, device=self.device,
+                                       requires_grad=True)
+                           for size in self.args.state_sizes[1:]]
+            pos_states.extend(zero_states)
+        if self.args.initializer == 'ff_init':
+            # Later consider implementing a ff_init that is trained as normal
+            # and gives the same output but that only a few (maybe random)
+            # state neurons are changed/clamped by the innitter so that you
+            # can still use the 'previous' initialisation in your experiments
+            self.initter.train()
+            pos_states_new = self.initter.forward(pos_img, pos_id)
+            pos_states.extend(pos_states_new)
+        elif self.args.initializer == 'middle':
+            raise NotImplementedError("You need to find the mean pixel value" +
+                                      " and then use the value as the value " +
+                                      "to init all pixels.")
+        elif self.args.initializer == 'mix_prev_middle':
+            raise NotImplementedError
+        elif self.args.initializer == 'previous' and prev_states is not None:
+            pos_states.extend(prev_states[1:])
+        else:  # i.e. if self.args.initializer == 'random':
+            rand_states = lib.utils.generate_random_states(
+                self.args.state_sizes[1:], self.device)
+            pos_states.extend(rand_states)
+
+        return pos_states
+
 
 class TrainingManager(Manager):
     def __init__(self, args, model, data, buffer, writer, device,
@@ -187,39 +221,7 @@ class TrainingManager(Manager):
         # Save network(s) and settings when training is complete too
         self.save_net_and_settings()
 
-    def initialize_pos_states(self, pos_img=None, pos_id=None,
-                              prev_states=None):
-        """Initializes positive states"""
 
-        pos_states = [pos_img]
-
-        if self.args.initializer == 'zeros':
-            zero_states = [torch.zeros(size, device=self.device,
-                                       requires_grad=True)
-                           for size in self.args.state_sizes[1:]]
-            pos_states.extend(zero_states)
-        if self.args.initializer == 'ff_init':
-            # Later consider implementing a ff_init that is trained as normal
-            # and gives the same output but that only a few (maybe random)
-            # state neurons are changed/clamped by the innitter so that you
-            # can still use the 'previous' initialisation in your experiments
-            self.initter.train()
-            pos_states_new = self.initter.forward(pos_img, pos_id)
-            pos_states.extend(pos_states_new)
-        elif self.args.initializer == 'middle':
-            raise NotImplementedError("You need to find the mean pixel value" +
-                                      " and then use the value as the value " +
-                                      "to init all pixels.")
-        elif self.args.initializer == 'mix_prev_middle':
-            raise NotImplementedError
-        elif self.args.initializer == 'previous' and prev_states is not None:
-            pos_states.extend(prev_states[1:])
-        else:  # i.e. if self.args.initializer == 'random':
-            rand_states = lib.utils.generate_random_states(
-                self.args.state_sizes[1:], self.device)
-            pos_states.extend(rand_states)
-
-        return pos_states
 
     def positive_phase(self, pos_img, pos_id, prev_states=None):
 
@@ -332,14 +334,17 @@ class TrainingManager(Manager):
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
         for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-            noise.normal_(0, self.args.sigma)
-            # Note: Just set sigma to a very small value if you don't want to
-            # add noise. It's so inconsequential that it's not worth the
-            # if-statements to accommodate sigma==0.0
             if positive_phase and layer_idx == 0:
                 pass
             else:
-                state.data.add_(noise.data)
+                # Note: Just set sigma to a very small value if you don't want to
+                # add noise. It's so inconsequential that it's not worth the
+                # if-statements to accommodate sigma==0.0
+                if not self.args.state_optimizer == "sghmc":  #new
+                    for layer_idx, (noise, state) in enumerate(
+                            zip(self.noises, states)):
+                        noise.normal_(0, self.sigma)
+                        state.data.add_(noise.data)
 
         # The gradient step in the Langevin/SGHMC step
         # It goes through each statelayer and steps back using its associated
@@ -601,8 +606,9 @@ class VisualizationManager(Manager):
                          sample_log_dir)
 
         self.reset_opt_K_its = True
-        self.reset_freq = 10000
+        self.reset_freq = 100000000
         self.energy_scaler = 0.5
+        self.sigma = self.args.sigma
 
         # Defines what the index under investigation will be set as in the
         # clamp array. If 1, and clamp_value1or0 is 1, then during
@@ -674,9 +680,28 @@ class VisualizationManager(Manager):
     def visualization_phase(self, state_layer_idx=0, channel_idx=None,
                             clamp_array=None):
 
-
+        # Original
         states = lib.utils.generate_random_states(self.args.state_sizes,
                                                   self.device)
+        # End original
+
+
+        # Gets the values of the pos states by running an inference phase
+        # with the image state_layer clamped
+        rand_states_init = self.initialize_pos_states(pos_img=states[0],
+                                                     prev_states=[])
+        rand_states = [rsi.clone().detach() for rsi in rand_states_init]
+
+        # Freeze network parameters and take grads w.r.t only the inputs
+        lib.utils.requires_grad(rand_states, True)
+        lib.utils.requires_grad(self.parameters, False)
+        if self.args.initializer == 'ff_init':
+            lib.utils.requires_grad(self.initter.parameters(), False)
+        self.model.eval()
+
+
+
+
         # states = [s * 0.05 for s in states] ##TODO remvove after debugging viz
         # if self.args.initializer == 'ff_init':
         #     states_new = [states[0]]
@@ -696,6 +721,8 @@ class VisualizationManager(Manager):
         # Set up state optimizer if approp
         self.state_optimizers = lib.utils.get_state_optimizers(self.args,
                                                                states)
+
+        print("Sigma: %f" % self.sigma)
 
         # Viz phase sampling
         for k in tqdm(range(self.args.num_it_viz)):
@@ -731,6 +758,12 @@ class VisualizationManager(Manager):
                                  nrow=16,
                                  normalize=True,
                                  range=(0, 1))
+
+            if self.args.viz_tempered_annealing:
+                if self.sigma >= 0.005:
+                    self.sigma *= self.args.viz_temp_decay
+                print("Sigma: %f" % self.sigma)
+
             self.global_step += 1
 
         # Stop calculting grads w.r.t. images
@@ -765,10 +798,10 @@ class VisualizationManager(Manager):
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
-        if not self.args.state_optimizer == "sghmc":
-            for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-                noise.normal_(0, self.args.sigma)
-                state.data.add_(noise.data)
+        #if not self.args.state_optimizer == "sghmc":  #LEE This was an offending line
+        for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
+            noise.normal_(0, self.sigma)
+            state.data.add_(noise.data)
 
 
         # The gradient step in the Langevin/SGHMC step
@@ -837,9 +870,9 @@ class VisualizationManager(Manager):
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
-        if not self.args.state_optimizer == "sghmc":
+        if not self.args.state_optimizer == "sghmc":  #LEE This was an offending line
             for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-                noise.normal_(0, self.args.sigma)
+                noise.normal_(0, self.sigma)
                 state.data.add_(noise.data)
 
 
@@ -881,10 +914,10 @@ class VisualizationManager(Manager):
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
-        if not self.args.state_optimizer == "sghmc":
-            for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-                noise.normal_(0, self.args.sigma)
-                state.data.add_(noise.data)
+        #if not self.args.state_optimizer == "sghmc":  LEE This was an offending line
+        for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
+            noise.normal_(0, self.sigma)
+            state.data.add_(noise.data)
 
 
         # The gradient step in the Langevin/SGHMC step

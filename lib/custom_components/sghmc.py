@@ -96,7 +96,8 @@ class SGHMC(Optimizer):
                     state["tau"] = torch.ones_like(parameter)
                     state["g"] = torch.ones_like(parameter)
                     state["v_hat"] = torch.ones_like(parameter)
-                    state["momentum"] = torch.zeros_like(parameter)
+                    state["momentum"] = \
+                        torch.zeros_like(parameter).normal_(mean=0, std=1.)
                 #  }}} State initialization #
 
                 state["iteration"] += 1
@@ -108,7 +109,9 @@ class SGHMC(Optimizer):
                 tau, g, v_hat = state["tau"], state["g"], state["v_hat"]
                 momentum = state["momentum"]
 
+
                 gradient = parameter.grad.data
+                #gradient += torch.normal(0,0.005,size=parameter.grad.data.shape, device = 'cuda:0')
                 #  }}} Readability #
 
                 r_t = 1. / (tau + 1.)
@@ -127,10 +130,13 @@ class SGHMC(Optimizer):
 
                 minv_t = minv_t.mean(dim=0) # average the variances over batches #lee
                 minv_t = torch.stack(self.batch_size * [minv_t])
+                # mv = [minv_t * (10/i) for i in range(1,self.batch_size+1)]
+                # minv_t = torch.stack(mv)
+
                 #  Draw random sample {{{ #
 
                 noise_scale = (
-                    2. * (lr_scaled ** 2) * mdecay * minv_t -
+                    2. * (lr_scaled ** 2) * mdecay * minv_t - #LEE was minus
                     2. * (lr_scaled ** 3) * (minv_t ** 2) * noise -
                     (lr_scaled ** 4)
                 )

@@ -3363,6 +3363,14 @@ def main():
                              'type of visualization is defined in the'
                              '"viz_type" argument. Default: %(default)s.')
     parser.set_defaults(viz=False)
+    vgroup.add_argument('--viz_tempered_annealing', action='store_true',
+                        help='Whether or not to use tempered annealing during'
+                             ' viz. Default: %(default)s.')
+    parser.set_defaults(viz_tempered_annealing=False)
+    vgroup.add_argument('--viz_temp_decay', type=float, default=0.995,
+                        help='The rate of decay for the temperature in '
+                             'simulated annealing process during ' +
+                             'vizualisation. Default: %(default)s.')
     vgroup.add_argument('--viz_type', type=str, default='standard',
                         help='The type of visualization you want to perform.'
                         ' "standard": Generates random samples with no'
