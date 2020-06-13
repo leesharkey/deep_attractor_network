@@ -21,7 +21,8 @@ import lib.analysis.datamanager as datamanager
 class AnalysisManager:
     def __init__(self, args, session_name):
         self.args = args
-        self.primary_model = '20200602-194603__rndidx_61473_loaded20200508-141652__rndidx_82930'
+        self.primary_model  = '20200609-020600__rndidx_88671_loaded20200601-224129__rndidx_81769'
+        #self.primary_model = '20200602-194603__rndidx_61473_loaded20200508-141652__rndidx_82930'
         #self.primary_model = '20200508-115243__rndidx_37562_loaded20200423-154227__rndidx_15605'
         self.just_angles_model = '20200512-075955__rndidx_62111_loaded20200423-154227__rndidx_15605'
         self.just_angles_exp_name = "/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data/20200512-075955__rndidx_62111_loaded20200423-154227__rndidx_15605/orientations_present_single_gabor_just_angle"
