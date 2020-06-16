@@ -404,6 +404,7 @@ class TrainingManager(Manager):
         # End of data logging
 
         # Save latest energy outputs so you can schedule the phase lengths
+        print("Energy: %f" % energy.item())
         if positive_phase:
             self.latest_pos_enrg = energy.item()
             if self.args.truncate_pos_its:
