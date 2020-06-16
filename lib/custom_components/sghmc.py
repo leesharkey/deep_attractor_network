@@ -29,7 +29,9 @@ class SGHMC(Optimizer):
                  noise: float=0.,
                  mdecay: float=0.05,
                  scale_grad: float=1.,
-                 min_sq_sigma: float=1e-5) -> None:
+                 min_sq_sigma: float=1e-5,
+                 args=None,
+                 state_layer=None) -> None:
         """ Set up a SGHMC Optimizer.
 
         Parameters
@@ -71,8 +73,12 @@ class SGHMC(Optimizer):
         )
         super().__init__(params, defaults)
 
+        self.args = args
         self.batch_size = 128  # TODO soft-code
         self.min_sq_sigma = min_sq_sigma
+        if len(self.args.mom_clip_vals) == 1:
+            self.momenta_clip_norm_vals = self.args.mom_clip_vals * len(self.args.state_sizes)
+        self.state_layer_idx = state_layer
 
 
     def step(self, closure=None):
@@ -89,6 +95,8 @@ class SGHMC(Optimizer):
 
                 state = self.state[parameter]
 
+                # num_dims = torch.prod(torch.tensor(parameter.shape)) #lee
+
                 #  State initialization {{{ #
 
                 if len(state) == 0:
@@ -97,7 +105,7 @@ class SGHMC(Optimizer):
                     state["g"] = torch.ones_like(parameter)
                     state["v_hat"] = torch.ones_like(parameter)
                     state["momentum"] = \
-                        torch.zeros_like(parameter).normal_(mean=0, std=1.)
+                        torch.zeros_like(parameter)#.normal_(mean=0, std=1.)
                 #  }}} State initialization #
 
                 state["iteration"] += 1
@@ -158,11 +166,29 @@ class SGHMC(Optimizer):
 
 
                 #  SGHMC Update {{{ #
-                momentum_t = momentum.add_(
+                mom_summand = \
                     - (lr ** 2) * minv_t * gradient - mdecay * momentum + sample_t
-                )
+                momentum_t = momentum.add_(mom_summand)
+
+                if self.args.mom_clip:
+                    momentum_t = tensor_norm_clip(momentum_t,
+                        self.momenta_clip_norm_vals[self.state_layer_idx])
+                print("\nMomentum norm %f" % torch.norm(momentum_t, 2))
+                print("Mom summand mean %f ; var %f" % (mom_summand.mean(), mom_summand.var()))
+                print("Noise mean %f ; var %f" % (sample_t.mean(), sample_t.var()))
+
+                print("Momentum mean %f ; var %f" % (momentum.mean(), momentum.var()))
+                print("Gradient mean %f ; var %f" % (gradient.mean(), gradient.var()))
 
                 parameter.data.add_(momentum_t)
                 #  }}} SGHMC Update #
 
         return loss
+
+def tensor_norm_clip(tensor, clip_val):
+    norm = torch.norm(tensor, 2)
+    if norm > clip_val:
+        tensor = tensor.clone().detach()
+        return tensor * clip_val / norm
+    else:
+        return tensor
