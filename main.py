@@ -3218,6 +3218,11 @@ def main():
                              'to the argument will be 10 to the power of the' +
                              'float selected from the range. '+
                              'Options: [-6, -2].')
+    tgroup.add_argument('--clip_grad', action='store_true',
+                        help='If true, the gradients used in inference ' +
+                             'are clipped to the value set by the param' +
+                             '"clip_state_grad_norm".')
+    parser.set_defaults(clip_grad=False)
     tgroup.add_argument('--clip_state_grad_norm', type=float, default=0.01,
                         help='The maximum norm value to clip ' +
                              'the state gradients at. Default: ' +
@@ -3324,6 +3329,14 @@ def main():
                         help='')
     ngroup.add_argument('--dampening_param', type=float, default=0.0,
                         help='')
+    ngroup.add_argument('--mom_clip', action='store_true',
+                        help='Whether or not clip the sghmc norm.')
+    parser.set_defaults(mom_clip=False)
+    ngroup.add_argument('--mom_clip_vals', type=float, default=[2.0,
+                            10., 14.676934, 3.0, 5., 2.], nargs='+',
+                        help='The maximum norm of the momentum permitted.')
+
+
     # ngroup.add_argument('--no_spec_norm_reg', action='store_true',
     #                     help='If true, networks are NOT subjected to ' +
     #                          'spectral norm regularisation. ' +
