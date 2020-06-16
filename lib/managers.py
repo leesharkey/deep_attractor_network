@@ -787,7 +787,7 @@ class VisualizationManager(Manager):
         # total_energies = [e*scale for (e, scale) in zip(total_energies,
         #                                                 self.energy_masks)]
         total_energies = sum(total_energies)
-
+        print("Energy: %f" % total_energies.float())
         # Take gradient wrt states (before addition of noise)
         #total_energy.backward() #
         total_energies.backward()
