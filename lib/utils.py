@@ -229,7 +229,9 @@ def get_state_optimizers(args, params):
                             mdecay=args.momentum_param,
                             num_burn_in_steps=args.num_burn_in_steps,
                             scale_grad=args.scale_grad,
-                            min_sq_sigma=args.min_sq_sigma) for prm in params]
+                            min_sq_sigma=args.min_sq_sigma,
+                            args=args,
+                            state_layer=i) for (i,prm) in enumerate(params)]
     if args.state_optimizer == 'sgd':
         return [optim.SGD([prm], args.sampling_step_size) for prm in params]
     if args.state_optimizer == 'sgd_momentum':
