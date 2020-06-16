@@ -327,9 +327,11 @@ class TrainingManager(Manager):
             energy.backward()
         else:
             (-energy).backward()
-        torch.nn.utils.clip_grad_norm_(states,
-                                       self.args.clip_state_grad_norm,
-                                       norm_type=2)
+
+        if self.args.clip_grad:
+            torch.nn.utils.clip_grad_norm_(states,
+                                           self.args.clip_state_grad_norm,
+                                           norm_type=2)
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
@@ -792,9 +794,10 @@ class VisualizationManager(Manager):
 
         # The rest of the sampler step function is no different from the
         # negative step used in training
-        torch.nn.utils.clip_grad_norm_(states,
-                                       self.args.clip_state_grad_norm,
-                                       norm_type=2)
+        if self.args.clip_grad:
+            torch.nn.utils.clip_grad_norm_(states,
+                                           self.args.clip_state_grad_norm,
+                                           norm_type=2)
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
@@ -864,9 +867,10 @@ class VisualizationManager(Manager):
 
         # The rest of the sampler step function is no different from the
         # negative step used in training
-        torch.nn.utils.clip_grad_norm_(states,
-                                       self.args.clip_state_grad_norm,
-                                       norm_type=2)
+        if self.args.clip_grad:
+            torch.nn.utils.clip_grad_norm_(states,
+                                           self.args.clip_state_grad_norm,
+                                           norm_type=2)
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
@@ -908,9 +912,10 @@ class VisualizationManager(Manager):
 
         # The rest of the sampler step function is no different from the
         # negative step used in training
-        torch.nn.utils.clip_grad_norm_(states,
-                                       self.args.clip_state_grad_norm,
-                                       norm_type=2)
+        if self.args.clip_grad:
+            torch.nn.utils.clip_grad_norm_(states,
+                                           self.args.clip_state_grad_norm,
+                                           norm_type=2)
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
@@ -1396,9 +1401,10 @@ class ExperimentsManager(Manager):
         # Calculate the gradient wrt states for the Langevin step (before
         # addition of noise)
         energy.backward()
-        torch.nn.utils.clip_grad_norm_(states,
-                                       self.args.clip_state_grad_norm,
-                                       norm_type=2)
+        if self.args.clip_grad:
+            torch.nn.utils.clip_grad_norm_(states,
+                                           self.args.clip_state_grad_norm,
+                                           norm_type=2)
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
