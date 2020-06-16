@@ -79,6 +79,7 @@ class SGHMC(Optimizer):
         if len(self.args.mom_clip_vals) == 1:
             self.momenta_clip_norm_vals = self.args.mom_clip_vals * len(self.args.state_sizes)
         self.state_layer_idx = state_layer
+        self.printing_grad_mom_info = False
 
 
     def step(self, closure=None):
@@ -173,12 +174,14 @@ class SGHMC(Optimizer):
                 if self.args.mom_clip:
                     momentum_t = tensor_norm_clip(momentum_t,
                         self.momenta_clip_norm_vals[self.state_layer_idx])
-                print("\nMomentum norm %f" % torch.norm(momentum_t, 2))
-                print("Mom summand mean %f ; var %f" % (mom_summand.mean(), mom_summand.var()))
-                print("Noise mean %f ; var %f" % (sample_t.mean(), sample_t.var()))
 
-                print("Momentum mean %f ; var %f" % (momentum.mean(), momentum.var()))
-                print("Gradient mean %f ; var %f" % (gradient.mean(), gradient.var()))
+                if self.printing_grad_mom_info:
+                    print("\nMomentum norm %f" % torch.norm(momentum_t, 2))
+                    print("Mom summand mean %f ; var %f" % (mom_summand.mean(), mom_summand.var()))
+                    print("Noise mean %f ; var %f" % (sample_t.mean(), sample_t.var()))
+
+                    print("Momentum mean %f ; var %f" % (momentum.mean(), momentum.var()))
+                    print("Gradient mean %f ; var %f" % (gradient.mean(), gradient.var()))
 
                 parameter.data.add_(momentum_t)
                 #  }}} SGHMC Update #
