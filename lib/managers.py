@@ -560,8 +560,16 @@ class TrainingManager(Manager):
         self.pos_short_term_history.append(self.latest_pos_enrg)
         diff = max(self.pos_short_term_history) - \
                min(self.pos_short_term_history)
-        if diff < self.args.truncate_pos_its_threshold \
-                and current_iteration > 15:
+
+        # increasing = False
+        # if all([val0 < val1 for (val0, val1) in
+        #         zip(self.pos_short_term_history[:-1],
+        #             self.pos_short_term_history[1:])]):
+        #     increasing = True
+        #     print("Increasing energy during pos phase")
+
+        if current_iteration > 15 and \
+                (diff < self.args.truncate_pos_its_threshold): #or increasing):
             self.stop_pos_phase = True
             self.writer.add_scalar('train/trunc_pos_at', current_iteration,
                                    self.batch_num)
