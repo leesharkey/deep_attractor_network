@@ -542,7 +542,7 @@ class FC2(nn.Module):
 class ContainerFCandDenseCCTBlock(nn.Module):
     """
     Takes as input the separate input states, passes them through a
-    DenseCCTBlock and FC network if both are indicated.
+    DenseCCTBlock and/or FC network as indicated.
     """
 
     def __init__(self, args, state_layer_idx, layer_norm=False,
@@ -570,13 +570,13 @@ class ContainerFCandDenseCCTBlock(nn.Module):
         full_pre_quad_outs = []
         if self.densecctblock is not None:
             conv_inps = [inp for (inp, cct_s) in zip(inps, self.cct_statuses)
-                         if cct_s != 3]
+                         if cct_s != 3]  # Gets only conv inputs
             full_pre_quad_out = self.densecctblock(conv_inps)
             full_pre_quad_out = full_pre_quad_out.view(state.shape[0], -1)
             full_pre_quad_outs.append(full_pre_quad_out)
         if self.fc_net is not None:
             fc_inps = [inp for (inp, cct_s) in zip(inps, self.cct_statuses) if
-                       cct_s == 3]
+                       cct_s == 3]  # Gets only conv inputs
             full_pre_quad_out = self.fc_net(fc_inps)
             full_pre_quad_outs.append(full_pre_quad_out)
 
