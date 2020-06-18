@@ -465,19 +465,12 @@ class FactorHyperGraph(BaseModel):
         self.model_name = model_name
         self.num_state_layers = len(self.args.state_sizes[1:])
 
-        # Define the networks that output the quadratic terms
-        self.quadratic_nets = nn.ModuleList([])
-        for i in range(len(self.args.state_sizes)):
-            net = ContainerFCandDenseCCTBlock(
-                    args, i, weight_norm=self.args.model_weight_norm)
-            self.quadratic_nets.append(net)
-
         # Define the networks that output the cubic terms
-        self.quadratic_nets = nn.ModuleList([])
+        self.cubic_nets = nn.ModuleList([])
         for i in range(len(self.args.state_sizes)):
-            net = ContainerFCandDenseCCTBlock(
+            net = CubicContainerFCandDenseCCTBlock(
                     args, i, weight_norm=self.args.model_weight_norm)
-            self.quadratic_nets.append(net)
+            self.cubic_nets.append(net)
 
     def forward(self, states, class_id=None, step=None):
 
@@ -506,42 +499,46 @@ class FactorHyperGraph(BaseModel):
         #print("lt: " + str(lin_term==sum([lt.sum() for lt in full_lin_terms])))
 
         # Quadratic terms
-        full_quadr_outs = []
-        full_pre_quadr_outs = []
+        full_cubic_outs = []
+        full_pre_cubic_outs = []
         for i, (pre_state, net) in enumerate(
-                zip(states, self.quadratic_nets)):
+                zip(states, self.cubic_nets)):
+
+            # Input states for quadratic term
             post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
             pos_inp_states = [states[j] for j in post_inp_idxs]
             pos_inp_states = [self.st_act(state)
                               for state in pos_inp_states]
-            full_quadr_out, full_pre_quadr_out = net(pre_state, pos_inp_states)
-            full_quadr_out     = -full_quadr_out #minus
-            full_pre_quadr_out = -full_pre_quadr_out
-            full_quadr_outs.append(full_quadr_out)
-            full_pre_quadr_outs.append(full_pre_quadr_out)
 
-        quadratic_term = sum([fqo.sum() for fqo in full_quadr_outs])
+            # Input states for cubic term
+            cubic_post_inp_idxs = self.args.arch_dict['cubic_mod_connect_dict'][i]
+            cubic_pos_inp_states = [states[j] for j in cubic_post_inp_idxs]
+            cubic_pos_inp_states = [self.st_act(state)
+                              for state in cubic_pos_inp_states]
+
+
+
+            full_cubic_out, full_pre_cubic_out = net(pre_state, pos_inp_states,
+                                                     cubic_pos_inp_states)
+            full_cubic_out     = -full_cubic_out #minus
+            full_pre_cubic_out = -full_pre_cubic_out
+            full_cubic_outs.append(full_cubic_out)
+            full_pre_cubic_outs.append(full_pre_cubic_out)
+
+        cubic_term = sum([fco.sum() for fco in full_cubic_outs])
 
         #print("qt: " + str(quadratic_term == sum([qt.sum() for qt in full_quadr_outs])))
 
         # Get the final energy
-        energy = sq_nrm + lin_term + quadratic_term
+        energy = sq_nrm + lin_term + cubic_term
 
         #Full version
         full_energies = [sq + qt.view(qt.shape[0],-1) + lt
                          for sq, qt, lt in zip(full_sq_terms,
-                                               full_quadr_outs,
+                                               full_cubic_outs,
                                                full_lin_terms)]
-        if self.args.energy_scaling:
-            if self.args.energy_scaling_noise:
-                self.energy_masks = \
-                    [mask + (torch.randn_like(mask) * \
-                             self.args.energy_scaling_noise_var)
-                     for mask in self.energy_masks]
-            for i, (mask, full_energy) in enumerate(zip(self.energy_masks, full_energies)):
-                full_energies[i] = full_energy * mask.view(mask.shape[0], -1)
 
-        return energy, full_pre_quadr_outs, full_energies
+        return energy, full_pre_cubic_outs, full_energies
 
 
 

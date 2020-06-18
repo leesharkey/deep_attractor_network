@@ -3194,7 +3194,6 @@ def finalize_args(parser):
                                    1: [1, 1, 1],
                                    2: [1, 1],
                                    3: [1, 3],
-                                   # TODO wtf why is this a diff len from connect dict?
                                    4: [3]}
             mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
                                 1: 0,
@@ -3211,6 +3210,33 @@ def finalize_args(parser):
                               2: 7,
                               3: 3,
                               4: 0}
+            # Gain
+            cubic_mod_connect_dict = {0: [],
+                                      1: [2],
+                                      2: [2, 3],
+                                      3: [3, 4],
+                                      4: [3, 4]}
+            cubic_mod_cct_status_dict = {0: [],
+                                         # 0 for cct, 1 for oc, 2 for oct
+                                         1: [1],
+                                         2: [1, 1],
+                                         3: [1, 3],
+                                         4: [3]}
+            cubic_mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                      1: 0,
+                                      2: 0,
+                                      3: 0,
+                                      4: 0}
+            cubic_base_kern_pad_dict = {0: [],
+                                        1: [[7, 3]],
+                                        2: [[7, 3], [5, 3]],
+                                        3: [[7, 3], []],
+                                        4: []}
+            cubic_main_kern_dict = {0: 7,
+                                    1: 7,
+                                    2: 7,
+                                    3: 3,
+                                    4: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
                                        # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
@@ -3221,6 +3247,11 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict,
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'cubic_base_kern_pad_dict': cubic_base_kern_pad_dict,
+                                       'cubic_main_kern_dict': cubic_main_kern_dict,
+                                       'cubic_mod_connect_dict': cubic_mod_connect_dict,
+                                       'cubic_mod_cct_status_dict': cubic_mod_cct_status_dict,
+                                       'cubic_mod_num_lyr_dict': cubic_mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             # dict_len_check(args)
 
@@ -3614,6 +3645,9 @@ def main():
             device)
     elif args.network_type == 'DAN2':
         model = models.DeepAttractorNetworkTakeTwo(args, device, model_name, writer).to(
+            device)
+    elif args.network_type == 'FHG':
+        model = models.FactorHyperGraph(args, device, model_name, writer).to(
             device)
     elif args.network_type == 'SVF':
         model = models.StructuredVectorFieldNetwork(args, device, model_name,

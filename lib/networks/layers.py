@@ -364,19 +364,26 @@ class DenseCCTBlock(nn.Module):
     Does not include base layer or final layer of the full DenseCCTBlock"""
 
     def __init__(self, args, state_layer_idx, layer_norm=False,
-                 weight_norm=False):
+                 weight_norm=False, cubic=False):
         super().__init__()
         self.args = args
         base_ch      = args.arch_dict['num_ch_base']
         growth_rate  = args.arch_dict['growth_rate']
-        num_layers   = args.arch_dict['mod_num_lyr_dict'][state_layer_idx]
-        cct_statuses = args.arch_dict['mod_cct_status_dict'][state_layer_idx]
-        base_kern_pads = args.arch_dict['base_kern_pad_dict'][state_layer_idx]
-        kern = args.arch_dict['main_kern_dict'][state_layer_idx]
+
+
+        if cubic:
+            dictname_prefix = 'cubic_'
+        else:
+            dictname_prefix = ''
+
+        num_layers   = args.arch_dict[dictname_prefix + 'mod_num_lyr_dict'][state_layer_idx]
+        cct_statuses = args.arch_dict[dictname_prefix + 'mod_cct_status_dict'][state_layer_idx]
+        base_kern_pads = args.arch_dict[dictname_prefix + 'base_kern_pad_dict'][state_layer_idx]
+        kern = args.arch_dict[dictname_prefix + 'main_kern_dict'][state_layer_idx]
         out_shape    = args.state_sizes[state_layer_idx]
 
         # Throw away info for FC nets, since we're only making convs here
-        inp_idxs         = args.arch_dict['mod_connect_dict'][state_layer_idx]
+        inp_idxs         = args.arch_dict[dictname_prefix + 'mod_connect_dict'][state_layer_idx]
         inp_state_shapes = [self.args.state_sizes[j] for j in inp_idxs]
         inp_state_shapes = [ii for (ii, cct_s) in zip(inp_state_shapes, cct_statuses) if cct_s != 3]
         base_kern_pads   = [bkp for (bkp, cct_s) in zip(base_kern_pads, cct_statuses) if cct_s != 3]
@@ -492,18 +499,24 @@ class DenseCCTBlock(nn.Module):
 
 class FC2(nn.Module):
     def __init__(self, args, state_layer_idx, layer_norm=False,
-                 weight_norm=False):
+                 weight_norm=False, cubic=False):
         super().__init__()
         self.args = args
         self.act = utils.get_activation_function(args)
         self.state_layer_idx = state_layer_idx
         self.internal_size = 64
 
+        if cubic:
+            dictname_prefix = 'cubic_'
+        else:
+            dictname_prefix = ''
+
+
         # Get the indices of the state_layers that will be input to this net
         # and their sizes. They may be flattened conv outputs.
-        input_idxs   = self.args.arch_dict['mod_connect_dict'][state_layer_idx]
-        cct_statuses = args.arch_dict['mod_cct_status_dict'][state_layer_idx]
-        num_layers   = args.arch_dict['mod_num_lyr_dict'][state_layer_idx]
+        input_idxs   = self.args.arch_dict[dictname_prefix + 'mod_connect_dict'][state_layer_idx]
+        cct_statuses = args.arch_dict[dictname_prefix + 'mod_cct_status_dict'][state_layer_idx]
+        num_layers   = args.arch_dict[dictname_prefix + 'mod_num_lyr_dict'][state_layer_idx]
 
         self.input_idxs = [ii for (ii, cct_s) in zip(input_idxs, cct_statuses) if cct_s == 3]
         self.in_sizes = [torch.prod(torch.tensor(self.args.state_sizes[j][1:]))
@@ -596,7 +609,122 @@ class ContainerFCandDenseCCTBlock(nn.Module):
         return full_quadr_out, full_pre_quad_out
 
 
+class CubicContainerFCandDenseCCTBlock(nn.Module):
+    """
+    Cubic version of the container for the FC and Dense nets in an NRF
 
+    Takes as input the separate input states, passes them through the
+    DenseCCTBlocks and/or FC networks as indicated.
+    """
+
+    def __init__(self, args, state_layer_idx, layer_norm=False,
+                 weight_norm=False):
+        super().__init__()
+        self.args = args
+
+        # Define the input indices for both net types
+        qd_inp_idxs     = args.arch_dict['mod_connect_dict'][state_layer_idx]
+        cubic_inp_idxs = args.arch_dict['cubic_mod_connect_dict'][state_layer_idx]
+
+        # Define the cct statuses of the nets
+        self.qd_cct_statuses = args.arch_dict['mod_cct_status_dict'][state_layer_idx]
+        self.cubic_cct_statuses = args.arch_dict['cubic_mod_cct_status_dict'][state_layer_idx]
+
+        # First make the quadratic term nets
+        if 0 in self.qd_cct_statuses or 1 in self.qd_cct_statuses or 2 in self.qd_cct_statuses:
+            self.qd_densecctblock = DenseCCTBlock(args, state_layer_idx,
+                                               layer_norm=layer_norm,
+                                               weight_norm=weight_norm)
+        else:
+            self.qd_densecctblock = None
+        if 3 in self.qd_cct_statuses:
+            self.qd_fc_net = FC2(args, state_layer_idx,
+                              layer_norm=layer_norm,
+                              weight_norm=weight_norm)
+        else:
+            self.qd_fc_net = None
+
+
+        # Then make the cubic term nets
+        if 0 in self.cubic_cct_statuses or 1 in self.cubic_cct_statuses or 2 in self.cubic_cct_statuses:
+            self.cubic_densecctblock = DenseCCTBlock(args, state_layer_idx,
+                                                     layer_norm=layer_norm,
+                                                     weight_norm=weight_norm,
+                                                     cubic=True)
+        else:
+            self.cubic_densecctblock = None
+        if 3 in self.cubic_cct_statuses:
+            self.cubic_fc_net = FC2(args, state_layer_idx,
+                                    layer_norm=layer_norm,
+                                    weight_norm=weight_norm,
+                                    cubic=True)
+        else:
+            self.cubic_fc_net = None
+
+    def forward(self, state, qd_inps, cubic_inps):
+        """Pre quadratic terms are the outputs of the networks before they
+        get multiplied by the state variable to become quadratic terms.
+        Then these are multiplied by the output of the cubic net to
+        get the cubic terms. """
+
+        # Calculate the pre-quadratic terms from the quadratic nets
+        full_pre_quad_outs = []
+        if self.qd_densecctblock is not None:
+            qd_conv_inps = [inp for (inp, cct_s) in zip(qd_inps, self.qd_cct_statuses)
+                         if cct_s != 3]  # Gets only conv inputs
+            full_pre_quad_out = self.qd_densecctblock(qd_conv_inps)
+            full_pre_quad_out = full_pre_quad_out.view(state.shape[0], -1)
+            full_pre_quad_outs.append(full_pre_quad_out)
+        if self.qd_fc_net is not None:
+            qd_fc_inps = [inp for (inp, cct_s) in zip(qd_inps, self.qd_cct_statuses) if
+                       cct_s == 3]  # Gets only conv inputs
+            full_pre_quad_out = self.qd_fc_net(qd_fc_inps)
+            full_pre_quad_outs.append(full_pre_quad_out)
+
+        full_pre_quad_outs = torch.stack(full_pre_quad_outs)
+        full_pre_out  = torch.sum(full_pre_quad_outs, dim=0)
+
+
+
+        # Calculate the cubic terms from the cubic nets
+        if self.cubic_densecctblock is not None or \
+                self.cubic_fc_net is not None:
+            full_pre_cubic_outs = []
+            if self.cubic_densecctblock is not None:
+                cubic_conv_inps = [inp for (inp, cct_s) in zip(cubic_inps, self.cubic_cct_statuses)
+                             if cct_s != 3]  # Gets only conv inputs
+                full_pre_cubic_out = self.cubic_densecctblock(cubic_conv_inps)
+                full_pre_cubic_out = full_pre_cubic_out.view(state.shape[0], -1)
+                full_pre_cubic_outs.append(full_pre_cubic_out)
+            if self.cubic_fc_net is not None:
+                cubic_fc_inps = [inp for (inp, cct_s) in zip(cubic_inps, self.cubic_cct_statuses) if
+                           cct_s == 3]  # Gets only conv inputs
+                full_pre_cubic_out = self.cubic_fc_net(cubic_fc_inps)
+                full_pre_cubic_outs.append(full_pre_cubic_out)
+
+            full_pre_cubic_outs = torch.stack(full_pre_cubic_outs)
+            full_pre_cubic_out  = torch.sum(full_pre_cubic_outs, dim=0)
+
+
+            full_pre_out = torch.mul(full_pre_out, # elementwise mult
+                                     full_pre_cubic_out)
+
+
+
+
+        # Make the prequad terms into quadratic terms
+        full_out = 0.5 * torch.mul(full_pre_out,  # elementwise mult
+                                   state.view(state.shape[0], -1))
+
+        # Reshape to size of state layer
+        full_out           = full_out.view(state.shape)
+        full_pre_out = full_pre_out.view(state.shape)
+
+
+        #quadr_out = out.sum(dim=1) #almost identical outputs with some differences for unknown numerical reasons
+
+        # Return full out and associated pre term
+        return full_out, full_pre_out
 
 
 
