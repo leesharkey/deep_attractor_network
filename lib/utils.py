@@ -113,7 +113,7 @@ def generate_random_states(args, shapes, device, scales=[1,1,1,1,1,1],
     if initter_network is not None and args.neg_ff_init:
         # Get the random pixels
         random_means = torch.rand(rand_states[0].shape[0:2]) * 0.7
-        random_means = [random_means] * torch.prod(torch.tensor(rand_states[0].shape[2:]))
+        random_means = [random_means] * torch.prod(torch.tensor(rand_states[0].shape[2:])).item()
         random_means = torch.stack(random_means, dim=-1)
         random_means = random_means.view(rand_states[0].shape)
         random_means = random_means.to(device)
