@@ -120,7 +120,7 @@ class SGHMC(Optimizer):
 
 
                 gradient = parameter.grad.data
-                #gradient += torch.normal(0,0.005,size=parameter.grad.data.shape, device = 'cuda:0')
+                #gradient += torch.randn_like(gradient, device = 'cuda:0') * 0.005
                 #  }}} Readability #
 
                 r_t = 1. / (tau + 1.)
@@ -137,8 +137,18 @@ class SGHMC(Optimizer):
 
                 lr_scaled = lr / torch.sqrt(scale_grad)
 
-                minv_t = minv_t.mean(dim=0) # average the variances over batches #lee
-                minv_t = torch.stack(self.batch_size * [minv_t])
+
+                # average the variances over batches #lee
+
+                #normal one
+                # minv_t = minv_t.mean(dim=0) # average the variances over batches #lee
+                # minv_t = torch.stack(self.batch_size * [minv_t])
+                # end normal one
+
+                minv_t = torch.ones_like(minv_t) * 16. #minv_t.mean()
+
+
+
                 # mv = [minv_t * (10/i) for i in range(1,self.batch_size+1)]
                 # minv_t = torch.stack(mv)
 
