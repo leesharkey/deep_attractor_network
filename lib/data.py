@@ -135,15 +135,17 @@ class SampleBuffer: #TODO init that uses biases
 
         return samples, class_ids
 
-    def sample_buffer(self):
+    def sample_buffer(self, initter_network=None):
 
         state_sizes = self.args.state_sizes
 
         if len(self.neg_buffer) < 1:
             # Generate all rand states and class_ids when buffers are empty
-            rand_states = lib.utils.generate_random_states(self.args.state_sizes,
+            rand_states = lib.utils.generate_random_states(self.args,
+                                                           self.args.state_sizes,
                                                            self.device,
-                                                           self.args.state_scales)
+                                                           self.args.state_scales,
+                                                           initter_network)
             return (rand_states,
                 torch.randint(0, 10, (self.args.batch_size,),
                               device=self.device),
@@ -153,8 +155,11 @@ class SampleBuffer: #TODO init that uses biases
         new_rand_state_sizes = [s.copy() for s in self.args.state_sizes]
         for size in new_rand_state_sizes:
             size[0] = self.num_rand_samples
-        random_sample = lib.utils.generate_random_states(new_rand_state_sizes,
-                                                         self.device)
+        random_sample = lib.utils.generate_random_states(self.args,
+                                                          new_rand_state_sizes,
+                                                          self.device,
+                                                          self.args.state_scales,
+                                                          initter_network)
         random_id = torch.randint(0, 10, (self.num_rand_samples,), device=self.device)
         return (
             listcat(zip(replay_sample, random_sample), 0),

@@ -29,7 +29,8 @@ class Manager():
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                    step_size=1,
                                                    gamma=self.args.lr_decay_gamma)
-        self.noises = lib.utils.generate_random_states(self.args.state_sizes,
+        self.noises = lib.utils.generate_random_states(self.args,
+                                                       self.args.state_sizes,
                                                        self.device)
         self.global_step = 0
         self.batch_num = 0
@@ -278,7 +279,8 @@ class TrainingManager(Manager):
     def negative_phase(self):
         print('\nStarting negative phase...')
         # Initialize the chain (either as noise or from buffer)
-        neg_states, neg_id = self.buffer.sample_buffer()
+        neg_states, neg_id = \
+            self.buffer.sample_buffer(initter_network=self.initter)
 
         # Freeze network parameters and take grads w.r.t only the inputs
         lib.utils.requires_grad(neg_states, True)
@@ -299,12 +301,12 @@ class TrainingManager(Manager):
             self.sampler_step(neg_states, neg_id, step=self.global_step)
             self.global_step += 1
             # #TODO remove when done debugging viz
-            # neg_imgs_save = neg_states[0].detach().to('cpu')
-            # utils.save_image(neg_imgs_save,
-            #                  os.path.join(self.sample_log_dir,
-            #                               str(self.batch_num).zfill(
-            #                                   6) + str(_) + '.png'),
-            #                  nrow=16, normalize=True, range=(0, 1))
+            neg_imgs_save = neg_states[0].detach().to('cpu')
+            utils.save_image(neg_imgs_save,
+                             os.path.join(self.sample_log_dir,
+                                          str(self.batch_num).zfill(
+                                              6) + str(_) + '.png'),
+                             nrow=16, normalize=True, range=(0, 1))
 
         # Stop calculting grads w.r.t. images
         for neg_state in neg_states:

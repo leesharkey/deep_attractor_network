@@ -85,7 +85,10 @@ def conv_t_output_shape(h_w, kernel_size=1, stride=1, padding=0,
                         output_padding=0):
     return (h_w -1)*stride - 2*padding + kernel_size + output_padding
 
-def generate_random_states(shapes, device, scales=[1,1,1,1,1,1]): #TODO if states_activation is relu then this needs to be multiplied by something like the variance of the negative phase states.
+def generate_random_states(args, shapes, device, scales=[1,1,1,1,1,1],
+                           initter_network=None): #TODO if states_activation is relu then this needs to be multiplied by something like the variance of the negative phase states.
+
+
     rand_states = []
     for shape in shapes:
         if len(shape)==4:
@@ -105,8 +108,43 @@ def generate_random_states(shapes, device, scales=[1,1,1,1,1,1]): #TODO if state
 
     rand_states= [rs * scale for (rs, scale) in zip(rand_states, scales)] # Since in the CIFAR10
 
-    # networks almost no state layer ever has a mean above 0.5, most being
-    # significantly below.
+    # Use the initter network to initialize states close to the
+    # 'physiological regime'
+    if initter_network is not None and args.neg_ff_init:
+        # Get the random pixels
+        random_means = torch.rand(rand_states[0].shape[0:2]) * 0.7
+        random_means = [random_means] * torch.prod(torch.tensor(rand_states[0].shape[2:]))
+        random_means = torch.stack(random_means, dim=-1)
+        random_means = random_means.view(rand_states[0].shape)
+        random_means = random_means.to(device)
+
+        random_pixels = (torch.randn_like(rand_states[0], device=device) * 0.3)
+        random_pixels = random_means + random_pixels
+        itr_rand_states = [random_pixels]
+
+        # Use the initializer and feed it the random pixels to init each state
+        #initter_network.train()
+        itr_rand_states_new = initter_network.forward(itr_rand_states[0], x_id=None)
+        itr_rand_states.extend(itr_rand_states_new)
+
+        # Randomly shuffle the pixels and channels in each image to protect
+        # against attractors in the initter network
+        batch_size = itr_rand_states[0].shape[0]
+
+        new_itr_rand_states = []
+        for rs in itr_rand_states:
+            shape = rs.shape
+            num_ele = torch.prod(torch.tensor(rs.shape[1:]))
+            rand_inds = torch.randperm(num_ele)
+            shuff_rs = rs.view(batch_size, -1)[:,rand_inds].view(shape)
+            new_itr_rand_states.append(shuff_rs)
+
+
+        rand_states = itr_rand_states
+
+
+
+    rand_states = [rsi.clone().detach() for rsi in rand_states]
 
     return rand_states
 
