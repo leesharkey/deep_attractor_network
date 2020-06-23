@@ -9,7 +9,7 @@ import lib.custom_components.custom_swish_activation as cust_actv
 import lib.custom_components.sghmc as sghmc
 
 
-def save_configs_to_csv(args, model_name, results_dict=None):
+def save_configs_to_csv(args, model_name, session_name=None, results_dict=None):
     """"""
     arg_dict = vars(args).copy()
     arg_dict = {**arg_dict, **{'unique_id': model_name}}
@@ -24,7 +24,7 @@ def save_configs_to_csv(args, model_name, results_dict=None):
 
     # Check there isn't already a df for this model; adjust model name if so
     if os.path.isfile("exps/params_and_results_%s.csv" % model_name):
-        model_name = model_name + '_load' + str(datetimenow())
+        model_name = model_name + 'loaded_' + session_name
 
     # Create a df with a single row with new info
     full_df = pd.DataFrame(arg_dict, index=[model_name])

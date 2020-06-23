@@ -47,6 +47,7 @@ class Manager():
 
         # Load old networks and settings if loading an old model
         if self.args.load_model:
+            self.new_model_name = self.model.model_name
             self.loaded_model_name = str(self.args.load_model)
             path = 'exps/models/' + self.loaded_model_name + '.pt'
             checkpoint = torch.load(path)
@@ -70,7 +71,8 @@ class Manager():
             print("Loaded model " + self.loaded_model_name + ' successfully')
 
             # Save new settings (doesn't overwrite old csv values)
-            lib.utils.save_configs_to_csv(self.args, self.loaded_model_name+'loaded')
+            lib.utils.save_configs_to_csv(self.args, self.loaded_model_name,
+                                          session_name=self.new_model_name)
         else:
             lib.utils.save_configs_to_csv(self.args, self.model.model_name)
 
