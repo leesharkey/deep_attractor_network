@@ -147,18 +147,17 @@ class SGHMC(Optimizer):
 
                 minv_t = torch.ones_like(minv_t) * 16. #minv_t.mean()
 
-
-
                 # mv = [minv_t * (10/i) for i in range(1,self.batch_size+1)]
                 # minv_t = torch.stack(mv)
 
                 #  Draw random sample {{{ #
 
-                noise_scale = (
-                    2. * (lr_scaled ** 2) * mdecay * minv_t - #LEE was minus
-                    2. * (lr_scaled ** 3) * (minv_t ** 2) * noise -
-                    (lr_scaled ** 4)
-                )
+                # noise_scale = (
+                #     2. * (lr_scaled ** 2) * mdecay * minv_t - #LEE was minus
+                #     2. * (lr_scaled ** 3) * (minv_t ** 2) * noise -
+                #     (lr_scaled ** 4)
+                # )
+                noise_scale = torch.ones_like(minv_t) * 0.005
 
                 sigma = torch.sqrt(torch.clamp(noise_scale,
                                                min=self.min_sq_sigma))
