@@ -667,6 +667,7 @@ class VisualizationManager(Manager):
 
         if self.args.viz_type == 'standard':
             self.noises = lib.utils.generate_random_states(
+                self.args,
                 self.args.state_sizes,
                 self.device,
                 scales=self.args.state_scales)
@@ -1266,10 +1267,10 @@ class ExperimentsManager(Manager):
         exp_stim_path_base = "data/gabor_filters/single/"
 
         # To measure oscillations, use experiment with varied contrast & angle
-        exp_stim_stem = "contrast_and_angle"
+        #exp_stim_stem = "contrast_and_angle" #TODO make into a cli arg
 
         # To measure orientation preferences, use exp that varies only angle
-        #exp_stim_stem = "just_angle"
+        exp_stim_stem = "just_angle"
 
         exp_stim_path = exp_stim_path_base + exp_stim_stem
 
@@ -1296,7 +1297,8 @@ class ExperimentsManager(Manager):
             iter(self.data.loader))  # Gets first batch only
 
         # Images for first 50 timesteps are from data distribution
-        image_phase_list = [pos_img]
+        # image_phase_list = [pos_img]
+        image_phase_list = []
 
         # The next image is a blank image
         image_phase_list.append(self.base_im_batch)
@@ -1320,7 +1322,9 @@ class ExperimentsManager(Manager):
 
         # Determine how long each stim will be displayed for
         #self.experiment_len = 200
-        self.phase_lens = [50, 1000, 2500, 3000]
+        #self.phase_lens = [50, 1000, 2500, 3000]
+        self.phase_lens = [1500, 1500, 1500] #modern
+
 
         phase_idxs = []
         for phase, phase_len in enumerate(self.phase_lens):

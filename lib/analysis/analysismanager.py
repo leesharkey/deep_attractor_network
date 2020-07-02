@@ -21,14 +21,14 @@ import lib.analysis.datamanager as datamanager
 class AnalysisManager:
     def __init__(self, args, session_name):
         self.args = args
-        self.primary_model  = '20200609-020600__rndidx_88671_loaded20200601-224129__rndidx_81769'
+        self.primary_model  = '20200701-202929__rndidx_57703_loaded20200629-143321__rndidx_89181'
         #self.primary_model = '20200602-194603__rndidx_61473_loaded20200508-141652__rndidx_82930'
         #self.primary_model = '20200508-115243__rndidx_37562_loaded20200423-154227__rndidx_15605'
-        self.just_angles_model = '20200512-075955__rndidx_62111_loaded20200423-154227__rndidx_15605'
-        self.just_angles_exp_name = "/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data/20200512-075955__rndidx_62111_loaded20200423-154227__rndidx_15605/orientations_present_single_gabor_just_angle"
+        self.just_angles_model = '20200701-225551__rndidx_84485_loaded20200629-143321__rndidx_89181'
+        #self.just_angles_exp_name = "/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data/20200701-225551__rndidx_84485_loaded20200629-143321__rndidx_89181/orientations_present_single_gabor_just_angle"
 
-        exp_stem = '/orientations_present_single_gabor_contrast_and_angle'
-        self.primary_model_exp_name = self.primary_model + exp_stem
+        exp_stem = '/orientations_present_single_gabor'
+        self.primary_model_exp_name = self.primary_model + exp_stem + '_contrast_and_angle'
         self.just_angles_exp = self.just_angles_model + exp_stem + '_just_angle'
         self.session_name = session_name
 
@@ -116,7 +116,7 @@ class AnalysisManager:
                                      batches=None,
                                      channels=None,
                                      hw=None,
-                                     timesteps=[0, 51, 3051])
+                                     timesteps=[0, 51, 1500, 1501, 3000, 3051])
         num_imgs = dm.data['state_0'].shape[0]
         for i in range(num_imgs):
             im = dm.data['state_0'][i]
@@ -150,14 +150,22 @@ class AnalysisManager:
         hh = 9
         w = 22
         ww = 22
+        # h = 0 #Modern
+        # hh = 0
+        # w = 32
+        # ww = 32
 
         # Prepare variables used for processing data
         # angle_contrast_pairs = []
         # for a in angles:
         #     for c in contrasts:
         #         angle_contrast_pairs.append((a, c))
-        stim_on_start = 1050
-        stim_on_stop = 3550
+        # stim_on_start = 1050
+        # stim_on_stop = 3550
+        stim_on_start = 1500
+        stim_on_stop = 3000 #modern
+
+
         num_ch = 32
         activity_df_created = False
 
@@ -203,7 +211,7 @@ class AnalysisManager:
             during_stim = activities_df[stim_on_start:stim_on_stop]
             outside_stim = activities_df.drop(
                 activities_df.index[stim_on_start:stim_on_stop])
-            outside_stim = outside_stim.drop(activities_df.index[0:50])
+            #outside_stim = outside_stim.drop(activities_df.index[0:50])#removed in modern
 
             # Test for normality
             during_cols  = during_stim.columns[1:] #[1:] slice to remove timesteps
@@ -211,7 +219,10 @@ class AnalysisManager:
             shap_test_during = [shapiro(during_stim[col])
                                 for col in during_cols]
             shap_test_outside = [shapiro(outside_stim[col])
-                                for col in outside_cols]
+                                for col in outside_cols] #TODO save these results somewhere
+
+            #TODO add data for the average values that neurons take during
+            # stim and outside stim
 
             # Test whether mean during stim is signif different than outside
             # of stim and if it is higher, then it is considered 'active'
@@ -268,7 +279,10 @@ class AnalysisManager:
                          'neuron_activity_results_primary.pkl'))
 
         im_start = 9 #TODO change these to class variables
+
         im_dim = 13
+        # im_dim = 32 #modern
+
         # Reorganises activity dataframe so we can sum over pixels
         map_act = pd.melt(nrnact, id_vars=['batch_idx', 'height', 'width'],
                           value_vars=list(range(32)))
@@ -335,6 +349,9 @@ class AnalysisManager:
 
         im_start = 9
         im_dim = 13  #TODO change these to class variables
+        # im_start = 0
+        # im_dim = 32 #modern
+
 
         # Reorganises activity dataframe so we can sum over pixels
         map_act = pd.melt(nrnact, id_vars=['batch_idx', 'height', 'width'],
@@ -431,6 +448,7 @@ class AnalysisManager:
         sum_angles_df = sum_angles_df.drop(columns=['width','height','contrast', 'batch_idx'])
 
         # Plot the orientation preference plots
+        #TODO title on plots (consider moving to plotly)
         fig, ax = plt.subplots(4,8, sharey=True, sharex=True)
         fig.set_size_inches(23, 8)
         k = 0
@@ -700,15 +718,27 @@ class AnalysisManager:
                            cmap=plt.get_cmap('hsv'))
             ax[1].set_ylabel('Frequency [a.u.]')
 
+            # lags1, acorrs1, plot11, plot12 = ax[2].acorr(
+            #     on_nrn_acts[1050:3550],
+            #     detrend=plt.mlab.detrend_linear,
+            #     # lambda x: x - np.mean(x)
+            #     maxlags=2499)
+            # lags2, acorrs2, plot21, plot22 = ax[3].acorr(
+            #     on_nrn_acts[3550:6050],
+            #     detrend=plt.mlab.detrend_linear,
+            #     maxlags=2499)
+
+            #Modern
             lags1, acorrs1, plot11, plot12 = ax[2].acorr(
-                on_nrn_acts[1050:3550],
+                on_nrn_acts[1500:3000],
                 detrend=plt.mlab.detrend_linear,
                 # lambda x: x - np.mean(x)
-                maxlags=2499)
+                maxlags=1500)
             lags2, acorrs2, plot21, plot22 = ax[3].acorr(
-                on_nrn_acts[3550:6050],
+                on_nrn_acts[1500:3000],
                 detrend=plt.mlab.detrend_linear,
-                maxlags=2499)
+                maxlags=1500)
+
             plt.ticklabel_format(axis="y", style="sci", scilimits=(
                 0, 0))  # Uses sci notation for units
             plt.tight_layout()  # Stops y label being cut off
@@ -742,8 +772,12 @@ class AnalysisManager:
         result_names = ['freq_power_product', 'peak_freqs', 'peak_freq_powers']
 
         # Prepare variables used for processing data
-        stim_on_start = 1050
-        stim_on_stop = 3550
+        # stim_on_start = 1050
+        # stim_on_stop = 3550
+
+        stim_on_start = 1500
+        stim_on_stop = 3000
+
         num_ch = 32
 
         # Create empty columns in df to save PSD results
@@ -765,10 +799,15 @@ class AnalysisManager:
 
             # Prepare/reset variables for data managers
             var_names = ['state']   #TODO change these to class variables
-            h = 9
-            hh = 9
-            w = 22
-            ww = 22
+            # h = 9
+            # hh = 9
+            # w = 22
+            # ww = 22
+
+            h = 0
+            hh = 0
+            w = 32
+            ww = 32
 
             # Get data
             dm = datamanager.DataManager(root_path=self.args.root_path,
@@ -806,7 +845,7 @@ class AnalysisManager:
             during_stim = activities_df[stim_on_start:stim_on_stop]
             outside_stim = activities_df.drop(
                 activities_df.index[stim_on_start:stim_on_stop])
-            outside_stim = outside_stim.drop(activities_df.index[0:50])
+            #outside_stim = outside_stim.drop(activities_df.index[0:50]) #removed in modern
 
             # Find the subset of the nrnact df for this channel only and get
             # the h, w values for on neurons in each batch
