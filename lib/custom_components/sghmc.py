@@ -175,6 +175,20 @@ class SGHMC(Optimizer):
                 #minv_t.var(dim=[0,2,3])
 
 
+                if self.args.maxminstate_to_zeromom:
+                    if self.args.states_activation == 'hardsig':
+                        mask = (parameter > 0.) #& (parameter < 1.)
+                        momentum = torch.where(mask,
+                                                 momentum,
+                                                 momentum * self.bump_scaler)
+                    elif self.args.states_activation in \
+                            ['relu', 'leaky_relu', 'swish']:
+                        momentum = torch.where(
+                            parameter > 0.0,
+                            momentum,
+                            momentum * self.bump_scaler)
+
+
                 #  SGHMC Update {{{ #
                 mom_summand = \
                     - (lr ** 2) * minv_t * gradient - mdecay * momentum + sample_t
@@ -184,20 +198,7 @@ class SGHMC(Optimizer):
                     momentum_t = tensor_norm_clip(momentum_t,
                         self.momenta_clip_norm_vals[self.state_layer_idx])
 
-                if self.args.maxminstate_to_zeromom:
-                    if self.args.states_activation == 'hardsig':
-                        mask = (parameter > 0.) #& (parameter < 1.)
-                        momentum_t = torch.where(mask,
-                                                 momentum_t,
-                                                 momentum_t * self.bump_scaler)
 
-
-                    elif self.args.states_activation in \
-                            ['relu', 'leaky_relu', 'swish']:
-                        momentum_t = torch.where(
-                            parameter > 0.0,
-                            momentum_t,
-                            momentum_t * self.bump_scaler)
 
 
                 if self.printing_grad_mom_info:
