@@ -32,6 +32,7 @@ class Manager():
         self.noises = lib.utils.generate_random_states(self.args,
                                                        self.args.state_sizes,
                                                        self.device)
+
         self.global_step = 0
         self.batch_num = 0
         self.epoch = 0
@@ -137,7 +138,10 @@ class Manager():
             pos_states.extend(prev_states[1:])
         else:  # i.e. if self.args.initializer == 'random':
             rand_states = lib.utils.generate_random_states(
-                self.args.state_sizes[1:], self.device)
+                self.args,
+                self.args.state_sizes[1:],
+                self.device)
+
             pos_states.extend(rand_states)
 
         return pos_states
@@ -684,8 +688,9 @@ class VisualizationManager(Manager):
                     print("Channel %s" % ch)
                     #self.update_state_size_bs(state_layer_idx)
                     self.noises = lib.utils.generate_random_states(
-                        self.args.state_sizes,
-                        self.device)
+                                    self.args,
+                                    self.args.state_sizes,
+                                    self.device)
                     clamp_array = self.calc_clamp_array_conv(state_layer_idx,
                                                              current_ch=ch)
                     self.visualization_phase(state_layer_idx,
@@ -696,8 +701,10 @@ class VisualizationManager(Manager):
                             clamp_array=None):
 
         # Original
-        states = lib.utils.generate_random_states(self.args.state_sizes,
-                                                  self.device)
+        states = lib.utils.generate_random_states(
+                self.args,
+                self.args.state_sizes,
+                self.device)
         # End original
 
 
@@ -1364,7 +1371,9 @@ class ExperimentsManager(Manager):
             pos_states.extend(prev_states[1:])
         else:  # i.e. if self.args.initializer == 'random':
             rand_states = lib.utils.generate_random_states(
-                self.args.state_sizes[1:], self.device)
+                self.args,
+                self.args.state_sizes[1:],
+                self.device)
             pos_states.extend(rand_states)
 
         return pos_states
