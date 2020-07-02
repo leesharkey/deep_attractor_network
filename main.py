@@ -3536,6 +3536,11 @@ def main():
     ngroup.add_argument('--mom_clip_vals', type=float, default=[2.0,
                             10., 14.676934, 3.0, 5., 2.], nargs='+',
                         help='The maximum norm of the momentum permitted.')
+    ngroup.add_argument('--maxminstate_to_zeromom', action='store_true',
+                        help='Whether or not to cut the momentum when ' +
+                        'the state hits a max or min allowed value. ')
+    parser.set_defaults(maxminstate_to_zeromom=False)
+
 
 
     # ngroup.add_argument('--no_spec_norm_reg', action='store_true',

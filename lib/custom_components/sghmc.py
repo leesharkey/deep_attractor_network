@@ -81,6 +81,8 @@ class SGHMC(Optimizer):
         self.state_layer_idx = state_layer
         self.printing_grad_mom_info = False
 
+        self.bump_scaler = 1e-3
+
 
     def step(self, closure=None):
         loss = None
@@ -120,7 +122,6 @@ class SGHMC(Optimizer):
 
 
                 gradient = parameter.grad.data
-                #gradient += torch.randn_like(gradient, device = 'cuda:0') * 0.005
                 #  }}} Readability #
 
                 r_t = 1. / (tau + 1.)
@@ -162,7 +163,6 @@ class SGHMC(Optimizer):
                 sigma = torch.sqrt(torch.clamp(noise_scale,
                                                min=self.min_sq_sigma))
 
-                # sample_t = torch.normal(mean=0., std=torch.tensor(1.)) * sigma
                 sample_t = torch.normal(mean=0., std=sigma)
                 #  }}} Draw random sample #
 
@@ -183,6 +183,21 @@ class SGHMC(Optimizer):
                 if self.args.mom_clip:
                     momentum_t = tensor_norm_clip(momentum_t,
                         self.momenta_clip_norm_vals[self.state_layer_idx])
+
+                if self.args.maxminstate_to_zeromom:
+                    if self.args.states_activation == 'hardsig':
+                        momentum_t = torch.where(parameter > 0.0 and parameter < 1.0,
+                                                 momentum_t,
+                                                 momentum_t * self.bump_scaler)
+
+
+                    elif self.args.states_activation in \
+                            ['relu', 'leaky_relu', 'swish']:
+                        momentum_t = torch.where(
+                            parameter > 0.0,
+                            momentum_t,
+                            momentum_t * self.bump_scaler)
+
 
                 if self.printing_grad_mom_info:
                     print("\nMomentum norm %f" % torch.norm(momentum_t, 2))
