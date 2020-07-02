@@ -186,7 +186,7 @@ class SGHMC(Optimizer):
 
                 if self.args.maxminstate_to_zeromom:
                     if self.args.states_activation == 'hardsig':
-                        mask = (parameter > 0.) & (parameter < 1.)
+                        mask = (parameter > 0.) #& (parameter < 1.)
                         momentum_t = torch.where(mask,
                                                  momentum_t,
                                                  momentum_t * self.bump_scaler)
