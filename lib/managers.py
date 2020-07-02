@@ -700,22 +700,27 @@ class VisualizationManager(Manager):
     def visualization_phase(self, state_layer_idx=0, channel_idx=None,
                             clamp_array=None):
 
-        # Original
-        states = lib.utils.generate_random_states(
-                self.args,
-                self.args.state_sizes,
-                self.device)
-        # End original
+        # # Original
+        # states = lib.utils.generate_random_states(
+        #         self.args,
+        #         self.args.state_sizes,
+        #         self.device)
+        #
+        # # Gets the values of the pos states by running an inference phase
+        # # with the image state_layer clamped
+        # rand_states_init = self.initialize_pos_states(pos_img=states[0],
+        #                                              prev_states=[])
+        # rand_states = [rsi.clone().detach() for rsi in rand_states_init]
+        # # End original
 
-
-        # Gets the values of the pos states by running an inference phase
-        # with the image state_layer clamped
-        rand_states_init = self.initialize_pos_states(pos_img=states[0],
-                                                     prev_states=[])
-        rand_states = [rsi.clone().detach() for rsi in rand_states_init]
+        states = lib.utils.generate_random_states(self.args,
+                                                       self.args.state_sizes,
+                                                       self.device,
+                                                       self.args.state_scales,
+                                                       self.initter)
 
         # Freeze network parameters and take grads w.r.t only the inputs
-        lib.utils.requires_grad(rand_states, True)
+        lib.utils.requires_grad(states, True)
         lib.utils.requires_grad(self.parameters, False)
         if self.args.initializer == 'ff_init':
             lib.utils.requires_grad(self.initter.parameters(), False)
