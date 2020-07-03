@@ -9,7 +9,7 @@ import lib.custom_components.custom_swish_activation as cust_actv
 import lib.custom_components.sghmc as sghmc
 
 
-def save_configs_to_csv(args, model_name, session_name=None, results_dict=None):
+def save_configs_to_csv(args, model_name, session_name=None, loading=False, results_dict=None):
     """"""
     arg_dict = vars(args).copy()
     arg_dict = {**arg_dict, **{'unique_id': model_name}}
@@ -22,8 +22,8 @@ def save_configs_to_csv(args, model_name, session_name=None, results_dict=None):
     for k, v in arg_dict.items():
         arg_dict[k] = str(v) if type(v) ==list or type(v) ==dict else v
 
-    # Check there isn't already a df for this model; adjust model name if so
-    if os.path.isfile("exps/params_and_results_%s.csv" % model_name):
+    # Check there isn't already a df for this model(session); adjust model name if so
+    if os.path.isfile("exps/params_and_results_%s.csv" % model_name) and loading:
         model_name = model_name + 'loaded_' + session_name
 
     # Create a df with a single row with new info
@@ -88,6 +88,8 @@ def conv_t_output_shape(h_w, kernel_size=1, stride=1, padding=0,
 def generate_random_states(args, shapes, device, scales=[1,1,1,1,1,1],
                            initter_network=None): #TODO if states_activation is relu then this needs to be multiplied by something like the variance of the negative phase states.
 
+    if len(scales)==1:
+        scales = scales * len(shapes)
 
     rand_states = []
     for shape in shapes:
