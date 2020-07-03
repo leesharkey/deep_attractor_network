@@ -73,9 +73,9 @@ class Manager():
 
             # Save new settings (doesn't overwrite old csv values)
             lib.utils.save_configs_to_csv(self.args, self.loaded_model_name,
-                                          session_name=self.new_model_name)
+                                          session_name=self.new_model_name, loading=True)
         else:
-            lib.utils.save_configs_to_csv(self.args, self.model.model_name)
+            lib.utils.save_configs_to_csv(self.args, self.model.model_name, loading=False)
 
             self.num_it_neg_mean = self.args.num_it_neg
             self.num_it_neg = self.args.num_it_neg
@@ -310,7 +310,7 @@ class TrainingManager(Manager):
             # neg_imgs_save = neg_states[0].detach().to('cpu')
             # utils.save_image(neg_imgs_save,
             #                  os.path.join(self.sample_log_dir,
-            #                               'neg' + str(self.global_step)+ '.png'),
+            #                               str(self.global_step)+'neg' + '.png'),
             #                  nrow=16, normalize=True, range=(0, 1))
 
         # Stop calculting grads w.r.t. images
@@ -700,24 +700,26 @@ class VisualizationManager(Manager):
     def visualization_phase(self, state_layer_idx=0, channel_idx=None,
                             clamp_array=None):
 
-        # # Original
-        # states = lib.utils.generate_random_states(
-        #         self.args,
-        #         self.args.state_sizes,
-        #         self.device)
-        #
-        # # Gets the values of the pos states by running an inference phase
-        # # with the image state_layer clamped
-        # rand_states_init = self.initialize_pos_states(pos_img=states[0],
-        #                                              prev_states=[])
-        # rand_states = [rsi.clone().detach() for rsi in rand_states_init]
-        # # End original
 
-        states = lib.utils.generate_random_states(self.args,
+        if self.args.neg_ff_init:
+            states = lib.utils.generate_random_states(self.args,
                                                        self.args.state_sizes,
                                                        self.device,
                                                        self.args.state_scales,
                                                        self.initter)
+        else:
+            # Original
+            states = lib.utils.generate_random_states(
+                    self.args,
+                    self.args.state_sizes,
+                    self.device)
+
+            # Gets the values of the pos states by running an inference phase
+            # with the image state_layer clamped
+            rand_states_init = self.initialize_pos_states(pos_img=states[0],
+                                                         prev_states=[])
+            rand_states = [rsi.clone().detach() for rsi in rand_states_init]
+            # End original
 
         # Freeze network parameters and take grads w.r.t only the inputs
         lib.utils.requires_grad(states, True)
