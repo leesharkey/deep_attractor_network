@@ -29,7 +29,7 @@ class AnalysisManager:
 
         exp_stem = '/orientations_present_single_gabor'
         self.primary_model_exp_name = self.primary_model + exp_stem + '_contrast_and_angle'
-        self.just_angles_exp = self.just_angles_model + exp_stem + '_just_angle'
+        self.just_angles_exp_name = self.just_angles_model + exp_stem + '_just_angle'
         self.session_name = session_name
 
         # Make base analysis results dir if it doesn't exist
@@ -131,7 +131,7 @@ class AnalysisManager:
         print("Finding active neurons")
 
         if exp_type == 'just_angles':
-            model_exp_name = self.just_angles_exp
+            model_exp_name = self.just_angles_exp_name
             angles = self.just_angle_angles
             contrasts = self.just_angle_contrasts
             angle_contrast_pairs = self.just_angle_angle_contrast_pairs
@@ -485,7 +485,7 @@ class AnalysisManager:
 
                 fitted_curve = est_params[0] * np.cos(2*angles + est_params[1]) \
                                + est_params[2]
-                if k!=17:  # because nans
+                if not all(normed_data.isna()):  # because nans
                     ax[i,j].plot(angle_axis, fitted_curve)
 
 
@@ -733,11 +733,11 @@ class AnalysisManager:
                 on_nrn_acts[1500:3000],
                 detrend=plt.mlab.detrend_linear,
                 # lambda x: x - np.mean(x)
-                maxlags=1500)
+                maxlags=1499)
             lags2, acorrs2, plot21, plot22 = ax[3].acorr(
                 on_nrn_acts[1500:3000],
                 detrend=plt.mlab.detrend_linear,
-                maxlags=1500)
+                maxlags=1499)
 
             plt.ticklabel_format(axis="y", style="sci", scilimits=(
                 0, 0))  # Uses sci notation for units
@@ -799,15 +799,15 @@ class AnalysisManager:
 
             # Prepare/reset variables for data managers
             var_names = ['state']   #TODO change these to class variables
-            # h = 9
-            # hh = 9
-            # w = 22
-            # ww = 22
+            h = 9
+            hh = 9
+            w = 22
+            ww = 22
 
-            h = 0
-            hh = 0
-            w = 32
-            ww = 32
+            # h = 0
+            # hh = 0
+            # w = 32
+            # ww = 32
 
             # Get data
             dm = datamanager.DataManager(root_path=self.args.root_path,
