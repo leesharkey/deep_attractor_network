@@ -210,6 +210,11 @@ class SGHMC(Optimizer):
                     print("Gradient mean %f ; var %f" % (gradient.mean(), gradient.var()))
 
                 parameter.data.add_(momentum_t)
+
+                # Add a very small amount of noise to all variables (ensures no
+                # uniform colours like blackness or whiteness)
+                baseline_noise_level = torch.ones_like(parameter) * 1e-6
+                parameter.data.add_(torch.normal(0., baseline_noise_level))
                 #  }}} SGHMC Update #
 
         return loss
