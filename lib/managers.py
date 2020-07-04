@@ -307,11 +307,11 @@ class TrainingManager(Manager):
             self.sampler_step(neg_states, neg_id, step=self.global_step)
             self.global_step += 1
             # #TODO remove when done debugging viz
-            # neg_imgs_save = neg_states[0].detach().to('cpu')
-            # utils.save_image(neg_imgs_save,
-            #                  os.path.join(self.sample_log_dir,
-            #                               str(self.global_step)+'neg' + '.png'),
-            #                  nrow=16, normalize=True, range=(0, 1))
+            neg_imgs_save = neg_states[0].detach().to('cpu')
+            utils.save_image(neg_imgs_save,
+                             os.path.join(self.sample_log_dir,
+                                          str(self.global_step)+'neg' + '.png'),
+                             nrow=16, normalize=True, range=(0, 1))
 
         # Stop calculting grads w.r.t. images
         for neg_state in neg_states:
@@ -624,7 +624,7 @@ class VisualizationManager(Manager):
                          sample_log_dir)
 
         self.reset_opt_K_its = True
-        self.reset_freq = 100000000
+        self.reset_freq = 100 #100000000
         self.energy_scaler = 0.5
         self.sigma = self.args.sigma
 
@@ -712,13 +712,14 @@ class VisualizationManager(Manager):
             states = lib.utils.generate_random_states(
                     self.args,
                     self.args.state_sizes,
-                    self.device)
+                    self.device,
+                    self.args.state_scales)
 
             # Gets the values of the pos states by running an inference phase
             # with the image state_layer clamped
-            rand_states_init = self.initialize_pos_states(pos_img=states[0],
-                                                         prev_states=[])
-            rand_states = [rsi.clone().detach() for rsi in rand_states_init]
+            # rand_states_init = self.initialize_pos_states(pos_img=states[0],
+            #                                              prev_states=[])
+            # rand_states = [rsi.clone().detach() for rsi in rand_states_init]
             # End original
 
         # Freeze network parameters and take grads w.r.t only the inputs
