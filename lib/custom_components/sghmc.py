@@ -115,9 +115,9 @@ class SGHMC(Optimizer):
                     gaussian = sps.norm(mean_0, sd)
                     densities = gaussian.pdf(channels)
 
-                    import matplotlib.pyplot as plot
-                    plot.plot(np.arange(len(densities)), densities)
-                    plot.savefig("circulargaussian.png")
+                    # import matplotlib.pyplot as plot
+                    # plot.plot(np.arange(len(densities)), densities)
+                    # plot.savefig("circulargaussian.png")
                     #plot.clf()
 
                     #densities = densities / np.max(densities)  # Normalize
