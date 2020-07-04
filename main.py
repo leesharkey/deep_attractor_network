@@ -3540,6 +3540,11 @@ def main():
                         help='Whether or not to cut the momentum when ' +
                         'the state hits a max or min allowed value. ')
     parser.set_defaults(maxminstate_to_zeromom=False)
+    ngroup.add_argument('--non_diag_inv_mass', action='store_true',
+                        help='Whether or not to use a non diagonal mass ' +
+                        'matrix. The analogy is imposing lateral inhibition' +
+                        'on the dynamics of the network.')
+    parser.set_defaults(non_diag_inv_mass=False)
 
 
 

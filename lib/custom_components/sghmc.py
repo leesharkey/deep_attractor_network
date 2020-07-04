@@ -3,6 +3,8 @@
 # https://pysgmcmc.readthedocs.io/en/pytorch/_modules/pysgmcmc/optimizers/sghmc.html
 import torch
 from torch.optim import Optimizer
+import numpy as np
+import scipy.stats as sps
 
 
 class SGHMC(Optimizer):
@@ -82,6 +84,59 @@ class SGHMC(Optimizer):
         self.printing_grad_mom_info = False
 
         self.bump_scaler = 1e-3
+        self.inv_M_sds = {32: 0.6,
+                          16: 0.45,
+                          8:  0.3}
+        # self.inv_M_sds_chs = {32: 0.01,
+        #                       16: 0.01,
+        #                        8:  0.01}
+
+
+        #self.inv_M_sds_lat = 0.4
+        self.inv_M_weights = []
+        self.inv_M_conv = None
+
+        #TODO impose circular correlations between channels
+        if self.args.non_diag_inv_mass:
+            for group in self.param_groups:
+                for parameter in group["params"]:
+
+                    # Makes a gaussian kernel that defines a certain inverse mass
+                    # matrix on the dynamics
+                    num_ch = parameter.shape[1]
+                    if num_ch < 6:
+                        break
+                    channels = np.arange(num_ch)
+                    sd = self.inv_M_sds[num_ch]
+                    mean_0 = num_ch // 2
+                    gaussian = sps.norm(mean_0, sd)
+                    densities = gaussian.pdf(channels)
+                    densities = densities / np.max(densities)  # Normalize
+                    densities = np.roll(densities, num_ch//2)  # centre on ch 0
+                    densities[densities < 1e-15] = 0.0
+
+                    # import matplotlib.pyplot as plot
+                    # plot.plot(np.arange(len(densities)), densities)
+                    # plot.savefig("circulargaussian.png")
+                    # plot.clf()
+                    for ch in channels:
+                        densities_rolled = np.roll(densities, ch)
+                        weights = torch.tensor(densities_rolled)
+                        self.inv_M_weights.append(weights)
+                    self.inv_M_weights = torch.stack(self.inv_M_weights)
+                    self.inv_M_weights = self.inv_M_weights.to(parameter.device)
+
+
+
+                    self.inv_M_weights = \
+                        torch.nn.Parameter(
+                            self.inv_M_weights[:,:, None,None].float())
+                    self.inv_M_conv = torch.nn.Conv2d(in_channels=num_ch,
+                                                      out_channels=num_ch,
+                                                      kernel_size=1,
+                                                      padding=0,
+                                                      bias=False)
+                    self.inv_M_conv.weight = self.inv_M_weights
 
 
     def step(self, closure=None):
@@ -190,9 +245,18 @@ class SGHMC(Optimizer):
 
 
                 #  SGHMC Update {{{ #
+                if self.args.non_diag_inv_mass and self.inv_M_conv is not None:
+                    friction = mdecay * self.inv_M_conv(momentum)
+                else:
+                    friction = mdecay * momentum
+
                 mom_summand = \
-                    - (lr ** 2) * minv_t * gradient - mdecay * momentum + sample_t
+                    - (lr ** 2) * minv_t * gradient - friction + sample_t
                 momentum_t = momentum.add_(mom_summand)
+
+
+                if self.args.non_diag_inv_mass and self.inv_M_conv is not None:
+                    momentum_t = self.inv_M_conv(momentum_t)
 
                 if self.args.mom_clip:
                     momentum_t = tensor_norm_clip(momentum_t,
