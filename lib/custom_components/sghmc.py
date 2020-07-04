@@ -84,9 +84,12 @@ class SGHMC(Optimizer):
         self.printing_grad_mom_info = False
 
         self.bump_scaler = 1e-3
-        self.inv_M_sds = {32: 0.6,
-                          16: 0.45,
-                          8:  0.3}
+        self.inv_M_sds = {32: 0.5,
+                          16: 0.3,
+                          8:  0.1}
+        # self.inv_M_sds = {32: 0.6,
+        #                   16: 0.45,
+        #                   8:  0.3}
         # self.inv_M_sds_chs = {32: 0.01,
         #                       16: 0.01,
         #                        8:  0.01}
@@ -111,14 +114,17 @@ class SGHMC(Optimizer):
                     mean_0 = num_ch // 2
                     gaussian = sps.norm(mean_0, sd)
                     densities = gaussian.pdf(channels)
+
+                    import matplotlib.pyplot as plot
+                    plot.plot(np.arange(len(densities)), densities)
+                    plot.savefig("circulargaussian.png")
+                    #plot.clf()
+
                     densities = densities / np.max(densities)  # Normalize
                     densities = np.roll(densities, num_ch//2)  # centre on ch 0
                     densities[densities < 1e-15] = 0.0
 
-                    # import matplotlib.pyplot as plot
-                    # plot.plot(np.arange(len(densities)), densities)
-                    # plot.savefig("circulargaussian.png")
-                    # plot.clf()
+
                     for ch in channels:
                         densities_rolled = np.roll(densities, ch)
                         weights = torch.tensor(densities_rolled)
