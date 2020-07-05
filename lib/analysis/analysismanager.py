@@ -30,15 +30,16 @@ class AnalysisManager:
         exp_stem = '/orientations_present_single_gabor'
         self.primary_model_exp_name = self.primary_model + exp_stem + '_contrast_and_angle'
         self.just_angles_exp_name = self.just_angles_model + exp_stem + '_just_angle'
-        self.session_name = session_name
+        self.session_name = self.primary_model  # session_name
 
         # Make base analysis results dir if it doesn't exist
         if not os.path.isdir('analysis_results'):
             os.mkdir('analysis_results')
 
         # Make dir for this specific analysis session
-        self.session_dir = os.path.join('analysis_results', self.session_name)
         self.base_analysis_results_dir = 'analysis_results'
+        self.session_dir = os.path.join(self.base_analysis_results_dir,
+                                        self.session_name)
         if not os.path.isdir(self.session_dir):
             os.mkdir(self.session_dir)
 
@@ -263,19 +264,19 @@ class AnalysisManager:
         activity_df['height'] = [h + j for j in inds[1]]
         activity_df['width'] = [hh + j for j in inds[2]]
         activity_df.to_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
             'neuron_activity_results_%s.pkl') % exp_type)
 
 
 
         results_df_2.to_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
             'neuron_activity_results_alternativeformat_%s.pkl') % exp_type)
 
     def plot_pixel_vs_activity(self):
         print("Plotting pixel vs activity map")
         nrnact = pd.read_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
                          'neuron_activity_results_primary.pkl'))
 
         im_start = 9 #TODO change these to class variables
@@ -337,14 +338,14 @@ class AnalysisManager:
             plt.scatter(values_for_channel.index,
                         values_for_channel['active'], )
             plt.xlabel('Pixel intensity')
-            plt.savefig(os.path.join(self.base_analysis_results_dir,
+            plt.savefig(os.path.join(self.session_dir,
                                      'activity proportion vs pixel intensity for ch %i.png' % ch))
             plt.close()
 
     def print_activity_map(self):
         print("Making activity maps for channels and batches")
         nrnact = pd.read_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
                          'neuron_activity_results_primary.pkl'))
 
         im_start = 9
@@ -375,7 +376,7 @@ class AnalysisManager:
             im = im / im.max()
             plt.imshow(im)
             plt.savefig(
-                os.path.join(self.base_analysis_results_dir,
+                os.path.join(self.session_dir,
                              "neuron activity locations ch%i.png" % ch))
 
         # Plot for each batch
@@ -392,7 +393,7 @@ class AnalysisManager:
             im = im / im.max()
             plt.imshow(im)
             plt.savefig(
-                os.path.join(self.base_analysis_results_dir,
+                os.path.join(self.session_dir,
                              "neuron activity locations b%i.png" % b))
 
     def find_orientation_preferences(self):
@@ -416,7 +417,7 @@ class AnalysisManager:
         #         angle_contrast_pairs.append((a, c))
 
         activity_df = pd.read_pickle(os.path.join(
-            self.base_analysis_results_dir, 'neuron_activity_results_just_angles.pkl'))
+            self.session_dir, 'neuron_activity_results_just_angles.pkl'))
 
         # Create a new dataframe that sums over h and w (so we only have batch
         # info per channel)
@@ -500,8 +501,6 @@ class AnalysisManager:
                 k += 1
         plt.savefig(os.path.join(
             self.session_dir, 'orientation_prefs.png'))
-        plt.savefig(os.path.join(
-            self.base_analysis_results_dir, 'orientation_prefs.png')) #for dev
         plt.close()
         print(orient_prefs)
 
@@ -521,7 +520,7 @@ class AnalysisManager:
         plt.scatter(np.cos(angles + np.pi), np.sin(angles + np.pi), color='b')
         plt.scatter(np.cos(angles), np.sin(angles), color='b')
 
-        plt.savefig(os.path.join(self.base_analysis_results_dir,
+        plt.savefig(os.path.join(self.session_dir,
                                  'orient_prefs_circle.png'))
         plt.close()
 
@@ -529,11 +528,11 @@ class AnalysisManager:
         # Save the results
         exp_type = '_just_angles'
         orient_prefs.to_pickle(os.path.join(
-            self.base_analysis_results_dir, 'orientation_pref_results%s.pkl' % exp_type))
+            self.session_dir, 'orientation_pref_results%s.pkl' % exp_type))
         patch_activity_df.to_pickle(os.path.join(
-            self.base_analysis_results_dir, 'patch_activity_results%s.pkl'   % exp_type))
+            self.session_dir, 'patch_activity_results%s.pkl'   % exp_type))
         activity_df.to_pickle(os.path.join(
-            self.base_analysis_results_dir, 'neuron_activity_results%s.pkl'  % exp_type))
+            self.session_dir, 'neuron_activity_results%s.pkl'  % exp_type))
 
     def assign_ori_info(self):
         # Prepare general variables
@@ -543,12 +542,12 @@ class AnalysisManager:
         # Load info on which neurons are active
         print("Loading priorly processed data...")
         nrnact = pd.read_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
                          'neuron_activity_results_primary.pkl'))
 
         # Load ori pref info
         ori_pref = pd.read_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
                          'orientation_pref_results_just_angles.pkl'))
         ori_pref.at[17, 'amplitude'] = 0.0  # TODO remove on main run
         print("Done loading presaved data.")
@@ -603,12 +602,12 @@ class AnalysisManager:
 
         # Save the df
         nrnact.to_pickle(os.path.join(
-            self.base_analysis_results_dir, 'neuron act ori.pkl'))
+            self.session_dir, 'neuron act ori.pkl'))
 
     def plot_combined_state_traces(self):
         # Load data
         nrnact = pd.read_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
                          'neuron act ori.pkl'))
 
 
@@ -744,7 +743,9 @@ class AnalysisManager:
             plt.tight_layout()  # Stops y label being cut off
 
             # plt.title('STFT Magnitude')
-            plt.savefig('summed states for centre of ch%i.png' % ch)
+            plt.savefig(
+                os.path.join(self.session_dir,
+                             'summed states for centre of ch%i.png' % ch))
             plt.close()
 
 
@@ -755,14 +756,14 @@ class AnalysisManager:
         print("Finding oscillating neurons")
 
         # Make dir to save plots for this experiment
-        exp_dir = os.path.join(self.base_analysis_results_dir,
+        exp_dir = os.path.join(self.session_dir,
                                'Fitted gabors and PSD plot')
         if not os.path.isdir(exp_dir):
             os.mkdir(exp_dir)
 
         # Load data
         nrnact = pd.read_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
                          'neuron act ori.pkl'))
 
 
@@ -953,13 +954,9 @@ class AnalysisManager:
 
             # Save the full df periodically at the end of every channel
             nrnact.to_pickle(os.path.join(
-                self.base_analysis_results_dir,
+                self.session_dir,
                 'neuron act and osc.pkl'))
 
-        # Save the full df one last time
-        nrnact.to_pickle(os.path.join(
-            self.base_analysis_results_dir, 'neuron act and osc.pkl'))
-        print('burp')
         # Then move on to a new function plot_contrast_frequency_plots()
 
 
@@ -980,7 +977,7 @@ class AnalysisManager:
 
         # Load df with freq and activity info
         nrn_actosc = pd.read_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
                          'neuron act and osc.pkl'))
 
         # Calculate the max peak power and the product of the peak powers
@@ -1049,7 +1046,7 @@ class AnalysisManager:
         #             idx_label, 'mean_peak_power_during'] = mean_peak_power_product
 
         nrn_actosc.to_pickle(os.path.join(
-            self.base_analysis_results_dir, 'neuron act and osc with new contrast freq info.pkl'))
+            self.session_dir, 'neuron act and osc with new contrast freq info.pkl'))
 
         # Identify the neurons that have ALL [well def ori pref; matched
         # stim and ori pref; activated; peak power above a threshold]
@@ -1110,7 +1107,7 @@ class AnalysisManager:
         plt.ylim(0.0, np.max(mean_peak_power_outside) * 1.3)
         plt.ticklabel_format(axis="y", style="sci", scilimits=(
             0, 0))
-        plt.savefig(os.path.join(self.base_analysis_results_dir,
+        plt.savefig(os.path.join(self.session_dir,
                                  'contrast frequency plots.png'))
         plt.close()
 
@@ -1504,7 +1501,7 @@ class AnalysisManager:
         print("Finding oscillating neurons")
 
         # Make dir to save plots for this experiment
-        exp_dir = os.path.join(self.base_analysis_results_dir,
+        exp_dir = os.path.join(self.session_dir,
                                'Fitted gabors and PSD plot')
         if not os.path.isdir(exp_dir):
             os.mkdir(exp_dir)
@@ -1550,10 +1547,10 @@ class AnalysisManager:
         # Get info on which neurons are active
         print("Loading priorly processed data...")
         nrnact = pd.read_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
                          'neuron_activity_results_primary.pkl'))
         ori_pref = pd.read_pickle(
-            os.path.join(self.base_analysis_results_dir,
+            os.path.join(self.session_dir,
                          'orientation_pref_results_just_angles.pkl'))
         print("Done loading presaved data.")
 
@@ -1773,12 +1770,12 @@ class AnalysisManager:
 
                     # Save the full df periodically
                     nrnact.to_pickle(os.path.join(
-                        self.base_analysis_results_dir,
+                        self.session_dir,
                         'neuron act and osc.pkl'))
 
         # Save the full df one last time
         nrnact.to_pickle(os.path.join(
-            self.base_analysis_results_dir, 'neuron act and osc.pkl'))
+            self.session_dir, 'neuron act and osc.pkl'))
         print('burp')
         # Then move on to a new function plot_contrast_frequency_plots()
 
