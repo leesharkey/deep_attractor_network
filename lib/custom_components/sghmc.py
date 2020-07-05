@@ -122,7 +122,7 @@ class SGHMC(Optimizer):
 
                     #densities = densities / np.max(densities)  # Normalize
                     densities = np.roll(densities, num_ch//2)  # centre on ch 0
-                    densities[densities < 1e-15] = 0.0
+                    densities[densities < 1e-15] = 0.0  # zero-out the smallest
 
 
                     for ch in channels:
