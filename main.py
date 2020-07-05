@@ -3812,3 +3812,13 @@ if __name__ == '__main__':
     main()
     #TODO go through all the code and fix the comments and docstrings. Some
     # of the comments are inaccurate.
+
+
+
+# When doing similar experiments in future, use the following infrastructure
+# For keeping track of experiments, you should have these variables:
+# Session name (unique for every time you press 'run')
+# Model name (If a brand new model, it is the session name; if it is reloading for training purposes, it is the session name; if reloading for analysis or viz purposes, it is the original model name)
+# Model history (keeps track of the history of models/session used in training this model)
+
+# Also use config files rather than having to go into the pycharm configs every time. It's not very user friendly. And it'll be easier to save config files.
