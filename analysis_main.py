@@ -35,10 +35,10 @@ def main():
 
     am = analysismanager.AnalysisManager(args, session_name)
     #am.print_stimuli()
-    am.find_active_neurons('primary')
-    am.plot_pixel_vs_activity()
-    am.print_activity_map()
-    am.find_active_neurons('just_angles')
+    #am.find_active_neurons('primary')
+    #am.plot_pixel_vs_activity()
+    #am.print_activity_map()
+    #am.find_active_neurons('just_angles')
     # TODO change data processing pipeline so each function here is adding
     #  columns to a single dataframe. Only if it won't fit in the main
     #  dataframe should it be saved in its own df
