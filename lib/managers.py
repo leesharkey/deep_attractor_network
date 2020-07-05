@@ -308,10 +308,13 @@ class TrainingManager(Manager):
             self.global_step += 1
             if self.batch_num - 10 % 500 == 0:
                 #TODO remove when done debugging viz
+                neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
+                if not os.path.isdir(neg_save_dir):
+                    os.mkdir(neg_save_dir)
                 neg_imgs_save = neg_states[0].detach().to('cpu')
                 utils.save_image(neg_imgs_save,
-                                 os.path.join(self.sample_log_dir, 'neg',
-                                              str(self.global_step)+'neg' + '.png'),
+                                 os.path.join(neg_save_dir,
+                                      str(self.global_step)+'neg' + '.png'),
                                  nrow=16, normalize=True, range=(0, 1))
 
         # Stop calculting grads w.r.t. images
