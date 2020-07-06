@@ -84,7 +84,7 @@ class SGHMC(Optimizer):
         self.printing_grad_mom_info = False
 
         self.bump_scaler = 1e-3
-        self.inv_M_sds = {32: 0.5,
+        self.inv_M_sds = {32: 0.55,
                           16: 0.3,
                           8:  0.1}
         # self.inv_M_sds = {32: 0.6,
@@ -99,8 +99,9 @@ class SGHMC(Optimizer):
         self.inv_M_weights = []
         self.inv_M_conv = None
 
-        #TODO impose circular correlations between channels
-        if self.args.non_diag_inv_mass:
+        if self.args.non_diag_inv_mass:  #impose circular correlations
+            # between channels
+
             for group in self.param_groups:
                 for parameter in group["params"]:
 
