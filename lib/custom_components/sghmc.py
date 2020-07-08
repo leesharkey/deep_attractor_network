@@ -203,7 +203,7 @@ class SGHMC(Optimizer):
                 noise_scale = (ns_term1 - ns_term2 - ns_term3) #LEE was minus
 
                 #noise_scale = torch.ones_like(minv_t) * 0.005
-                print("%i neg: %s;  NSterms: %f  %f  %f" % (self.state_layer_idx, str(noise_scale.mean().item() < 0.0), ns_term1.mean(), ns_term2.mean(), ns_term3))
+                print("%i neg: %s; %f = %f - %f - %f" % (self.state_layer_idx, str(noise_scale.mean().item() < 0.0), noise_scale.mean(), ns_term1.mean(), ns_term2.mean(), ns_term3))
                 # print("%i NS2: %f" % (self.state_layer_idx, ))
                 # print("%i NS3: %f " % (self.state_layer_idx))
                 # print("%i Noise scale is negative: %s\n\n" % (self.state_layer_idx,
@@ -255,10 +255,6 @@ class SGHMC(Optimizer):
 
                 parameter.data.add_(momentum_t)
 
-                # Add a very small amount of noise to all variables (ensures no
-                # uniform colours like blackness or whiteness)
-                baseline_noise_level = torch.ones_like(parameter) * 1e-7
-                parameter.data.add_(torch.normal(0., baseline_noise_level))
                 #  }}} SGHMC Update #
 
         return loss

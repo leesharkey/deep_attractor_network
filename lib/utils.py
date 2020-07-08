@@ -270,7 +270,7 @@ def get_state_optimizers(args, params):
     if args.state_optimizer == 'sghmc':
 
         return [sghmc.SGHMC([prm],
-                            lr=args.sampling_step_size,
+                            lr=args.sampling_step_size[i],
                             noise=args.sigma[i],
                             mdecay=args.momentum_param[i],
                             num_burn_in_steps=args.num_burn_in_steps,

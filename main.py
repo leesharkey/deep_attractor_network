@@ -3418,10 +3418,13 @@ def finalize_args(parser):
                                        'cubic_mod_num_lyr_dict': cubic_mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             # dict_len_check(args)
+    if len(args.sampling_step_size) == 1:
+        vars(args)['sampling_step_size'] = args.sampling_step_size * len(args.state_sizes)
     if len(args.sigma) == 1:
         vars(args)['sigma'] = args.sigma * len(args.state_sizes)
     if len(args.momentum_param) == 1:
         vars(args)['momentum_param'] = args.momentum_param * len(args.state_sizes)
+
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
@@ -3438,7 +3441,7 @@ def main():
     # Note that you should already have instructed them to make a directory
     # structure, so may be able to use the same strings as in your system.
     sgroup = parser.add_argument_group('Sampling options')
-    sgroup.add_argument('--sampling_step_size', type=float, default=10,
+    sgroup.add_argument('--sampling_step_size', type=float, default=10, nargs='+',
                         help='The amount that the network is moves forward ' +
                              'according to the activity gradient defined by ' +
                              'the partial derivative of the Hopfield-like ' +
