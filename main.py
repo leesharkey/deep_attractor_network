@@ -3418,6 +3418,10 @@ def finalize_args(parser):
                                        'cubic_mod_num_lyr_dict': cubic_mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             # dict_len_check(args)
+    if len(args.sigma) == 1:
+        vars(args)['sigma'] = args.sigma * len(args.state_sizes)
+    if len(args.momentum_param) == 1:
+        vars(args)['momentum_param'] = args.momentum_param * len(args.state_sizes)
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
@@ -3479,7 +3483,7 @@ def main():
                              'Default: %(default)s.')
     tgroup.add_argument('--batch_size', type=int, metavar='N', default=128,
                         help='Training batch size. Default: %(default)s.')
-    tgroup.add_argument('--lr', type=float, default=1e-3,
+    tgroup.add_argument('--lr', type=float, default=1e-3, nargs='+',
                         help='Learning rate of optimizer. Default: ' +
                              '%(default)s.' +
                              'When randomizing, the following options define'+
@@ -3578,13 +3582,13 @@ def main():
                              'Default: %(default)s.')
     ngroup.add_argument('--states_activation', type=str, default="hardsig",
                         help='The activation function. Options: ' +
-                             '[hardsig, relu, swish]'
+                             '[hardsig, hardtanh, relu, swish]'
                              'Default: %(default)s.')
     ngroup.add_argument('--activation', type=str, default="leaky_relu",
                         help='The activation function. Options: ' +
                              '[relu, swish, leaky_relu]'
                              'Default: %(default)s.')
-    ngroup.add_argument('--sigma', type=float, default=0.005,
+    ngroup.add_argument('--sigma', type=float, default=0.005, nargs='+',
                         help='Sets the scale of the noise '
                              'in the network.'+
                              'When randomizing, the following options define' +
@@ -3614,7 +3618,7 @@ def main():
                         'noise and step size. Note that in the IGEBM paper, '+
                         'I don\'t think they used true Langevin dynamics due'+
                         ' to their choice of noise and step size.')
-    ngroup.add_argument('--momentum_param', type=float, default=1.0,
+    ngroup.add_argument('--momentum_param', type=float, default=1.0, nargs='+',
                         help='')
     ngroup.add_argument('--dampening_param', type=float, default=0.0,
                         help='')
