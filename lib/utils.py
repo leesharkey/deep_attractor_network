@@ -108,6 +108,9 @@ def generate_random_states(args, shapes, device, scales=[1,1,1,1,1,1],
                              "Must be either 4 (for conv) or 2 (for FC).")
         rand_states.append(rs)
 
+    if args.states_activation == 'hardtanh':
+        rand_states = [2 * (rs - 0.5) for rs in rand_states]
+
     rand_states= [rs * scale for (rs, scale) in zip(rand_states, scales)] # Since in the CIFAR10
 
     # Use the initter network to initialize states close to the
@@ -252,6 +255,8 @@ def get_activation_function(args, states_activation=False, inplace=False):
         act = torch.nn.Identity()
     elif activation == "hardsig":
         act = torch.nn.Hardtanh(min_val=0.0)
+    elif activation == "hardtanh":
+        act = torch.nn.Hardtanh()
     elif activation == "relu":
         act = torch.nn.ReLU(inplace=inplace)
     return act
@@ -263,10 +268,11 @@ def get_state_optimizers(args, params):
     if args.state_optimizer == 'langevin':
         return None
     if args.state_optimizer == 'sghmc':
+
         return [sghmc.SGHMC([prm],
                             lr=args.sampling_step_size,
-                            noise=args.sigma,
-                            mdecay=args.momentum_param,
+                            noise=args.sigma[i],
+                            mdecay=args.momentum_param[i],
                             num_burn_in_steps=args.num_burn_in_steps,
                             scale_grad=args.scale_grad,
                             min_sq_sigma=args.min_sq_sigma,

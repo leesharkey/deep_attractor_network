@@ -152,7 +152,7 @@ class InitializerNetwork_first_version(torch.nn.Module):
         for side_i, hid_i in zip(self.sides, hids):
             out_i = side_i(hid_i)
 
-            # (Leakily) Clamp the outputs to (approximately) [0,1]
+            # (Leakily) Clamp the outputs to (approximately) the states' range
             outs.append(self.initter_states_act(out_i))
 
         return outs
@@ -198,6 +198,9 @@ class InitializerNetwork(torch.nn.Module):
         rects = ['relu', 'leaky_relu', 'swish']
         if self.args.states_activation == 'hardsig':
             hsig = torch.nn.Hardtanh(min_val=0.0)
+            self.initter_states_act = lambda x: hsig(x) + 0.01 * x
+        if self.args.states_activation == 'hardtanh':
+            hsig = torch.nn.Hardtanh()
             self.initter_states_act = lambda x: hsig(x) + 0.01 * x
         elif self.args.states_activation in rects:
             self.initter_states_act = torch.nn.LeakyReLU()

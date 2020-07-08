@@ -23,9 +23,50 @@ class Manager():
         self.device = device
         self.sample_log_dir = sample_log_dir
         self.parameters = model.parameters()
-        self.optimizer = optim.Adam(self.parameters,
-                                    lr=args.lr,
-                                    betas=(0.0, 0.999))  # betas=(0.9, 0.999))
+        if len(self.args.lr)==1:
+            # self.optimizer = optim.SGD(self.parameters,
+            #                            lr=args.lr,
+            #                            momentum=0.8)
+            self.optimizer = optim.Adam(self.parameters,
+                                        lr=self.args.lr[0],
+                                        betas=(0.0, 0.999))  # betas=(0.9, 0.999))
+
+        else:
+            # I'm not sure Pytorch supports this properly. Despite the length
+            # that I go to to separate parameters, it still says some
+            # parameters appear in multiple parameter groups
+            mod_names = [type(x) for x in model.modules()]
+            quadnet = lib.networks.layers.ContainerFCandDenseCCTBlock
+            quadnet_params = []
+            #quadnet_locs = [mod_name == quadnet for mod_name in mod_names]
+            param_dict = []
+
+            l = 0
+            for module in model.modules():
+                # Get the params for each of the nets and save all the low
+                # level params in a set. Then go through the nonquadnet params
+                # and if they're in the set, don't include them. Else set their
+                # lr to default.
+                if type(module) == quadnet:
+                    param_dict.append({'params': module.parameters(),
+                                       'lr': args.lr[l]})
+                    quadnet_params.extend(module.parameters())
+                    l += 1
+            quadnet_params = set(quadnet_params)
+            count = 0
+            not_qnet_params = []
+            for mp in model.parameters():
+                count += 1
+                print(count)
+                if mp not in quadnet_params:
+                    not_qnet_params.append(mp)
+                    param_dict.append({'params': mp,
+                                       'lr': max(args.lr)})
+            not_qnet_params = set(not_qnet_params)
+            self.optimizer = optim.Adam(param_dict,
+                                        lr=max(args.lr),
+                                        betas=(0.0, 0.999))  # betas=(0.9,
+
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                    step_size=1,
                                                    gamma=self.args.lr_decay_gamma)
@@ -88,6 +129,12 @@ class Manager():
         param_sizes.sort()
         top10_params = param_sizes[-10:]
         print("Top 10 network param sizes: \n %s" % str(top10_params))
+
+        if self.args.activation == 'hardtanh':
+            self.image_range = (-1, 1)
+        else:
+            self.image_range = (0,  1)
+
 
 
     def make_save_dict(self):
@@ -306,7 +353,7 @@ class TrainingManager(Manager):
         for _ in tqdm(range(self.num_it_neg)):
             self.sampler_step(neg_states, neg_id, step=self.global_step)
             self.global_step += 1
-            if (self.batch_num - 100) % 500 == 0:
+            if (self.batch_num - 100) % 50  == 0 and (self.global_step % 5 ==0):
                 #TODO remove when done debugging viz
                 neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
                 if not os.path.isdir(neg_save_dir):
@@ -315,7 +362,16 @@ class TrainingManager(Manager):
                 utils.save_image(neg_imgs_save,
                                  os.path.join(neg_save_dir,
                                       str(self.global_step)+'neg' + '.png'),
-                                 nrow=16, normalize=True, range=(0, 1))
+                                 nrow=16, normalize=True, range=self.image_range)
+            neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
+            if not os.path.isdir(neg_save_dir):
+                os.mkdir(neg_save_dir)
+            neg_imgs_save = neg_states[0].detach().to('cpu')
+            utils.save_image(neg_imgs_save,
+                             os.path.join(neg_save_dir,
+                                          str(
+                                              self.global_step) + 'neg' + '.png'),
+                             nrow=16, normalize=True, range=self.image_range)
 
         # Stop calculting grads w.r.t. images
         for neg_state in neg_states:
@@ -430,6 +486,8 @@ class TrainingManager(Manager):
             state.grad.zero_()
             if self.args.states_activation == 'relu' and i>0:
                 state.data.clamp_(0)
+            elif self.args.states_activation == 'hardtanh':
+                state.data.clamp_(-1, 1)
             else:
                 state.data.clamp_(0, 1)
 
@@ -448,7 +506,7 @@ class TrainingManager(Manager):
                          os.path.join(self.sample_log_dir,
                                       str(self.batch_num).zfill(
                                           6) + '.png'),
-                         nrow=16, normalize=True, range=(0, 1))
+                         nrow=16, normalize=True, range=self.image_range)
         if self.args.save_pos_images:
             pos_imgs_save = pos_states[0].reshape(shape).detach().to('cpu')
             utils.save_image(pos_imgs_save,
@@ -456,7 +514,7 @@ class TrainingManager(Manager):
                                           'p0_' + str(
                                               self.batch_num).zfill(
                                               6) + '.png'),
-                             nrow=16, normalize=True, range=(0, 1))
+                             nrow=16, normalize=True, range=self.image_range)
 
     def log_specific_states_and_momenta(self, states, outs, idxss, step):
         for j, (state, out, idxs, opt) in enumerate(zip(states, outs, idxss,
@@ -791,7 +849,7 @@ class VisualizationManager(Manager):
                                               str(k).zfill(6)      + '.png'),
                                  nrow=16,
                                  normalize=True,
-                                 range=(0, 1))
+                                 range=self.image_range)
 
             if self.args.viz_tempered_annealing:
                 if self.sigma >= 0.005:
@@ -853,6 +911,8 @@ class VisualizationManager(Manager):
             state.grad.zero_()
             if self.args.states_activation == 'relu' and i>0:
                 state.data.clamp_(0)
+            elif self.args.states_activation == 'hardtanh':
+                state.data.clamp_(-1, 1)
             else:
                 state.data.clamp_(0, 1)
 
@@ -926,6 +986,8 @@ class VisualizationManager(Manager):
             state.grad.zero_()
             if self.args.states_activation == 'relu' and i>0:
                 state.data.clamp_(0)
+            elif self.args.states_activation == 'hardtanh':
+                state.data.clamp_(-1, 1)
             else:
                 state.data.clamp_(0, 1)
 
@@ -969,8 +1031,10 @@ class VisualizationManager(Manager):
         for i, state in enumerate(states):
             state.grad.detach_()
             state.grad.zero_()
-            if self.args.states_activation == 'relu' and i > 0:
+            if self.args.states_activation == 'relu' and i>0:
                 state.data.clamp_(0)
+            elif self.args.states_activation == 'hardtanh':
+                state.data.clamp_(-1, 1)
             else:
                 state.data.clamp_(0, 1)
 
@@ -1511,6 +1575,8 @@ class ExperimentsManager(Manager):
             state.grad.zero_()
             if self.args.states_activation == 'relu' and i>0:
                 state.data.clamp_(0)
+            elif self.args.states_activation == 'hardtanh':
+                state.data.clamp_(-1, 1)
             else:
                 state.data.clamp_(0, 1)
 
