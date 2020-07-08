@@ -160,8 +160,6 @@ class SGHMC(Optimizer):
 
                 state = self.state[parameter]
 
-                # num_dims = torch.prod(torch.tensor(parameter.shape)) #lee
-
                 #  State initialization {{{ #
 
                 if len(state) == 0:
@@ -169,8 +167,8 @@ class SGHMC(Optimizer):
                     state["tau"] = torch.ones_like(parameter)
                     state["g"] = torch.ones_like(parameter)
                     state["v_hat"] = torch.ones_like(parameter)
-                    state["momentum"] = \
-                        torch.zeros_like(parameter)#.normal_(mean=0, std=1.)
+                    state["momentum"] = torch.zeros_like(parameter).normal_(mean=0, std=1e-5)
+                    #torch.zeros_like(parameter)#.normal_(mean=0, std=1.)
                 #  }}} State initialization #
 
                 state["iteration"] += 1
@@ -178,11 +176,8 @@ class SGHMC(Optimizer):
                 #  Readability {{{ #
                 mdecay, noise, lr = group["mdecay"], group["noise"], group["lr"]
                 scale_grad = torch.tensor(group["scale_grad"])
-
                 tau, g, v_hat = state["tau"], state["g"], state["v_hat"]
                 momentum = state["momentum"]
-
-
                 gradient = parameter.grad.data
                 #  }}} Readability #
 
@@ -200,27 +195,19 @@ class SGHMC(Optimizer):
 
                 lr_scaled = lr / torch.sqrt(scale_grad)
 
-
-                # average the variances over batches #lee
-
-                #normal one
-                # minv_t = minv_t.mean(dim=0) # average the variances over batches #lee
-                # minv_t = torch.stack(self.batch_size * [minv_t])
-                # end normal one
-
-                minv_t = torch.ones_like(minv_t) * 16. #minv_t.mean()
-
-                # mv = [minv_t * (10/i) for i in range(1,self.batch_size+1)]
-                # minv_t = torch.stack(mv)
-
                 #  Draw random sample {{{ #
 
-                # noise_scale = (
-                #     2. * (lr_scaled ** 2) * mdecay * minv_t - #LEE was minus
-                #     2. * (lr_scaled ** 3) * (minv_t ** 2) * noise -
-                #     (lr_scaled ** 4)
-                # )
-                noise_scale = torch.ones_like(minv_t) * 0.005
+                ns_term1 = 2. * (lr_scaled ** 2) * mdecay * minv_t
+                ns_term2 = 2. * (lr_scaled ** 3) * (minv_t ** 2) * noise
+                ns_term3  = (lr_scaled ** 4)
+                noise_scale = (ns_term1 - ns_term2 - ns_term3) #LEE was minus
+
+                #noise_scale = torch.ones_like(minv_t) * 0.005
+                print("%i neg: %s;  NSterms: %f  %f  %f" % (self.state_layer_idx, str(noise_scale.mean().item() < 0.0), ns_term1.mean(), ns_term2.mean(), ns_term3))
+                # print("%i NS2: %f" % (self.state_layer_idx, ))
+                # print("%i NS3: %f " % (self.state_layer_idx))
+                # print("%i Noise scale is negative: %s\n\n" % (self.state_layer_idx,
+                #                                               ))
 
                 sigma = torch.sqrt(torch.clamp(noise_scale,
                                                min=self.min_sq_sigma))
@@ -235,20 +222,6 @@ class SGHMC(Optimizer):
                 # on different training/visualization runs.
                 #minv_t.mean(dim=[0,2,3])
                 #minv_t.var(dim=[0,2,3])
-
-
-                if self.args.maxminstate_to_zeromom:
-                    if self.args.states_activation == 'hardsig':
-                        mask = (parameter > 0.) #& (parameter < 1.)
-                        momentum = torch.where(mask,
-                                                 momentum,
-                                                 momentum * self.bump_scaler)
-                    elif self.args.states_activation in \
-                            ['relu', 'leaky_relu', 'swish']:
-                        momentum = torch.where(
-                            parameter > 0.0,
-                            momentum,
-                            momentum * self.bump_scaler)
 
 
                 #  SGHMC Update {{{ #
@@ -284,7 +257,7 @@ class SGHMC(Optimizer):
 
                 # Add a very small amount of noise to all variables (ensures no
                 # uniform colours like blackness or whiteness)
-                baseline_noise_level = torch.ones_like(parameter) * 1e-6
+                baseline_noise_level = torch.ones_like(parameter) * 1e-7
                 parameter.data.add_(torch.normal(0., baseline_noise_level))
                 #  }}} SGHMC Update #
 
@@ -297,3 +270,153 @@ def tensor_norm_clip(tensor, clip_val):
         return tensor * clip_val / norm
     else:
         return tensor
+
+
+def alteredstep(self, closure=None):
+    loss = None
+
+    if closure is not None:
+        loss = closure()
+
+    for group in self.param_groups:
+        for parameter in group["params"]:
+
+            if parameter.grad is None:
+                continue
+
+            state = self.state[parameter]
+
+            # num_dims = torch.prod(torch.tensor(parameter.shape)) #lee
+
+            #  State initialization {{{ #
+
+            if len(state) == 0:
+                state["iteration"] = 0
+                state["tau"] = torch.ones_like(parameter)
+                state["g"] = torch.ones_like(parameter)
+                state["v_hat"] = torch.ones_like(parameter)
+                state["momentum"] = \
+                    torch.zeros_like(parameter)#.normal_(mean=0, std=1.)
+            #  }}} State initialization #
+
+            state["iteration"] += 1
+
+            #  Readability {{{ #
+            mdecay, noise, lr = group["mdecay"], group["noise"], group["lr"]
+            scale_grad = torch.tensor(group["scale_grad"])
+
+            tau, g, v_hat = state["tau"], state["g"], state["v_hat"]
+            momentum = state["momentum"]
+
+
+            gradient = parameter.grad.data
+            #  }}} Readability #
+
+            r_t = 1. / (tau + 1.)
+            minv_t = 1. / torch.sqrt(v_hat)
+
+            #  Burn-in updates {{{ #
+            if state["iteration"] <= group["num_burn_in_steps"]:
+                # Update state
+                tau.add_(1. - tau * (g * g / v_hat))
+                g.add_(-g * r_t + r_t * gradient)
+                v_hat.add_(-v_hat * r_t + r_t * (gradient ** 2))
+
+            #  }}} Burn-in updates #
+
+            lr_scaled = lr / torch.sqrt(scale_grad)
+
+
+            # average the variances over batches #lee
+
+            #normal one
+            # minv_t = minv_t.mean(dim=0) # average the variances over batches #lee
+            # minv_t = torch.stack(self.batch_size * [minv_t])
+            # end normal one
+
+            minv_t = torch.ones_like(minv_t) * 16. #minv_t.mean()
+
+            # mv = [minv_t * (10/i) for i in range(1,self.batch_size+1)]
+            # minv_t = torch.stack(mv)
+
+            #  Draw random sample {{{ #
+
+            # noise_scale = (
+            #     2. * (lr_scaled ** 2) * mdecay * minv_t - #LEE was minus
+            #     2. * (lr_scaled ** 3) * (minv_t ** 2) * noise -
+            #     (lr_scaled ** 4)
+            # )
+            noise_scale = torch.ones_like(minv_t) * 0.005
+
+            sigma = torch.sqrt(torch.clamp(noise_scale,
+                                           min=self.min_sq_sigma))
+
+            sample_t = torch.normal(mean=0., std=sigma)
+            #  }}} Draw random sample #
+
+            # Note: for the mostpart, minv_t should basically be identical
+            # (currently during viz mean is identical for all channels
+            # up until the 3rd decimal point)
+            # for all variables, so it shouldn't differentially affect them
+            # on different training/visualization runs.
+            #minv_t.mean(dim=[0,2,3])
+            #minv_t.var(dim=[0,2,3])
+
+
+            if self.args.maxminstate_to_zeromom:
+                if self.args.states_activation == 'hardsig':
+                    mask = (parameter > 0.) #& (parameter < 1.)
+                    momentum = torch.where(mask,
+                                             momentum,
+                                             momentum * self.bump_scaler)
+                elif self.args.states_activation in \
+                        ['relu', 'leaky_relu', 'swish']:
+                    momentum = torch.where(
+                        parameter > 0.0,
+                        momentum,
+                        momentum * self.bump_scaler)
+                elif self.args.states_activation == 'hardtanh': #not like you'd ever use this, but including it for completeness
+                    momentum = torch.where(
+                        parameter > -1.0,
+                        momentum,
+                        momentum * self.bump_scaler)
+
+
+            #  SGHMC Update {{{ #
+            if self.args.non_diag_inv_mass and self.inv_M_conv is not None:
+                friction = mdecay * self.inv_M_conv(momentum)
+            else:
+                friction = mdecay * momentum
+
+            mom_summand = \
+                - (lr ** 2) * minv_t * gradient - friction + sample_t
+            momentum_t = momentum.add_(mom_summand)
+
+
+            if self.args.non_diag_inv_mass and self.inv_M_conv is not None:
+                momentum_t = self.inv_M_conv(momentum_t)
+
+            if self.args.mom_clip:
+                momentum_t = tensor_norm_clip(momentum_t,
+                    self.momenta_clip_norm_vals[self.state_layer_idx])
+
+
+
+
+            if self.printing_grad_mom_info:
+                print("\nMomentum norm %f" % torch.norm(momentum_t, 2))
+                print("Mom summand mean %f ; var %f" % (mom_summand.mean(), mom_summand.var()))
+                print("Noise mean %f ; var %f" % (sample_t.mean(), sample_t.var()))
+
+                print("Momentum mean %f ; var %f" % (momentum.mean(), momentum.var()))
+                print("Gradient mean %f ; var %f" % (gradient.mean(), gradient.var()))
+
+            parameter.data.add_(momentum_t)
+
+            # Add a very small amount of noise to all variables (ensures no
+            # uniform colours like blackness or whiteness)
+            baseline_noise_level = torch.ones_like(parameter) * 1e-6
+            parameter.data.add_(torch.normal(0., baseline_noise_level))
+            #  }}} SGHMC Update #
+
+    return loss
