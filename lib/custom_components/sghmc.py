@@ -81,7 +81,7 @@ class SGHMC(Optimizer):
         if len(self.args.mom_clip_vals) == 1:
             self.momenta_clip_norm_vals = self.args.mom_clip_vals * len(self.args.state_sizes)
         self.state_layer_idx = state_layer
-        self.printing_grad_mom_info = False
+        self.printing_grad_mom_info = True
 
         self.bump_scaler = 1e-3
         self.inv_M_sds = {32: 0.55,
@@ -167,7 +167,7 @@ class SGHMC(Optimizer):
                     state["tau"] = torch.ones_like(parameter)
                     state["g"] = torch.ones_like(parameter)
                     state["v_hat"] = torch.ones_like(parameter)
-                    state["momentum"] = torch.zeros_like(parameter).normal_(mean=0, std=1e-5)
+                    state["momentum"] = torch.zeros_like(parameter).normal_(mean=0, std=1e-8)
                     #torch.zeros_like(parameter)#.normal_(mean=0, std=1.)
                 #  }}} State initialization #
 
