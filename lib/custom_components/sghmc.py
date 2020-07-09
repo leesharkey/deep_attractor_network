@@ -247,11 +247,11 @@ class SGHMC(Optimizer):
 
                 if self.printing_grad_mom_info:
                     print("\nMomentum norm %f" % torch.norm(momentum_t, 2))
+                    print("Momentum mean %f ; var %f" % (momentum.mean(), momentum.var()))
                     print("Mom summand mean %f ; var %f" % (mom_summand.mean(), mom_summand.var()))
                     print("Noise mean %f ; var %f" % (sample_t.mean(), sample_t.var()))
-
-                    print("Momentum mean %f ; var %f" % (momentum.mean(), momentum.var()))
                     print("Gradient mean %f ; var %f" % (gradient.mean(), gradient.var()))
+                    print("Gradient norm %f " % torch.norm(gradient, 2))
 
                 parameter.data.add_(momentum_t)
 
