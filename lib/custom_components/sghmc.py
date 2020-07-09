@@ -239,8 +239,8 @@ class SGHMC(Optimizer):
                     momentum_t = self.inv_M_conv(momentum_t)
 
                 if self.args.mom_clip:
-                    momentum_t = tensor_norm_clip(momentum_t,
-                        self.momenta_clip_norm_vals[self.state_layer_idx])
+                    momentum_t_copy = tensor_norm_clip(momentum_t,
+                        self.momenta_clip_norm_vals[self.state_layer_idx]).clone()
 
 
 
@@ -253,7 +253,7 @@ class SGHMC(Optimizer):
                     print("Gradient mean %f ; var %f" % (gradient.mean(), gradient.var()))
                     print("Gradient norm %f " % torch.norm(gradient, 2))
 
-                parameter.data.add_(momentum_t)
+                parameter.data.add_(momentum_t_copy)
 
                 #  }}} SGHMC Update #
 
