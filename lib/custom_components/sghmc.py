@@ -167,7 +167,7 @@ class SGHMC(Optimizer):
                     state["tau"] = torch.ones_like(parameter)
                     state["g"] = torch.ones_like(parameter)
                     state["v_hat"] = torch.ones_like(parameter)
-                    state["momentum"] = torch.zeros_like(parameter).normal_(mean=0, std=1e-16)
+                    state["momentum"] = torch.zeros_like(parameter)#.normal_(mean=0, std=1e-16)
                     #torch.zeros_like(parameter)#.normal_(mean=0, std=1.)
                 #  }}} State initialization #
 
