@@ -3622,6 +3622,9 @@ def main():
                         'I don\'t think they used true Langevin dynamics due'+
                         ' to their choice of noise and step size.')
 
+    ngroup.add_argument('--printing_grad_mom_info', action='store_true',
+                        help='Whether or not to print gradient and mom info.')
+    parser.set_defaults(printing_grad_mom_info=False)
     ngroup.add_argument('--add_gradient_noise', action='store_true',
                         help='Whether or not add noise to the states gradients.')
     parser.set_defaults(add_gradient_noise=False)

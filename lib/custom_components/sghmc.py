@@ -81,7 +81,7 @@ class SGHMC(Optimizer):
         if len(self.args.mom_clip_vals) == 1:
             self.momenta_clip_norm_vals = self.args.mom_clip_vals * len(self.args.state_sizes)
         self.state_layer_idx = state_layer
-        self.printing_grad_mom_info = True
+        self.printing_grad_mom_info = self.args.printing_grad_mom_info
 
         self.bump_scaler = 1e-3
         self.inv_M_sds = {32: 0.55,
@@ -252,11 +252,10 @@ class SGHMC(Optimizer):
 
 
                 if self.printing_grad_mom_info:
-                    print("Friction")
                     print("Momentum norm;mean;var: %f ; %f ; %f" % (torch.norm(momentum_t, 2), momentum.mean(), momentum.var()))
                     #print("Mom summand mean %f ; var %f" % (mom_summand.mean(), mom_summand.var()))
                     print("Noise mean %f ; var %f" % (sample_t.mean(), sample_t.var()))
-                    print("Gradient norm;mean;var: %f ; %f ; %f" % (torch.norm(gradient, 2), gradient.mean(), gradient.var()))
+                    print("Gradient norm;mean;var: %f ; %f ; %f \n" % (torch.norm(gradient, 2), gradient.mean(), gradient.var()))
 
                 parameter.data.add_(momentum_t_copy)
 
