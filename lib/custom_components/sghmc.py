@@ -204,14 +204,10 @@ class SGHMC(Optimizer):
                 ns_term1 = 2. * (lr_scaled ** 2) * mdecay * minv_t
                 ns_term2 = 2. * (lr_scaled ** 3) * (minv_t ** 2) * noise
                 ns_term3  = (lr_scaled ** 4)
-                noise_scale = (ns_term1 - ns_term2 - ns_term3) #LEE was minus
+                noise_scale = (ns_term1 - ns_term2 - ns_term3)
 
-                #noise_scale = torch.ones_like(minv_t) * 0.005
                 print("%i neg: %s; %f = %f - %f - %f ; mvt %f" % (self.state_layer_idx, str(noise_scale.mean().item() < 0.0), noise_scale.mean(), ns_term1.mean(), ns_term2.mean(), ns_term3, minv_t.mean()))
-                # print("%i NS2: %f" % (self.state_layer_idx, ))
-                # print("%i NS3: %f " % (self.state_layer_idx))
-                # print("%i Noise scale is negative: %s\n\n" % (self.state_layer_idx,
-                #                                               ))
+
 
                 sigma = torch.sqrt(torch.clamp(noise_scale,
                                                min=self.min_sq_sigma))
@@ -243,11 +239,8 @@ class SGHMC(Optimizer):
                     momentum_t = self.inv_M_conv(momentum_t)
 
                 if self.args.mom_clip:
-                    momentum_t_copy = tensor_norm_clip(momentum_t,
+                    momentum_t = tensor_norm_clip(momentum_t,
                         self.momenta_clip_norm_vals[self.state_layer_idx]).clone()
-                else:
-                    momentum_t_copy = momentum_t
-
 
 
 
@@ -257,7 +250,7 @@ class SGHMC(Optimizer):
                     print("Noise mean %f ; var %f" % (sample_t.mean(), sample_t.var()))
                     print("Gradient norm;mean;var: %f ; %f ; %f \n" % (torch.norm(gradient, 2), gradient.mean(), gradient.var()))
 
-                parameter.data.add_(momentum_t_copy)
+                parameter.data.add_(momentum_t)
 
                 #  }}} SGHMC Update #
 

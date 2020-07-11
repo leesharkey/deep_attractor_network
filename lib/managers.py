@@ -814,7 +814,7 @@ class VisualizationManager(Manager):
         self.state_optimizers = lib.utils.get_state_optimizers(self.args,
                                                                states)
 
-        print("Sigma: %f" % self.sigma)
+        print("Sigma: %s" % str(self.sigma))
 
         # Viz phase sampling
         for k in tqdm(range(self.args.num_it_viz)):
@@ -892,9 +892,9 @@ class VisualizationManager(Manager):
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
         #if not self.args.state_optimizer == "sghmc":  #LEE This was an offending line
-        for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-            noise.normal_(0, self.sigma)
-            state.data.add_(noise.data)
+        # for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
+        #     noise.normal_(0, self.sigma)
+        #     state.data.add_(noise.data)
 
 
         # The gradient step in the Langevin/SGHMC step
