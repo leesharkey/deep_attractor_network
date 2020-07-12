@@ -353,7 +353,7 @@ class TrainingManager(Manager):
         for _ in tqdm(range(self.num_it_neg)):
             self.sampler_step(neg_states, neg_id, step=self.global_step)
             self.global_step += 1
-            if (self.batch_num - 2) % 50  == 0 and (self.global_step % 5 ==0):
+            if (self.batch_num - 2) % 50  == 0 and (self.global_step % 10 ==0):
                 #TODO remove when done debugging viz
                 neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
                 if not os.path.isdir(neg_save_dir):
@@ -624,7 +624,7 @@ class TrainingManager(Manager):
         self.neg_history.append(self.latest_neg_enrg)
 
     def pos_iterations_trunc_update(self, current_iteration):
-        if len(self.pos_short_term_history) > 15:
+        if len(self.pos_short_term_history) > self.args.trunc_pos_history_len:
             self.pos_short_term_history.pop(0)
         self.pos_short_term_history.append(self.latest_pos_enrg)
         diff = max(self.pos_short_term_history) - \
@@ -637,7 +637,7 @@ class TrainingManager(Manager):
         #     increasing = True
         #     print("Increasing energy during pos phase")
 
-        if current_iteration > 15 and \
+        if current_iteration > 200 and \
                 (diff < self.args.truncate_pos_its_threshold): #or increasing):
             self.stop_pos_phase = True
             self.writer.add_scalar('train/trunc_pos_at', current_iteration,
