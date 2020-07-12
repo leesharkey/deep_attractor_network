@@ -276,6 +276,7 @@ def get_state_optimizers(args, params):
                             num_burn_in_steps=args.num_burn_in_steps,
                             scale_grad=args.scale_grad,
                             min_sq_sigma=args.min_sq_sigma,
+                            max_sq_sigma=args.max_sq_sigma[i],
                             args=args,
                             state_layer=i) for (i,prm) in enumerate(params)]
     if args.state_optimizer == 'sgd':

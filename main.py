@@ -3454,6 +3454,8 @@ def finalize_args(parser):
         vars(args)['sampling_step_size'] = args.sampling_step_size * len(args.state_sizes)
     if len(args.sigma) == 1:
         vars(args)['sigma'] = args.sigma * len(args.state_sizes)
+    if len(args.max_sq_sigma) == 1:
+        vars(args)['max_sq_sigma'] = args.max_sq_sigma * len(args.state_sizes)
     if len(args.momentum_param) == 1:
         vars(args)['momentum_param'] = args.momentum_param * len(args.state_sizes)
 
@@ -3604,6 +3606,10 @@ def main():
                         help='If true, the positive phase is cut short if ' +
                              'the energy stops decreasing. ' +
                              'Default: %(default)s.')
+    tgroup.add_argument('--trunc_pos_history_len', type=int, default=300,
+                        help='The length of the history that is used to ' +
+                             'determine whether the positive iterations  ' +
+                             'will be truncated. Default: %(default)s.')
 
 
     ngroup = parser.add_argument_group('Network and states options')
@@ -3708,6 +3714,9 @@ def main():
     ngroup.add_argument('--num_burn_in_steps', type=float, default=0.0,
                         help='The number of burnin steps for the adaptive ' +
                              'sghmc optimizer')
+    ngroup.add_argument('--max_sq_sigma', type=float, default=[100.], nargs='+',
+                        help='The maximum variance of the noise added in ' +
+                             'every step of the sghmc optimizer')
     ngroup.add_argument('--min_sq_sigma', type=float, default=1e-16,
                         help='The minimum variance of the noise added in ' +
                              'every step of the sghmc optimizer')

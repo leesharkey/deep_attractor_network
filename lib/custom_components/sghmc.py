@@ -32,6 +32,7 @@ class SGHMC(Optimizer):
                  mdecay: float=0.05,
                  scale_grad: float=1.,
                  min_sq_sigma: float=1e-5,
+                 max_sq_sigma: float=100.,
                  args=None,
                  state_layer=None) -> None:
         """ Set up a SGHMC Optimizer.
@@ -78,6 +79,8 @@ class SGHMC(Optimizer):
         self.args = args
         self.batch_size = 128  # TODO soft-code
         self.min_sq_sigma = min_sq_sigma
+        self.max_sq_sigma = max_sq_sigma
+
         if len(self.args.mom_clip_vals) == 1:
             self.momenta_clip_norm_vals = self.args.mom_clip_vals * len(self.args.state_sizes)
         self.state_layer_idx = state_layer
@@ -210,7 +213,8 @@ class SGHMC(Optimizer):
 
 
                 sigma = torch.sqrt(torch.clamp(noise_scale,
-                                               min=self.min_sq_sigma))
+                                               min=self.min_sq_sigma,
+                                               max=self.max_sq_sigma))
 
                 sample_t = torch.normal(mean=0., std=sigma)
                 #  }}} Draw random sample #
