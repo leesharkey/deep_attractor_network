@@ -53,12 +53,11 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
         if self.args.ff_dynamics:
             self.forward = self.forward_ff_dynamics
 
-
             # Define new biases that are just blocks of params
-            self.biases = nn.ParameterList([])
-            for state_size in self.args.state_sizes:
-                b = nn.Parameter(torch.randn(state_size[1:]) * 1e-16)
-                self.biases.append(b)
+            # self.biases = nn.ParameterList([])
+            # for state_size in self.args.state_sizes:
+            #     b = nn.Parameter(torch.randn(state_size[1:]) * 1e-9)
+            #     self.biases.append(b)
             # for bias in self.biases:
             #     torch.nn.init.zeros_(bias.weight)
 
@@ -118,7 +117,9 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
 
             _, full_pre_quadr_out = net(state, pos_inp_states)
             full_pre_quadr_out = 0.5 * full_pre_quadr_out
-            network_terms = full_pre_quadr_out + bias
+
+            network_terms = full_pre_quadr_out + bias.weight.view(full_pre_quadr_out.shape[1:])
+            #network_terms = full_pre_quadr_out + bias
 
             # Apply the mask that acts as the \rho gradient
             # mask = self.mask_func(state).byte()
