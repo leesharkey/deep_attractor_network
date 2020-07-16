@@ -24,12 +24,17 @@ class Manager():
         self.sample_log_dir = sample_log_dir
         self.parameters = model.parameters()
 
-        # self.optimizer = optim.SGD(self.parameters,
-        #                            lr=args.lr,
-        #                            momentum=0.8)
-        self.optimizer = optim.Adam(self.parameters,
-                                    lr=self.args.lr[0],
-                                    betas=(0.0, 0.999))  # betas=(0.9, 0.999))
+
+        if self.args.weights_optimizer == 'sgd':
+
+            self.optimizer = optim.SGD(self.parameters,
+                                       lr=args.lr[0],
+                                       momentum=0.4)
+        elif self.args.weights_optimizer == 'adam':
+            self.optimizer = optim.Adam(self.parameters,
+                                        lr=self.args.lr[0],
+                                        betas=(0.0, 0.999))  # betas=(0.9, 0.999))
+
 
 
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
@@ -495,7 +500,7 @@ class TrainingManager(Manager):
 
     def update_weights(self):
 
-        # Stabilize Adam-optimized weight updates(?)
+        # Stabilize weight updates
         self.clip_grad(self.parameters, self.optimizer)
 
         # Update the network params
@@ -504,22 +509,35 @@ class TrainingManager(Manager):
 
 
     def clip_grad(self, parameters, optimizer):
-        with torch.no_grad():
-            for group in optimizer.param_groups:
-                for p in group['params']:
-                    state = optimizer.state[p]
+        if self.args.weights_optimizer == 'sgd':
+            bound=100.0
+            # torch.nn.utils.clip_grad_norm_(parameters,
+            #                                10.,
+            #                                norm_type=2)
+            with torch.no_grad():
+                for group in optimizer.param_groups:
+                    for p in group['params']:
+                        state = optimizer.state[p]
+                        torch.nn.utils.clip_grad_norm_(p, bound, 2)
 
-                    if 'step' not in state or state['step'] < 1:
-                        continue
+        elif self.args.weights_optimizer == 'adam':
 
-                    step = state['step']
-                    exp_avg_sq = state['exp_avg_sq']
-                    _, beta2 = group['betas']
+            with torch.no_grad():
+                for group in optimizer.param_groups:
+                    for p in group['params']:
+                        state = optimizer.state[p]
 
-                    bound = 3 * torch.sqrt(
-                        exp_avg_sq / (1 - beta2 ** step)) + 0.1
-                    p.grad.data.copy_(
-                        torch.max(torch.min(p.grad.data, bound), -bound))
+                        if 'step' not in state or state['step'] < 1:
+                            continue
+
+                        step = state['step']
+                        exp_avg_sq = state['exp_avg_sq']
+                        _, beta2 = group['betas']
+
+                        bound = 3 * torch.sqrt(
+                            exp_avg_sq / (1 - beta2 ** step)) + 0.1
+                        p.grad.data.copy_(
+                            torch.max(torch.min(p.grad.data, bound), -bound))
 
     def param_update_phase(self, neg_states, pos_states):
 

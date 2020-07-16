@@ -1491,6 +1491,10 @@ def main():
                         help='The rate fo decay for the learning rate. Default: ' +
                              '%(default)s.')
 
+    tgroup.add_argument('--weights_optimizer', type=str, default="adam",
+                        help='The optimizer used to train the weights and ' +
+                             'biases (as opposed to the one used during ' +
+                             'sampling. Default: %(default)s.')
     tgroup.add_argument('--dataset', type=str, default="CIFAR10",
                         help='The dataset the network will be trained on.' +
                              ' Default: %(default)s.')

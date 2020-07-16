@@ -55,10 +55,10 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
 
 
             # Define new biases that are just blocks of params
-            self.ff_biases = nn.ParameterList([])
+            self.biases = nn.ParameterList([])
             for state_size in self.args.state_sizes:
-                b = nn.Parameter(torch.zeros(state_size[1:]))
-                self.ff_biases.append(b)
+                b = nn.Parameter(torch.randn(state_size[1:]) * 1e-16)
+                self.biases.append(b)
             # for bias in self.biases:
             #     torch.nn.init.zeros_(bias.weight)
 
@@ -107,7 +107,7 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
 
         for i, (state, net, bias) in enumerate(zip(states,
                                                    self.quadratic_nets,
-                                                   self.ff_biases)):
+                                                   self.biases)):
 
             # Get the right input states
             post_inp_idxs = self.args.arch_dict['mod_connect_dict'][i]
