@@ -121,10 +121,11 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
             network_terms = full_pre_quadr_out + bias
 
             # Apply the mask that acts as the \rho gradient
-            mask = self.mask_func(state).byte()
-            grad = -state + torch.where(mask,
-                                        network_terms,
-                                        torch.zeros_like(network_terms))
+            #mask = self.mask_func(state).byte()
+            # grad = -state + torch.where(mask,
+            #                             network_terms,
+            #                             torch.zeros_like(network_terms))
+            grad = -state + network_terms
             grads.append(grad)
 
             if energy_calc:
