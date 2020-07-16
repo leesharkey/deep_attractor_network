@@ -65,8 +65,8 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
             # Define the ranges that should be masked by the 'gradient' of the
             # states_activation
             if self.args.states_activation == 'hardsig':
-                self.mask_func = lambda state: torch.where((state > 0.) & \
-                                                      (state < 1.),
+                self.mask_func = lambda state: torch.where((state < 1.), #& \
+                                                      #(state > 0.),
                                                       torch.ones_like(state),
                                                       torch.zeros_like(state))
             elif self.args.states_activation == 'hardtanh':
@@ -121,10 +121,13 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
             network_terms = full_pre_quadr_out + bias
 
             # Apply the mask that acts as the \rho gradient
-            #mask = self.mask_func(state).byte()
+            # mask = self.mask_func(state).byte()
             # grad = -state + torch.where(mask,
             #                             network_terms,
             #                             torch.zeros_like(network_terms))
+            # This doesn't work because they don't actually use the grad of rho
+            # because it causes dead neurons, like I found with the mask.
+            # It works if you just add the updates and clip the values.
             grad = -state + network_terms
             grads.append(grad)
 

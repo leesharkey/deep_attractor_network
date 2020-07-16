@@ -22,7 +22,7 @@ class Manager():
         self.buffer = buffer
         self.device = device
         self.sample_log_dir = sample_log_dir
-        self.parameters = model.parameters()
+        self.parameters = self.model.parameters()
 
 
         if self.args.weights_optimizer == 'sgd':
@@ -368,18 +368,18 @@ class TrainingManager(Manager):
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
-        for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-            if positive_phase and layer_idx == 0:
-                pass
-            else:
-                # Note: Just set sigma to a very small value if you don't want to
-                # add noise. It's so inconsequential that it's not worth the
-                # if-statements to accommodate sigma==0.0
-                if not self.args.state_optimizer == "sghmc":  #new
-                    for layer_idx, (noise, state) in enumerate(
-                            zip(self.noises, states)):
-                        noise.normal_(0, self.sigma)
-                        state.data.add_(noise.data)
+        # for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
+        #     if positive_phase and layer_idx == 0:
+        #         pass
+        #     else:
+        #         # Note: Just set sigma to a very small value if you don't want to
+        #         # add noise. It's so inconsequential that it's not worth the
+        #         # if-statements to accommodate sigma==0.0
+        #         if not self.args.state_optimizer == "sghmc":  #new
+        #             for layer_idx, (noise, state) in enumerate(
+        #                     zip(self.noises, states)):
+        #                 noise.normal_(0, self.sigma)
+        #                 state.data.add_(noise.data)
 
         # The gradient step in the Langevin/SGHMC step
         # It goes through each statelayer and steps back using its associated
