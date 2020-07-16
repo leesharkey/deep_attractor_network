@@ -485,7 +485,7 @@ class TrainingManager(Manager):
                                                        neg_energy**2])
         loss_ml = pos_energy - neg_energy  # Maximum likelihood loss
         loss = loss_ml + loss_l2
-        loss = loss.mean()
+        loss = -loss.mean()
 
         # Calculate gradients for the network params
         loss.backward()
