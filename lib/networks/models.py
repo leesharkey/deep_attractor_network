@@ -149,7 +149,7 @@ class DeepAttractorNetworkTakeTwo(BaseModel):
         else:
             full_energies = [torch.zeros_like(state) for state in states]
 
-        return energy, grads, full_energies
+        return -energy, grads, full_energies
 
 
 
