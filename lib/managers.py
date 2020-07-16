@@ -23,49 +23,14 @@ class Manager():
         self.device = device
         self.sample_log_dir = sample_log_dir
         self.parameters = model.parameters()
-        if len(self.args.lr)==1:
-            # self.optimizer = optim.SGD(self.parameters,
-            #                            lr=args.lr,
-            #                            momentum=0.8)
-            self.optimizer = optim.Adam(self.parameters,
-                                        lr=self.args.lr[0],
-                                        betas=(0.0, 0.999))  # betas=(0.9, 0.999))
 
-        else:
-            # I'm not sure Pytorch supports this properly. Despite the length
-            # that I go to to separate parameters, it still says some
-            # parameters appear in multiple parameter groups
-            mod_names = [type(x) for x in model.modules()]
-            quadnet = lib.networks.layers.ContainerFCandDenseCCTBlock
-            quadnet_params = []
-            #quadnet_locs = [mod_name == quadnet for mod_name in mod_names]
-            param_dict = []
+        # self.optimizer = optim.SGD(self.parameters,
+        #                            lr=args.lr,
+        #                            momentum=0.8)
+        self.optimizer = optim.Adam(self.parameters,
+                                    lr=self.args.lr[0],
+                                    betas=(0.0, 0.999))  # betas=(0.9, 0.999))
 
-            l = 0
-            for module in model.modules():
-                # Get the params for each of the nets and save all the low
-                # level params in a set. Then go through the nonquadnet params
-                # and if they're in the set, don't include them. Else set their
-                # lr to default.
-                if type(module) == quadnet:
-                    param_dict.append({'params': module.parameters(),
-                                       'lr': args.lr[l]})
-                    quadnet_params.extend(module.parameters())
-                    l += 1
-            quadnet_params = set(quadnet_params)
-            count = 0
-            not_qnet_params = []
-            for mp in model.parameters():
-                count += 1
-                print(count)
-                if mp not in quadnet_params:
-                    not_qnet_params.append(mp)
-                    param_dict.append({'params': mp,
-                                       'lr': max(args.lr)})
-            not_qnet_params = set(not_qnet_params)
-            self.optimizer = optim.Adam(param_dict,
-                                        lr=max(args.lr),
-                                        betas=(0.0, 0.999))  # betas=(0.9,
 
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                    step_size=1,
@@ -162,11 +127,6 @@ class Manager():
 
         pos_states = [pos_img]
 
-        if self.args.initializer == 'zeros':
-            zero_states = [torch.zeros(size, device=self.device,
-                                       requires_grad=True)
-                           for size in self.args.state_sizes[1:]]
-            pos_states.extend(zero_states)
         if self.args.initializer == 'ff_init':
             # Later consider implementing a ff_init that is trained as normal
             # and gives the same output but that only a few (maybe random)
@@ -175,12 +135,6 @@ class Manager():
             self.initter.train()
             pos_states_new = self.initter.forward(pos_img, pos_id)
             pos_states.extend(pos_states_new)
-        elif self.args.initializer == 'middle':
-            raise NotImplementedError("You need to find the mean pixel value" +
-                                      " and then use the value as the value " +
-                                      "to init all pixels.")
-        elif self.args.initializer == 'mix_prev_middle':
-            raise NotImplementedError
         elif self.args.initializer == 'previous' and prev_states is not None:
             pos_states.extend(prev_states[1:])
         else:  # i.e. if self.args.initializer == 'random':
@@ -218,23 +172,18 @@ class TrainingManager(Manager):
         prev_states = None
 
         # Main training loop
-        #for batch, (pos_img, pos_id) in self.data.loader:
         for e in range(10000):
-            for pos_img, pos_id in self.data.loader:
+            for pos_img, _ in self.data.loader:
                 print("Epoch:        %i" % e)
                 print("Batch num:    %i" % self.batch_num)
                 print("Global step:  %i" % self.global_step)
 
-                pos_states, pos_id = self.positive_phase(pos_img,
-                                                         pos_id,
-                                                         prev_states)
+                pos_states = self.positive_phase(pos_img, prev_states)
 
-                neg_states, neg_id = self.negative_phase()
+                neg_states = self.negative_phase()
 
                 self.param_update_phase(neg_states,
-                                        neg_id,
-                                        pos_states,
-                                        pos_id)
+                                        pos_states)
 
                 prev_states = [ps.clone().detach() for ps in pos_states] # In case pos init uses prev states
 
@@ -251,10 +200,6 @@ class TrainingManager(Manager):
 
                 self.batch_num += 1
 
-                if self.num_it_neg_mean > 5000:
-                    stop = True
-                else:
-                    stop = False
 
             self.neg_iterations_schedule_update()
 
@@ -269,19 +214,17 @@ class TrainingManager(Manager):
             new_lr = self.scheduler.get_lr()[0]
             self.writer.add_scalar('train/lr', new_lr, self.epoch)
 
-            if stop:
-                break
 
         # Save network(s) and settings when training is complete too
         self.save_net_and_settings()
 
 
 
-    def positive_phase(self, pos_img, pos_id, prev_states=None):
+    def positive_phase(self, pos_img, prev_states=None):
 
         print('\nStarting positive phase...')
         # Get the loaded pos samples and put them on the correct device
-        pos_img, pos_id = pos_img.to(self.device), pos_id.to(self.device)
+        pos_img = pos_img.to(self.device)
 
         # Gets the values of the pos states by running an inference phase
         # with the image state_layer clamped
@@ -305,7 +248,7 @@ class TrainingManager(Manager):
 
         # Positive phase sampling
         for i in tqdm(range(self.args.num_it_pos)):
-            self.sampler_step(pos_states, pos_id, positive_phase=True, pos_it=i,
+            self.sampler_step(pos_states, positive_phase=True, pos_it=i,
                               step=self.global_step)
             if self.stop_pos_phase:
                 break
@@ -322,17 +265,12 @@ class TrainingManager(Manager):
                                                      targets=pos_states[1:],
                                                      step=self.batch_num)
 
-        # Add positive states to positive buffer if using CD mixture
-        if self.args.cd_mixture:
-            print("Adding pos states to pos buffer")
-            self.buffer.push(pos_states, pos_id, pos=True)
-
-        return pos_states, pos_id
+        return pos_states
 
     def negative_phase(self):
         print('\nStarting negative phase...')
         # Initialize the chain (either as noise or from buffer)
-        neg_states, neg_id = \
+        neg_states = \
             self.buffer.sample_buffer(initter_network=self.initter)
 
         # Freeze network parameters and take grads w.r.t only the inputs
@@ -351,10 +289,10 @@ class TrainingManager(Manager):
 
         # Negative phase sampling
         for _ in tqdm(range(self.num_it_neg)):
-            self.sampler_step(neg_states, neg_id, step=self.global_step)
+            self.sampler_step(neg_states, step=self.global_step)
             self.global_step += 1
             if (self.batch_num - 2) % 50  == 0 and (self.global_step % 5 ==0):
-                #TODO remove when done debugging viz
+                #bookmark: debugging
                 neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
                 if not os.path.isdir(neg_save_dir):
                     os.mkdir(neg_save_dir)
@@ -378,22 +316,45 @@ class TrainingManager(Manager):
             neg_state.detach_()
 
         # Send negative samples to the negative buffer
-        self.buffer.push(neg_states, neg_id)
+        self.buffer.push(neg_states)
 
-        return neg_states, neg_id
+        return neg_states
 
-    def sampler_step(self, states, ids, positive_phase=False, pos_it=None,
+    def sampler_step(self, states, positive_phase=False, pos_it=None,
                      step=None):
 
-        # Get total energy and energy outputs for indvdual neurons
-        energy, outs, full_energies = self.model(states, ids, step)
+        if self.args.ff_dynamics:
+            if self.batch_num < 200 or self.batch_num % 100:
+                e_calc_bool = True
+            else:
+                e_calc_bool = False
 
-        # Calculate the gradient wrt states for the Langevin step (before
-        # addition of noise)
-        if self.args.state_optimizer == 'sghmc':
-            energy.backward()
+            energy, outs, full_energies = self.model(states,
+                                                     energy_calc=e_calc_bool)
+
+            # Set the gradients manually
+            for state, update in zip(states, outs):
+                state.grad = -update
         else:
-            (-energy).backward()
+            # Get total energy and energy outputs for indvdual neurons
+            energy, outs, full_energies = self.model(states)
+
+            # Calculate the gradient wrt states for the Langevin step (before
+            # addition of noise)
+            if self.args.state_optimizer == 'sghmc':
+                energy.backward()
+            else:
+                (-energy).backward()
+
+            # Save latest energy outputs so you can schedule the phase lengths
+            print("Energy: %f" % energy.item())#TODO if noBP dynamics just put this print statement inside the model so that it only prints when energy is actually calculated
+            if positive_phase:
+                self.latest_pos_enrg = energy.item()
+                if self.args.truncate_pos_its:
+                    self.pos_iterations_trunc_update(pos_it)
+            else:
+                self.latest_neg_enrg = energy.item()
+
 
         if self.args.clip_grad:
             torch.nn.utils.clip_grad_norm_(states,
@@ -464,32 +425,18 @@ class TrainingManager(Manager):
                     hist_layer_string = 'layers/hist_states_%s' % i
                     #print("Logging energy histograms")
                     self.writer.add_histogram(hist_layer_string, state, step)
-        ## States and momenta (specific)
-        if self.args.log_spec_neurons and step % self.args.scalar_logging_interval == 0:
-            idxss = [[(0,0,13,13)], [(0,0,5,5)], [None], [None]]
-            self.log_specific_states_and_momenta(states, outs, idxss, step)
         # End of data logging
-
-        # Save latest energy outputs so you can schedule the phase lengths
-        print("Energy: %f" % energy.item())
-        if positive_phase:
-            self.latest_pos_enrg = energy.item()
-            if self.args.truncate_pos_its:
-                self.pos_iterations_trunc_update(pos_it)
-        else:
-            self.latest_neg_enrg = energy.item()
-
 
         # Prepare gradients and sample for next sampling step
         for i, state in enumerate(states):
             state.grad.detach_()
             state.grad.zero_()
             if self.args.states_activation == 'relu' and i>0:
-                state.data.clamp_(0)
+                state.data.clamp_(0.)
             elif self.args.states_activation == 'hardtanh':
-                state.data.clamp_(-1, 1)
+                state.data.clamp_(-1., 1.)
             else:
-                state.data.clamp_(0, 1)
+                state.data.clamp_(0., 1.)
 
     def log_mean_energy_histories(self):
         mean_pos = sum(self.pos_history) / len(self.pos_history)
@@ -516,40 +463,16 @@ class TrainingManager(Manager):
                                               6) + '.png'),
                              nrow=16, normalize=True, range=self.image_range)
 
-    def log_specific_states_and_momenta(self, states, outs, idxss, step):
-        for j, (state, out, idxs, opt) in enumerate(zip(states, outs, idxss,
-                                                  self.state_optimizers)):
-            for idx in idxs:
-                if idx is None:
-                    break
-                neuron_label = str(j)+'_'+str(idx)[:-1]
-                #print("Logging specific state %s" % str(j)+'_'+str(idx))
 
-                spec_state_val_string = 'spec/state_%s' % neuron_label
-                spec_state_grad_string = 'spec/state_grad_%s' % neuron_label
-                spec_state_enrg_string = 'spec/state_enrg_%s' % neuron_label
-
-                state_value = state[idx]
-                state_grad  = state.grad[idx]
-                state_enrg  = out[idx]
-
-                self.writer.add_scalar(spec_state_val_string, state_value, step)
-                self.writer.add_scalar(spec_state_grad_string, state_grad, step)
-                self.writer.add_scalar(spec_state_enrg_string, state_enrg, step)
-
-                if opt.state_dict()['state']: # i.e. if momentum exists isn't empty, because it's only instantiated after 1 steps I think
-                    spec_state_mom_string = 'spec/state_mom_%s' % neuron_label
-                    key = list(opt.state_dict()['state'].keys())[0]
-                    state_mom = opt.state_dict()['state'][key]['momentum_buffer']
-                    state_mom = state_mom[idx]
-                    self.writer.add_scalar(spec_state_mom_string, state_mom,
-                                           step)
-
-    def calc_energ_and_loss(self, neg_states, neg_id, pos_states, pos_id):
+    def calc_energ_and_loss(self, neg_states, pos_states):
 
         # Get energies of positive and negative samples
-        pos_energy, _, _ = self.model(pos_states, pos_id)
-        neg_energy, _, _ = self.model(neg_states, neg_id)
+        #TODO if npBP dynamics, then there will have to be an option here that
+        # returns the actual energy so that backprop can be used for the
+        # weight updates
+
+        pos_energy, _, _ = self.model(pos_states, energy_calc=True)
+        neg_energy, _, _ = self.model(neg_states, energy_calc=True)
 
         # Calculate the loss
         ## L2 penalty on energy magnitudes
@@ -565,9 +488,12 @@ class TrainingManager(Manager):
         # Log loss to tensorboard
         self.writer.add_scalar('train/loss', loss.item(), self.global_step)
 
+        # Print loss
+        print(f'Loss: {loss.item():.5g}')
+
         return neg_energy, pos_energy, loss
 
-    def update_weights(self, loss):
+    def update_weights(self):
 
         # Stabilize Adam-optimized weight updates(?)
         self.clip_grad(self.parameters, self.optimizer)
@@ -575,8 +501,7 @@ class TrainingManager(Manager):
         # Update the network params
         self.optimizer.step()
 
-        # Print loss
-        print(f'Loss: {loss.item():.5g}')
+
 
     def clip_grad(self, parameters, optimizer):
         with torch.no_grad():
@@ -596,7 +521,7 @@ class TrainingManager(Manager):
                     p.grad.data.copy_(
                         torch.max(torch.min(p.grad.data, bound), -bound))
 
-    def param_update_phase(self, neg_states, neg_id, pos_states, pos_id):
+    def param_update_phase(self, neg_states, pos_states):
 
         # Put model in training mode and prepare network parameters for updates
         lib.utils.requires_grad(self.parameters, True)
@@ -604,12 +529,11 @@ class TrainingManager(Manager):
         self.model.zero_grad()
 
         # Calc energy and loss
-        neg_energy, pos_energies, loss = \
-            self.calc_energ_and_loss(neg_states, neg_id,
-                                     pos_states, pos_id)
+        self.calc_energ_and_loss(neg_states,
+                                 pos_states)
 
         # Update weights on the basis of that loss
-        self.update_weights(loss)
+        self.update_weights()
 
     def save_energies_to_histories(self):
         """Every training iteration (i.e. every positive-negative phase pair)
@@ -803,8 +727,6 @@ class VisualizationManager(Manager):
         #     states = states_new
         #     states = [s.detach() for s in states]
 
-        id = None
-
         # Freeze network parameters and take grads w.r.t only the inputs
         lib.utils.requires_grad(states, True)
         lib.utils.requires_grad(self.parameters, False)
@@ -824,13 +746,13 @@ class VisualizationManager(Manager):
                     self.args, states)
 
             if self.args.viz_type == 'standard':
-                self.viz_sampler_step_standard(states, id, state_layer_idx,
+                self.viz_sampler_step_standard(states, state_layer_idx,
                                       clamp_array)
             elif self.args.viz_type == 'channels_energy':
-                self.viz_sampler_step_channels_energy(states, id, state_layer_idx,
+                self.viz_sampler_step_channels_energy(states, state_layer_idx,
                                       clamp_array)
             elif self.args.viz_type == 'channels_state':
-                self.viz_sampler_step_channels_state(states, id, state_layer_idx,
+                self.viz_sampler_step_channels_state(states, state_layer_idx,
                                       clamp_array)
             if k % self.args.viz_img_logging_step_interval == 0:
                 size = self.args.state_sizes[state_layer_idx]
@@ -862,15 +784,17 @@ class VisualizationManager(Manager):
         for state in states:
             state.detach_()
 
-        return states, id
+        return states
 
-    def viz_sampler_step_standard(self, states, ids, state_layer_idx,
+    def viz_sampler_step_standard(self, states, state_layer_idx,
                          clamp_array):
         """In the state layer that's being visualized, the gradients come
         from the channel neuron that's being visualized. The gradients for
         other layers come from the energy gradient."""
 
-        energy, outs, energies = self.model(states, ids)  # Outputs energy of neg sample
+        #TODO if noBP dynamics these sampler steps will need to be updated too
+
+        energy, outs, energies = self.model(states)  # Outputs energy of neg sample
         #total_energy = energy.sum()
         total_energies = [e.sum() for e in energies]
 
@@ -916,13 +840,13 @@ class VisualizationManager(Manager):
             else:
                 state.data.clamp_(0, 1)
 
-    def viz_sampler_step_channels_energy(self, states, ids, state_layer_idx,
+    def viz_sampler_step_channels_energy(self, states, state_layer_idx,
                          clamp_array):
         """In the state layer that's being visualized, the gradients come
         from the channel neuron that's being visualized. The gradients for
         other layers come from the energy gradient."""
 
-        energy, outs, energies = self.model(states, ids)  # Outputs energy of neg sample
+        energy, outs, energies = self.model(states)  # Outputs energy of neg sample
         total_energy = energy.sum()
         total_energies = sum([e.sum() for e in energies])
 
@@ -992,13 +916,13 @@ class VisualizationManager(Manager):
                 state.data.clamp_(0, 1)
 
 
-    def viz_sampler_step_channels_state(self, states, ids, state_layer_idx,
+    def viz_sampler_step_channels_state(self, states, state_layer_idx,
                          clamp_array):
         """In the state layer that's being visualized, the gradients come
         from the channel neuron that's being visualized. The gradients for
         other layers come from the energy gradient."""
 
-        energy, outs, energies = self.model(states, ids)  # Outputs energy of neg sample
+        energy, outs, energies = self.model(states)  # Outputs energy of neg sample
         total_energy = energy.sum()
         total_energies = sum([e.sum() for e in energies])
 
@@ -1331,7 +1255,7 @@ class ExperimentsManager(Manager):
         from lib.data import Dataset
         # Use test set instead of train set and use fixed data batch
         self.data = Dataset(self.args, train_set=False, shuffle=False)
-        pos_img, pos_id = next(iter(self.data.loader)) #Gets first batch only
+        pos_img, _ = next(iter(self.data.loader)) #Gets first batch only
         image_phase_list = [pos_img]
 
 
@@ -1376,7 +1300,7 @@ class ExperimentsManager(Manager):
         # Shuffle is set to false so that every experiment uses the same burn-
         # in stimuli.
         self.data = Dataset(self.args, train_set=False, shuffle=False)
-        pos_img, pos_id = next(
+        pos_img, _ = next(
             iter(self.data.loader))  # Gets first batch only
 
         # Images for first 50 timesteps are from data distribution
@@ -1418,8 +1342,7 @@ class ExperimentsManager(Manager):
         self.observation_phase(image_phase_list=image_phase_list,
                                phase_idxs=phase_idxs)
 
-    def initialize_states(self, pos_img=None, pos_id=None,
-                              prev_states=None):
+    def initialize_states(self, pos_img=None, prev_states=None):
         """Initializes positive states"""
 
         pos_states = [pos_img]
@@ -1435,7 +1358,7 @@ class ExperimentsManager(Manager):
             # state neurons are changed/clamped by the innitter so that you
             # can still use the 'previous' initialisation in your experiments
             self.initter.train()
-            pos_states_new = self.initter.forward(pos_img, pos_id)
+            pos_states_new = self.initter.forward(pos_img)
             pos_states.extend(pos_states_new)
         elif self.args.initializer == 'middle':
             raise NotImplementedError("You need to find the mean pixel value" +
@@ -1483,7 +1406,6 @@ class ExperimentsManager(Manager):
         for pos_it in tqdm(range(sum(self.phase_lens))):
             obs_states[0] = image_phase_list[phase_idxs[pos_it]]
             obs_states = self.sampler_step(obs_states,
-                                           ids=None,
                                            positive_phase=True,
                                            pos_it=pos_it,
                                            step=self.global_step)
@@ -1493,11 +1415,11 @@ class ExperimentsManager(Manager):
         for obs_state in obs_states:
             obs_state.detach_()
 
-    def sampler_step(self, states, ids, positive_phase=False, pos_it=None,
+    def sampler_step(self, states, positive_phase=False, pos_it=None,
                      step=None):
 
         # Get total energy and energy outputs for indvdual neurons
-        energy, outs, full_enrgs = self.model(states, ids, step)
+        energy, outs, full_enrgs = self.model(states, step)
         print("Energy: " + str(energy))
         # Calculate the gradient wrt states for the Langevin step (before
         # addition of noise)
@@ -1642,7 +1564,7 @@ class ExperimentsManager(Manager):
         #TODO if necess
         print('\nStarting observational negative phase...')
         # Initialize the chain (either as noise or from buffer)
-        neg_states, neg_id = self.buffer.sample_buffer()
+        neg_states = self.buffer.sample_buffer()
 
         # Freeze network parameters and take grads w.r.t only the inputs
         lib.utils.requires_grad(neg_states, True)
@@ -1655,7 +1577,7 @@ class ExperimentsManager(Manager):
 
         # Negative phase sampling
         for _ in tqdm(range(self.num_it_neg)):
-            self.sampler_step(neg_states, neg_id, step=self.global_step)
+            self.sampler_step(neg_states, step=self.global_step)
             self.global_step += 1
 
         # Stop calculting grads w.r.t. images
@@ -1665,7 +1587,7 @@ class ExperimentsManager(Manager):
         # Send negative samples to the negative buffer
         # self.buffer.push(neg_states, neg_id)
 
-        return neg_states, neg_id
+        return neg_states
 
 
 
@@ -1702,7 +1624,7 @@ class ExperimentalStimuliGenerationManager:
                             )
         sum_pos_state = None
         counter = 0
-        for pos_state, pos_id in loader:
+        for pos_state, _ in loader:
             if sum_pos_state is None:
                 sum_pos_state = torch.sum(pos_state, dim=0)
             else:

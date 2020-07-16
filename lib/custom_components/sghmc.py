@@ -182,10 +182,9 @@ class SGHMC(Optimizer):
                 tau, g, v_hat = state["tau"], state["g"], state["v_hat"]
                 momentum = state["momentum"]
 
-                if self.args.add_gradient_noise:
-                    gradient = parameter.grad.data + torch.normal(0, self.args.sigma)
-                else:
-                    gradient = parameter.grad.data
+                gradient = parameter.grad.data
+                print("GRAD NORM %f" % torch.norm(gradient, 2).item())
+
                 #  }}} Readability #
 
                 r_t = 1. / (tau + 1.)
@@ -267,6 +266,81 @@ def tensor_norm_clip(tensor, clip_val):
         return tensor * clip_val / norm
     else:
         return tensor
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def alteredstep(self, closure=None):

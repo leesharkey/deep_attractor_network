@@ -1,0 +1,18 @@
+.idea/
+.png
+*.pyc
+Pipfile
+Pipfile.lock
+analysis_results/
+archived plots/
+data/
+exps/
+lib/__pycache__/
+lib/analysis/__pycache__/
+lib/networks/__pycache__/
+mean_cifar10_trainingset_pixels.png
+path
+single_gabor_stims.png
+weightmat.png
+writeup/
+lib/custom_components/__pycache__/sghmc.cpython-37.pyc

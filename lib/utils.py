@@ -85,11 +85,9 @@ def conv_t_output_shape(h_w, kernel_size=1, stride=1, padding=0,
                         output_padding=0):
     return (h_w -1)*stride - 2*padding + kernel_size + output_padding
 
-def generate_random_states(args, shapes, device, scales=[1,1,1,1,1,1],
+def generate_random_states(args, shapes, device,
                            initter_network=None): #TODO if states_activation is relu then this needs to be multiplied by something like the variance of the negative phase states.
 
-    if len(scales)==1:
-        scales = scales * len(shapes)
 
     rand_states = []
     for shape in shapes:
@@ -110,8 +108,6 @@ def generate_random_states(args, shapes, device, scales=[1,1,1,1,1,1],
 
     if args.states_activation == 'hardtanh':
         rand_states = [2 * (rs - 0.5) for rs in rand_states]
-
-    rand_states= [rs * scale for (rs, scale) in zip(rand_states, scales)] # Since in the CIFAR10
 
     # Use the initter network to initialize states close to the
     # 'physiological regime'
@@ -295,5 +291,17 @@ def get_state_optimizers(args, params):
 def datetimenow():
     now = datetime.now()
     return now.strftime("%Y%m%d-%H%M%S")
+
+
+
+shapes = lambda x : [y.shape for y in x]
+nancheck = lambda x : (x != x).any()
+listout = lambda y : [x for x in y]
+gradcheck = lambda  y : [x.requires_grad for x in y]
+leafcheck = lambda  y : [x.is_leaf for x in y]
+existgradcheck = lambda  y : [(x.grad is not None) for x in y]
+existgraddatacheck = lambda  y : [(x.grad.data is not None) for x in y]
+divl = lambda l1, l2: torch.prod(torch.tensor(l1)).float()/torch.prod(torch.tensor(l2)).float()
+
 
 
