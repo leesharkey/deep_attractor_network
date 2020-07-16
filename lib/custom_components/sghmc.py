@@ -183,7 +183,7 @@ class SGHMC(Optimizer):
                 momentum = state["momentum"]
 
                 gradient = parameter.grad.data
-                print("GRAD NORM %f" % torch.norm(gradient, 2).item())
+                #print("GRAD NORM %f" % torch.norm(gradient, 2).item())
 
                 #  }}} Readability #
 
