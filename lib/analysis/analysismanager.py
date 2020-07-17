@@ -238,7 +238,7 @@ class AnalysisManager:
             comb_results = pd.DataFrame(comb_results).T
             comb_results.columns = colnames
 
-            # Save the results of activity tests
+            # Save the results of activity tests #TODO consider also saving the value of the response in each neuron, not just a binary count
             if not activity_df_created:
                 activity_df = pd.DataFrame(data=comb_results,
                                            columns=comb_results.columns)
@@ -504,6 +504,14 @@ class AnalysisManager:
         plt.close()
         print(orient_prefs)
 
+        #TODO consider doing quantitative analysis that sets 32 equally spaced
+        # lines on the circle and fits some optimal orientation that minimises
+        # the distance between the equal grid. You can then compare the true
+        # orientation prefs with uniformly random angles to see how well it
+        # performs. All this said, I'm not so sure how much it really tells
+        # us since equally spaced might not be optimal for natural images.
+        # Maybe you should compare it to observed V1 orientation preference
+        # distributions.
 
         # Plot that shows a the spread of orientations around the unit circle
         angles = np.array(
