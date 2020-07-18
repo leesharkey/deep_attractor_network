@@ -509,16 +509,19 @@ class TrainingManager(Manager):
 
 
     def clip_grad(self, parameters, optimizer):
-        if self.args.weights_optimizer == 'sgd':
-            bound=100.0
-            # torch.nn.utils.clip_grad_norm_(parameters,
-            #                                10.,
-            #                                norm_type=2)
-            with torch.no_grad():
-                for group in optimizer.param_groups:
-                    for p in group['params']:
-                        state = optimizer.state[p]
-                        torch.nn.utils.clip_grad_norm_(p, bound, 2)
+        # if self.args.weights_optimizer == 'sgd':
+        #     bound=100.0
+        #     # torch.nn.utils.clip_grad_norm_(parameters,
+        #     #                                10.,
+        #     #                                norm_type=2)
+        #     with torch.no_grad():
+        #         for group in optimizer.param_groups:
+        #             for p in group['params']:
+        #                 state = optimizer.state[p]
+        #                 sqrt_dims = torch.sqrt(
+        #                     torch.prod(torch.tensor(p.shape)).float())
+        #                 bound = 1.0 * sqrt_dims
+        #                 torch.nn.utils.clip_grad_norm_(p, bound, 2)
 
         elif self.args.weights_optimizer == 'adam':
 
@@ -538,6 +541,7 @@ class TrainingManager(Manager):
                             exp_avg_sq / (1 - beta2 ** step)) + 0.1
                         p.grad.data.copy_(
                             torch.max(torch.min(p.grad.data, bound), -bound))
+                        #print("bound: %f" % bound.item())
 
     def param_update_phase(self, neg_states, pos_states):
 

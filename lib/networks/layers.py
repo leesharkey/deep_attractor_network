@@ -470,7 +470,7 @@ class DenseCCTBlock(nn.Module):
             self.top_net = nn.Sequential(dcctm,
                                          final_1x1_conv)
         else:
-            num_out_ch = base_ch * len(inp_state_shapes)
+            num_out_ch = base_ch * len(inp_state_shapes) #num_out_ch (of the base cctls)
             final_1x1_conv = nn.Conv2d(in_channels=num_out_ch,
                                        out_channels=base_ch,
                                        kernel_size=1,
