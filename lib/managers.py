@@ -523,7 +523,7 @@ class TrainingManager(Manager):
         #                 bound = 1.0 * sqrt_dims
         #                 torch.nn.utils.clip_grad_norm_(p, bound, 2)
 
-        elif self.args.weights_optimizer == 'adam':
+        2if self.args.weights_optimizer == 'adam':
 
             with torch.no_grad():
                 for group in optimizer.param_groups:
