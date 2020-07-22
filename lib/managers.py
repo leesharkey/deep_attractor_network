@@ -520,7 +520,7 @@ class TrainingManager(Manager):
                         #state = optimizer.state[p]
                         sqrt_dims = torch.sqrt(
                             torch.prod(torch.tensor(p.shape)).float())
-                        bound = 100.0 * sqrt_dims
+                        bound = 1.0 * sqrt_dims
                         torch.nn.utils.clip_grad_norm_(p, bound, 2)
 
         if self.args.weights_optimizer == 'adam':
@@ -681,8 +681,7 @@ class VisualizationManager(Manager):
             self.noises = lib.utils.generate_random_states(
                 self.args,
                 self.args.state_sizes,
-                self.device,
-                scales=self.args.state_scales)
+                self.device)
             clamp_array = None
             self.visualization_phase()
         elif self.args.viz_type in ['channels_energy', 'channels_state']:
@@ -704,6 +703,8 @@ class VisualizationManager(Manager):
                     self.visualization_phase(state_layer_idx,
                                              channel_idx=ch,
                                              clamp_array=clamp_array)
+        else:
+            raise ValueError("Invalid argument for viz type.")
 
     def visualization_phase(self, state_layer_idx=0, channel_idx=None,
                             clamp_array=None):
@@ -720,8 +721,7 @@ class VisualizationManager(Manager):
             states = lib.utils.generate_random_states(
                     self.args,
                     self.args.state_sizes,
-                    self.device,
-                    self.args.state_scales)
+                    self.device)
 
             # Gets the values of the pos states by running an inference phase
             # with the image state_layer clamped
@@ -871,6 +871,7 @@ class VisualizationManager(Manager):
         energy, outs, energies = self.model(states)  # Outputs energy of neg sample
         total_energy = energy.sum()
         total_energies = sum([e.sum() for e in energies])
+        print("Energy: %f" % energy.item())
 
         # Reshape energies
         energies = [enrg.view(state.shape) for enrg, state in zip(energies, states)]
@@ -947,6 +948,7 @@ class VisualizationManager(Manager):
         energy, outs, energies = self.model(states)  # Outputs energy of neg sample
         total_energy = energy.sum()
         total_energies = sum([e.sum() for e in energies])
+        print("Energy: %f" % energy.item())
 
         total_energies.backward()
 
