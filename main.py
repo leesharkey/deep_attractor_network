@@ -1846,7 +1846,20 @@ def main():
                                                   writer,
                                                   device,
                                                   sample_log_dir)
-        expm.orientations_present_single_gabor()
+        expm.orientations_present_single_gabor("just_angle")
+        expm.orientations_present_single_gabor("contrast_and_angle")
+        #Just putting this here so I can leave running ovenight. todo remove
+        vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
+                                  sample_log_dir)
+        vm.visualize()
+        vars(args)['viz_type'] = 'channels_energy'
+        vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
+                                  sample_log_dir)
+        vm.visualize()
+        vars(args)['viz_type'] = 'channels_state'
+        vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
+                                  sample_log_dir)
+        vm.visualize()
         #expm.observe_cifar_pos_phase()
 
         # # Reset parameters and create new model so that

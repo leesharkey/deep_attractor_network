@@ -34,11 +34,12 @@ def main():
     session_name = lib.utils.datetimenow()
 
     am = analysismanager.AnalysisManager(args, session_name)
-    #am.print_stimuli()
-    #am.find_active_neurons('primary')
-    #am.plot_pixel_vs_activity()
-    #am.print_activity_map()
-    #am.find_active_neurons('just_angles')
+    #am.print_stimuli()# you don't really use this
+    am.find_active_neurons('primary')
+    #am.plot_pixel_vs_activity() # you don't really use this
+    am.print_activity_maps_by_batch_ch()
+    #am.print_activity_map() # you don't really use this
+    am.find_active_neurons('just_angles')
     # TODO change data processing pipeline so each function here is adding
     #  columns to a single dataframe. Only if it won't fit in the main
     #  dataframe should it be saved in its own df
@@ -49,9 +50,9 @@ def main():
     am.plot_contrast_frequency_plots()
     # #am.single_neuron_dynamics_plot_Ham_case()
     # #am.single_neuron_autocorrelation()
-    # am.plot_energy_timeseries()
+    am.plot_energy_timeseries()
     # # #am.single_neuron_trial_avg_EI_balance() #unused
-    # am.timeseries_EI_balance()
+    am.timeseries_EI_balance()
     # am.xcorr_EI_lag()
     # am.two_neuron_crosscorrelation()
     # am.explore_oscillations()
