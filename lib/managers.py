@@ -632,7 +632,7 @@ class VisualizationManager(Manager):
                          sample_log_dir)
 
         self.reset_opt_K_its = True
-        self.reset_freq = 100 #100000000
+        self.reset_freq = 100000000
         self.energy_scaler = 0.5
         self.sigma = self.args.sigma
 
@@ -1294,14 +1294,15 @@ class ExperimentsManager(Manager):
         self.observation_phase(image_phase_list=image_phase_list,
                                phase_idxs=phase_idxs)
 
-    def orientations_present_single_gabor(self):
+    def orientations_present_single_gabor(self, exp_stim_stem="contrast_and_angle"):
+
         exp_stim_path_base = "data/gabor_filters/single/"
 
         # To measure oscillations, use experiment with varied contrast & angle
         #exp_stim_stem = "contrast_and_angle" #TODO make into a cli arg
 
         # To measure orientation preferences, use exp that varies only angle
-        exp_stim_stem = "just_angle"
+        #exp_stim_stem = "just_angle"
 
         exp_stim_path = exp_stim_path_base + exp_stim_stem
 
@@ -1328,8 +1329,8 @@ class ExperimentsManager(Manager):
             iter(self.data.loader))  # Gets first batch only
 
         # Images for first 50 timesteps are from data distribution
-        # image_phase_list = [pos_img]
-        image_phase_list = []
+        image_phase_list = [pos_img]
+        #image_phase_list = []
 
         # The next image is a blank image
         image_phase_list.append(self.base_im_batch)
@@ -1354,7 +1355,8 @@ class ExperimentsManager(Manager):
         # Determine how long each stim will be displayed for
         #self.experiment_len = 200
         #self.phase_lens = [50, 1000, 2500, 3000]
-        self.phase_lens = [1500, 1500, 1500] #modern
+        self.phase_lens = [int(self.args.num_burn_in_steps),
+                           1000, 1000, 600]
 
 
         phase_idxs = []
@@ -1382,7 +1384,7 @@ class ExperimentsManager(Manager):
             # state neurons are changed/clamped by the innitter so that you
             # can still use the 'previous' initialisation in your experiments
             self.initter.train()
-            pos_states_new = self.initter.forward(pos_img)
+            pos_states_new = self.initter.forward(pos_img, x_id=None)
             pos_states.extend(pos_states_new)
         elif self.args.initializer == 'middle':
             raise NotImplementedError("You need to find the mean pixel value" +
@@ -1403,6 +1405,8 @@ class ExperimentsManager(Manager):
 
     def observation_phase(self, image_phase_list,
                           phase_idxs, prev_states=None):
+
+        self.global_step = 0
 
         print('\nStarting observation phase...')
         # Get the loaded pos samples and put them on the correct device
@@ -1441,29 +1445,32 @@ class ExperimentsManager(Manager):
 
     def sampler_step(self, states, positive_phase=False, pos_it=None,
                      step=None):
+        energy, outs, full_energies = self.model(states)
 
-        # Get total energy and energy outputs for indvdual neurons
-        energy, outs, full_enrgs = self.model(states, step)
-        print("Energy: " + str(energy))
         # Calculate the gradient wrt states for the Langevin step (before
         # addition of noise)
-        energy.backward()
+        if self.args.state_optimizer == 'sghmc':
+            energy.backward()
+        else:
+            (-energy).backward()
+
         if self.args.clip_grad:
             torch.nn.utils.clip_grad_norm_(states,
                                            self.args.clip_state_grad_norm,
                                            norm_type=2)
 
+
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
-        for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-            if positive_phase and layer_idx == 0:
-                pass
-            else:
-                noise.normal_(0, self.args.sigma)
-                # Note: Just set sigma to a very small value if you don't want to
-                # add noise. It's so inconsequential that it's not worth the
-                # if-statements to accommodate sigma==0.0
-                state.data.add_(noise.data)
+        # for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
+        #     if positive_phase and layer_idx == 0:
+        #         pass
+        #     else:
+        #         noise.normal_(0, self.args.sigma[0])
+        #         # Note: Just set sigma to a very small value if you don't want to
+        #         # add noise. It's so inconsequential that it's not worth the
+        #         # if-statements to accommodate sigma==0.0
+        #         state.data.add_(noise.data)
 
         # The gradient step in the Langevin/SGHMC step
         # It goes through each statelayer and steps back using its associated
@@ -1527,7 +1534,7 @@ class ExperimentsManager(Manager):
                 state.data.clamp_(0, 1)
 
         # Save experimental data
-        self.save_experimental_data(states, outs, full_enrgs, step,
+        self.save_experimental_data(states, outs, full_energies, step,
                                     save_img=True)
 
         return states
@@ -1638,6 +1645,7 @@ class ExperimentalStimuliGenerationManager:
     def get_dataset_avg_pixels(self, base_image_path):
         """Create base image that is the mean pixel value for all images in
         the training set."""
+        print("Calculating the average pixels in the CIFAR10 dataset...")
         dataset = datasets.CIFAR10('./data',
                                    download=True,
                                    transform=transforms.ToTensor())
@@ -1660,6 +1668,7 @@ class ExperimentalStimuliGenerationManager:
         utils.save_image(mean_pos_state,
                          base_image_path,
                          nrow=1, normalize=True, range=(0, 1))
+        print("Done.")
 
     def gabor(self, sigma, theta, Lambda, psi, gamma, contrast):
         """Gabor feature extraction."""
