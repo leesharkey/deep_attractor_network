@@ -1702,16 +1702,116 @@ class ExperimentalStimuliGenerationManager:
         gb = gb + 1.
         return gb
 
+
+    def double_gabor_image(self,
+                             loc=[0, 0],
+                             sigma=0.7,
+                             angle=0,
+                             wavelength=3.0,
+                             spat_asp_ratio=0.5,
+                             ellipicity=1,
+                             contrast=1,
+                             folder_name='FolderNameUnfilled',
+                             save_image=True):
+
+        #orig single gabor settings
+        # (self,
+        #  loc=[0, 0],
+        #  sigma=0.7,
+        #  angle=0,
+        #  wavelength=3.,
+        #  spat_asp_ratio=0.4,
+        #  ellipicity=1,
+        #  contrast=1,
+        #  folder_name='FolderNameUnfilled',
+        #  save_image=True)
+
+        static_y = 13
+        static_x = 16
+
+        loc = np.array(loc) + self.center
+        for i in loc:
+            if i > 32:
+                raise ValueError(
+                    'Location cannot be outside the bounds of image')
+
+        # Get gabor filters
+
+        filtr1 = self.gabor(sigma=0.7, theta=np.pi*0.5, gamma=0.4,
+                           Lambda=3., psi=1,
+                           contrast=contrast)
+
+        filtr2 = self.gabor(sigma=sigma, theta=angle, gamma=spat_asp_ratio,
+                           Lambda=wavelength, psi=ellipicity,
+                           contrast=contrast)
+
+        mask1 = np.zeros_like(self.base_image)
+        mask2 = np.zeros_like(self.base_image)
+        fshape1 = filtr1.shape
+        fshape2 = filtr2.shape
+
+
+        # Multiply base masks by filter
+        ##1
+        hf_h, hf_w = int(fshape1[0] / 2), int(fshape1[1] / 2)
+        patch = mask1[:, (static_y - hf_h):(static_y - hf_h + fshape1[0]),
+                (static_x - hf_w):(static_x - hf_w + fshape1[1])]
+        print(patch.shape, filtr1.shape)
+        mask1[:, (static_y - hf_h):(static_y - hf_h + fshape1[0]),
+        (static_x - hf_w):(static_x - hf_w + fshape1[1])] = \
+            filtr1-np.ones_like(filtr1)#np.multiply(patch, filtr1)
+
+        ##2
+        hf_h, hf_w = int(fshape2[0] / 2), int(fshape2[1] / 2)
+        patch = mask2[:, (loc[0] - hf_h):(loc[0] - hf_h + fshape2[0]),
+                (loc[1] - hf_w):(loc[1] - hf_w + fshape2[1])]
+        print(patch.shape, filtr2.shape)
+        mask2[:, (loc[0] - hf_h):(loc[0] - hf_h + fshape2[0]),
+        (loc[1] - hf_w):(loc[1] - hf_w + fshape2[1])] = \
+            filtr2-np.ones_like(filtr2)#np.multiply(patch, filtr2)
+
+        #Combine masks
+        mask = mask1*2 + mask2*2 + np.ones_like(mask1)
+
+        # Multiply base image by filter
+        new_image = self.base_image.clone()
+        new_image = np.multiply(new_image, mask)
+
+        # Save image
+        if save_image:
+            loc_string = ''
+            for l in loc:
+                loc_string += str(l) + '-'
+            loc_string = loc_string[:-1]
+            save_string = 'gf_loc%s_sgm%s_th%s_w%s_rat%s_el%s_c%s' % (loc_string,
+                                                          '%.5g' % sigma,
+                                                          '%.5f' % angle,
+                                                          '%.5g' % wavelength,
+                                                          '%.5g' % spat_asp_ratio,
+                                                          '%.5g' % ellipicity,
+                                                          '%.5f' % contrast)
+            save_string = os.path.join(self.save_path_root,
+                                       folder_name, save_string)
+            save_string += '.png'
+            print(save_string)
+            utils.save_image(new_image,
+                             save_string,
+                             nrow=1, normalize=True, range=(0, 1))
+        return new_image
+
+
+
     def single_gabor_image(self,
-                           loc=[0, 0],
-                           sigma=0.8,
-                           angle=0,
-                           wavelength=3.,
-                           spat_asp_ratio=0.6,  # length of the bars
-                           ellipicity=0.0,
-                           contrast=1,
-                           folder_name='FolderNameUnfilled',
-                           save_image=True):
+                             loc=[0, 0],
+                             sigma=0.7,
+                             angle=0,
+                             wavelength=3.0,
+                             spat_asp_ratio=0.5,
+                             ellipicity=1,
+                             contrast=1,
+                             repeat=None,
+                             folder_name='FolderNameUnfilled',
+                             save_image=True): #Be sure to change double defaults
 
         #original defaults:
         # (self,
@@ -1719,7 +1819,7 @@ class ExperimentalStimuliGenerationManager:
         #  sigma=0.7,
         #  angle=0,
         #  wavelength=3.,
-        #  spat_asp_ratio=0.4,
+        #  spat_asp_ratio=0.4, #0.3
         #  ellipicity=1,
         #  contrast=1,
         #  folder_name='FolderNameUnfilled',
@@ -1748,6 +1848,17 @@ class ExperimentalStimuliGenerationManager:
          # contrast=1,
          # folder_name='FolderNameUnfilled',
          # save_image=True):
+
+        #Single bar in the middle with black surround
+        # loc = [0, 0],
+        # sigma = 0.8,
+        # angle = 0,
+        # wavelength = 3.,
+        # spat_asp_ratio = 0.6,  # length of the bars
+        # ellipicity = 0.0,
+        # contrast = 1,
+        # folder_name = 'FolderNameUnfilled',
+        # save_image = True)
 
 
         loc = np.array(loc) + self.center
@@ -1780,13 +1891,24 @@ class ExperimentalStimuliGenerationManager:
             for l in loc:
                 loc_string += str(l) + '-'
             loc_string = loc_string[:-1]
-            save_string = 'gf_loc%s_sgm%s_th%s_w%s_rat%s_el%s_c%s' % (loc_string,
-                                                          '%.5g' % sigma,
-                                                          '%.5f' % angle,
-                                                          '%.5g' % wavelength,
-                                                          '%.5g' % spat_asp_ratio,
-                                                          '%.5g' % ellipicity,
-                                                          '%.5f' % contrast)
+
+            if repeat is None:
+                save_string = 'gf_loc%s_sgm%s_th%s_w%s_rat%s_el%s_c%s' % (loc_string,
+                                                              '%.5g' % sigma,
+                                                              '%.5f' % angle,
+                                                              '%.5g' % wavelength,
+                                                              '%.5g' % spat_asp_ratio,
+                                                              '%.5g' % ellipicity,
+                                                              '%.5f' % contrast)
+            else:
+                save_string = 'gf_loc%s_sgm%s_th%s_w%s_rat%s_el%s_c%s__%i' % (loc_string,
+                                                              '%.5g' % sigma,
+                                                              '%.5f' % angle,
+                                                              '%.5g' % wavelength,
+                                                              '%.5g' % spat_asp_ratio,
+                                                              '%.5g' % ellipicity,
+                                                              '%.5f' % contrast,
+                                                              repeat)
             save_string = os.path.join(self.save_path_root,
                                        folder_name, save_string)
             save_string += '.png'
@@ -1864,20 +1986,20 @@ class ExperimentalStimuliGenerationManager:
                                          folder_name=os.path.join(folder_name1,
                                                                  folder_name2))
 
-    def generate_single_gabor_dataset__long_just_angle(self):
+    def generate_single_gabor_dataset__long_just_fewangles(self):
         print("Careful, running this function might overwrite your "+
               "previously generated data. Cancel if you wish, or enter "+
               "any input")
 
 
         contrast = 2.4
-        angle_min = 0.0
-        angle_max = np.pi * 2
-        angle_incr = (np.pi * 2) / 128
+
+        angles = [0.0] * 64
+        angles.extend([np.pi * 0.5] * 64)
 
         # Make the folders to save the images in
         folder_name1 = 'single'
-        folder_name2 = 'long_just_angle'
+        folder_name2 = 'long_just_fewangles'
         full_folder_name = os.path.join(self.save_path_root,
                                         folder_name1,
                                         folder_name2)
@@ -1889,10 +2011,48 @@ class ExperimentalStimuliGenerationManager:
         if not os.path.exists(full_folder_name):
             os.mkdir(full_folder_name)
 
-        for a in np.arange(start=angle_min, stop=angle_max, step=angle_incr):
+        for i, a in enumerate(angles):
             im = self.single_gabor_image(angle=a,
                                          contrast=contrast,
                                          spat_asp_ratio=0.17,
+                                         repeat=i,
+                                         folder_name=os.path.join(folder_name1,
+                                                                 folder_name2))
+
+    def generate_single_gabor_dataset__just_angle_few_angles(self):
+        print("Careful, running this function might overwrite your "+
+              "previously generated data. Cancel if you wish, or enter "+
+              "any input")
+
+
+        contrast = 2.4
+        angle_min = 0.0
+        angle_max = np.pi * 2
+        angle_incr = (np.pi * 2) / 128
+
+        angles = [0.0] * 64
+        angles.extend([np.pi * 0.5] * 64)
+
+        # Make the folders to save the images in
+        folder_name1 = 'single'
+        folder_name2 = 'just_angle_few_angles'
+        full_folder_name = os.path.join(self.save_path_root,
+                                        folder_name1,
+                                        folder_name2)
+
+        if not os.path.exists(full_folder_name):
+            if not os.path.exists(os.path.join(self.save_path_root,
+                                  folder_name1)):
+                os.mkdir(os.path.join(self.save_path_root,
+                                      folder_name1))
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1,
+                                  folder_name2))
+
+        for i, a in enumerate(angles):
+            im = self.single_gabor_image(angle=a,
+                                         contrast=contrast,
+                                         repeat=i,
                                          folder_name=os.path.join(folder_name1,
                                                                  folder_name2))
 
@@ -1971,45 +2131,52 @@ class ExperimentalStimuliGenerationManager:
         if not os.path.exists(full_folder_name):
             os.mkdir(full_folder_name)
 
+        contrast = 2.4
+
         angle_min = 0.0
         angle_max = np.pi * 2
-        angle_incr = (np.pi * 2) / 16
+        angle_incr = (np.pi * 2) / 8
         angle_range = np.arange(start=angle_min, stop=angle_max,
                                 step=angle_incr)
 
-        y_min = 2
+        y_min = -4
         y_max = 12
-        y_incr = 3
+        y_incr = 2
         y_range = list(np.arange(y_min, y_max, y_incr))
 
         x_min = 0
         x_max = 9
-        x_incr = 6
+        x_incr = 8
         x_range = list(range(x_min, x_max, x_incr))
-        locs = [[i,j] for i in y_range for j in x_range]
-        print(len([(a,l) for a in angle_range for l in locs])) #remove
+        locs = [[i, j] for i in y_range for j in x_range]
+        print(len([(a, l) for a in angle_range for l in locs]))  # remove
 
-        single_base_im = self.single_gabor_image(angle=0.5*np.pi,
-                                                 save_image=False)
-        centred_base_im = single_base_im - self.base_image
-        for angle in angle_range:
-            for loc in locs:
+        # single_base_im = self.single_gabor_image(angle=0.5*np.pi,
+        #                                          save_image=False)
+        # centred_base_im = single_base_im - self.base_image
+        save_name_idx = 0
+        for loc in locs:
+            for angle in angle_range:
+
+                print([angle, loc])
                 # Create second gabor filter
-                new_im = self.single_gabor_image(angle=angle,
+                new_im = self.double_gabor_image(angle=angle,
                                                  loc=loc,
+                                                 contrast=contrast,
                                                  save_image=False)
 
-                # Combine first and second images into one
-                centred_new_im = new_im - self.base_image
-                centred_combo = centred_new_im + centred_base_im
-                new_im = centred_combo + self.base_image
+                # # Combine first and second images into one
+                # centred_new_im = new_im - self.base_image
+                # centred_combo = centred_new_im + centred_base_im
+                # new_im = centred_combo + self.base_image
 
                 # Create name of image based on attributes
                 loc_string = ''
                 for l in loc:
                     loc_string += str(l) + '-'
                 loc_string = loc_string[:-1]
-                save_string = 'gf_loc%s_th%s' % (loc_string, '%.5f' % angle)
+                save_string = '%04d_gf_loc%s_th%s' % (save_name_idx,
+                                                    loc_string, '%.5f' % angle)
                 save_string = os.path.join(self.save_path_root,
                                            folder_name1,
                                            folder_name2,
@@ -2021,6 +2188,77 @@ class ExperimentalStimuliGenerationManager:
                 utils.save_image(new_im,
                                  save_string,
                                  nrow=1, normalize=True, range=(0, 1))
+
+                save_name_idx += 1
+
+    def generate_double_gabor_dataset__fewlocs_and_fewerangles(self):
+        folder_name1 = 'double'
+        folder_name2 = 'fewlocs_and_fewerangles'
+
+        full_folder_name = os.path.join(self.save_path_root,
+                                        folder_name1,
+                                        folder_name2)
+
+        if not os.path.exists(os.path.join(self.save_path_root,
+                                  folder_name1)):
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1))
+
+        if not os.path.exists(full_folder_name):
+            os.mkdir(full_folder_name)
+
+        contrast = 2.4
+
+        angle_range = [0.0] * 8
+        angle_range.extend([np.pi * 0.5] * 8)
+
+        y_min = -4
+        y_range = [-3, 1, 5, 9]
+
+        x_range = [0, 7]
+        locs = [[i, j] for i in y_range for j in x_range]
+        print(len([(a, l) for a in angle_range for l in locs]))  # remove
+
+        # single_base_im = self.single_gabor_image(angle=0.5*np.pi,
+        #                                          save_image=False)
+        # centred_base_im = single_base_im - self.base_image
+        save_name_idx = 0
+        for loc in locs:
+            for angle in angle_range:
+
+                print([angle, loc])
+                # Create second gabor filter
+                new_im = self.double_gabor_image(angle=angle,
+                                                 loc=loc,
+                                                 contrast=contrast,
+                                                 save_image=False)
+
+                # # Combine first and second images into one
+                # centred_new_im = new_im - self.base_image
+                # centred_combo = centred_new_im + centred_base_im
+                # new_im = centred_combo + self.base_image
+
+                # Create name of image based on attributes
+                loc_string = ''
+                for l in loc:
+                    loc_string += str(l) + '-'
+                loc_string = loc_string[:-1]
+                save_string = '%04d_gf_loc%s_th%s' % (save_name_idx,
+                                                      loc_string,
+                                                      '%.5f' % angle)
+                save_string = os.path.join(self.save_path_root,
+                                           folder_name1,
+                                           folder_name2,
+                                           save_string)
+                save_string += '.png'
+                print(save_string)
+
+                # Save image
+                utils.save_image(new_im,
+                                 save_string,
+                                 nrow=1, normalize=True, range=(0, 1))
+
+                save_name_idx += 1
 
 
 

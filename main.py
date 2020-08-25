@@ -1821,6 +1821,7 @@ def main():
         vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
                                   sample_log_dir)
         vm.visualize()
+
     if args.weight_viz:
         args = finalize_args(parser)
         wvm = managers.WeightVisualizationManager(args, model, data, buffer,
@@ -1835,9 +1836,16 @@ def main():
         #TODO set this so they go automatically without having to change any
         # settings. You know, like a frickin computer program.
 
-        # esgm.generate_double_gabor_dataset__loc_and_angles()
-        esgm.generate_single_gabor_dataset__just_angle()
+        #esgm.generate_single_gabor_dataset__just_angle()
         #esgm.generate_single_gabor_dataset__contrast_and_angle()
+        esgm.generate_single_gabor_dataset__just_angle_few_angles()
+
+
+        #esgm.generate_double_gabor_dataset__loc_and_angles() #don't really use this one
+        esgm.generate_single_gabor_dataset__long_just_fewangles()
+        #esgm.generate_double_gabor_dataset__fewlocs_and_angles() #not used
+        esgm.generate_double_gabor_dataset__fewlocs_and_fewerangles()
+
 
     if args.experiment:
         # Re-instantiate dataset now using no randomness so that the same batch
@@ -1846,20 +1854,25 @@ def main():
                                                   writer,
                                                   device,
                                                   sample_log_dir)
-        expm.orientations_present_single_gabor("just_angle")
-        expm.orientations_present_single_gabor("contrast_and_angle")
-        #Just putting this here so I can leave running ovenight. todo remove
-        vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
-                                  sample_log_dir)
-        vm.visualize()
-        vars(args)['viz_type'] = 'channels_energy'
-        vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
-                                  sample_log_dir)
-        vm.visualize()
-        vars(args)['viz_type'] = 'channels_state'
-        vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
-                                  sample_log_dir)
-        vm.visualize()
+        #expm.orientations_present("single", "just_angle")
+        #expm.orientations_present("single", "contrast_and_angle")
+        expm.orientations_present("single", "just_angle_few_angles")
+        expm.orientations_present("double", "fewlocs_and_fewerangles")
+        expm.orientations_present("single", "long_just_fewangles")
+
+        ##Just putting this here so I can leave running ovenight. todo remove
+        # vars(args)['viz_type'] = 'standard'
+        # vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
+        #                           sample_log_dir)
+        # vm.visualize()
+        # vars(args)['viz_type'] = 'channels_energy'
+        # vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
+        #                           sample_log_dir)
+        # vm.visualize()
+        # vars(args)['viz_type'] = 'channels_state'
+        # vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
+        #                           sample_log_dir)
+        # vm.visualize()
         #expm.observe_cifar_pos_phase()
 
         # # Reset parameters and create new model so that

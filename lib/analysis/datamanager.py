@@ -89,6 +89,8 @@ class DataManager:
             arr = arr.reshape(self.state_sizes[int(state_layer_idx)])
             if self.batches is not None:
                 arr = arr.take(self.batches, axis=0)
+                if type(self.batches)==int:
+                    arr = np.expand_dims(arr, axis=0)
             if self.channels is not None:
                 arr = arr.take(self.channels, axis=1)
                 #arr = np.expand_dims(arr, axis=1)

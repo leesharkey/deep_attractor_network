@@ -35,27 +35,53 @@ def main():
 
     am = analysismanager.AnalysisManager(args, session_name)
     #am.print_stimuli()# you don't really use this
-    am.find_active_neurons('primary')
     #am.plot_pixel_vs_activity() # you don't really use this
-    am.print_activity_maps_by_batch_ch()
     #am.print_activity_map() # you don't really use this
-    am.find_active_neurons('just_angles')
-    # TODO change data processing pipeline so each function here is adding
-    #  columns to a single dataframe. Only if it won't fit in the main
-    #  dataframe should it be saved in its own df
-    am.find_orientation_preferences()
-    am.assign_ori_info()
-    am.plot_combined_state_traces()
-    am.find_oscillating_neurons() #memory error?
-    am.plot_contrast_frequency_plots()
+
+    # In each experiment, find the active neurons, the mean activities
+    # during and outside of stimulation, and shapiro tests.
+    #am.find_active_neurons('primary')
+    # am.find_active_neurons('just_angles')
+    #am.find_active_neurons('just_angles_few_angles')
+    # am.find_active_neurons('double_stim')
+    #am.find_active_neurons('long_just_angles')
+
+    #am.print_activity_maps_by_batch_ch()
+    #am.find_active_neurons('just_angles')
+    #am.find_orientation_preferences()
+    #am.assign_ori_info()
+    #am.plot_state_traces_with_spec_and_acorr('patch')
+    #am.plot_state_traces_with_spec_and_acorr(None)
+    #am.plot_contrast_specgram_comparison_local('patch')
+    #am.plot_contrast_specgram_comparison_local(None)
+    #am.plot_contrast_specgram_comparison_LFP()
+    #am.plot_contrast_power_spectra_LFP()
+    # am.plot_contrast_dependent_transients_of_active_neurons('patch')
+    # am.plot_contrast_dependent_transients_of_active_neurons(None)
+
+    #am.plot_state_traces('patch')
+    #am.plot_state_traces()
+    #am.plot_single_neuron_state_traces()
+    #TODO: am.plot_single_neuron_energy_traces()
+    #TODO: am.plot_single_neuron_mom_traces()
+    # am.find_oscillating_neurons() #memory error?
+    # am.plot_contrast_frequency_plots()
+
     # #am.single_neuron_dynamics_plot_Ham_case()
     # #am.single_neuron_autocorrelation()
-    am.plot_energy_timeseries()
+    # am.plot_energy_timeseries()
     # # #am.single_neuron_trial_avg_EI_balance() #unused
-    am.timeseries_EI_balance()
-    # am.xcorr_EI_lag()
-    # am.two_neuron_crosscorrelation()
-    # am.explore_oscillations()
+    # am.timeseries_EI_balance()
+    # am.xcorr_EI_lag() #hasn't been used in a long time
+    # am.two_neuron_crosscorrelation() #hasn't been used in a long time
+    # am.explore_oscillations() #hasn't been used in a long time
+
+
+
+    # am.print_activity_maps_by_batch_ch_double_stim() # TODO make this into one function with the single stim print activity maps function.
+    am.synchrony_experiment1_overlapping_rec_fields('single')
+    am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs()
+
 if __name__ == '__main__':
     main()
 
