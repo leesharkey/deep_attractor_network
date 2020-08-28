@@ -2278,28 +2278,18 @@ class AnalysisManager:
             else:
                 full_state_traces = full_state_traces.append(state_traces)
 
-        # For every batch, go through and calculate the 32*32=1024
-        # cross correlations
-        #self.num_ch = 3 #TODO remove after writing
-        num_combos = self.num_ch * self.num_ch * num_batches
-        combo_labels = [(ch1,ch2,b)
-                        for ch1 in range(self.num_ch)
-                        for ch2 in range(self.num_ch)
-                        for b in range(num_batches)]
-
-
         # Now, having collected all the state traces of the neurons of
         # interest, compute cross correlation plots between neurons in
         # different channels in the same batch element:
-        acorr_data_during = pd.DataFrame()
-        acorr_data_outside = pd.DataFrame()
-        acorr_data_dfs = [acorr_data_during, acorr_data_outside]
+        for b in range(num_batches):
 
-        for b in range(num_batches):  # Consider only doing a few batches like vert,hori,and45deg
+
+            acorr_data_during = pd.DataFrame()
+            acorr_data_outside = pd.DataFrame()
+            acorr_data_dfs = [acorr_data_during, acorr_data_outside]
+
             for ch1 in range(self.num_ch):
                 for ch2 in range(self.num_ch):
-                    if b ==3:
-                        print("Boop")
                     print("%s   %s    %s" % (b, ch1, ch2))
                     # Define conditions to get traces from full df
                     cond1_1 = full_state_traces['channel'] == ch1
@@ -2311,6 +2301,7 @@ class AnalysisManager:
                     if not np.any(cond1) or not np.any(cond2):
                         print("Skipping %s   %s    %s" % (b, ch1, ch2))
                         continue
+
                     # Get traces from full df
                     trace_1 = full_state_traces.loc[cond1]
                     trace_2 = full_state_traces.loc[cond2]
@@ -2349,12 +2340,12 @@ class AnalysisManager:
                         acorr_result['channel B'] = ch2
                         acorr_result['batch'] = b
                         acorr_data_dfs[j] = acorr_data_dfs[j].append(acorr_result)
-        acorr_data_dfs = [df.reset_index() for df in acorr_data_dfs]
+            acorr_data_dfs = [df.reset_index() for df in acorr_data_dfs]
 
-        # Save results
-        for ac_df, label in zip(acorr_data_dfs,['during', 'outside']):
-            ac_df.to_pickle(os.path.join(self.session_dir,
-                            'cross_correlation_results_%s.pkl' % label) )
+            # Save results periodically, per batch
+            for ac_df, label in zip(acorr_data_dfs,['during', 'outside']):
+                ac_df.to_pickle(os.path.join(exp_dir,
+                                'cross_correlation_results_%s_%s.pkl' % (b, label)) )
 
 
         """Okay so now I need to figure out how to say when a neuron and
@@ -2362,39 +2353,192 @@ class AnalysisManager:
         neurons in the same channel that are right beside each other. That
         might actually be more similar to Gray et al.'s original experiment."""
 
-    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs(self):
+    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_individually(self):
         # Prepare general variables
         exp_dir = os.path.join(self.session_dir,
                                'SynchronyExp1')
-        acorr_data_dfs = [pd.read_pickle(os.path.join(self.session_dir,
-                            'cross_correlation_results_%s.pkl' % label))
-                          for label in ['during', 'outside']]
+        acorr_dir = os.path.join(exp_dir, 'individual acorrs')
 
 
-        # Plot results
-        for i in range(len(acorr_data_dfs[0])):
-            fig, ax = plt.subplots(2)
-            #fig.tight_layout(pad=1.0)
-            for j, during_or_outside_label in enumerate(['During', 'Outside']):
+        for b in range(3):#128):
+            acorr_data_dfs = [pd.read_pickle(os.path.join(self.session_dir,
+                                'cross_correlation_results_%s_%s.pkl' % (b, label)))
+                              for label in ['during', 'outside']]
 
-                ch1, ch2, b = acorr_data_dfs[j].iloc[i][-3:]
-                acorr_trace = np.array(acorr_data_dfs[j].iloc[i])
-                acorr_trace = acorr_trace[0:-3]
+            max_peak = max([np.max(np.max(df.iloc[:,1:-3])) for df in acorr_data_dfs])
+            min_trough = min([np.min(np.min(df.iloc[:,1:-3])) for df in acorr_data_dfs])
 
-                # Plotting only middle of acorr plot
-                mid_point = len(acorr_trace) // 2
-                acorr_trace = acorr_trace[mid_point-400:mid_point+400]
+            # Plot results
+            for i in range(len(acorr_data_dfs[0])):
+                fig, ax = plt.subplots(2,figsize=(8,9))
 
-                ax[j].plot(np.arange(len(acorr_trace)),
-                        acorr_trace)#/np.max(acorr_trace))
-                ax[j].set_title(during_or_outside_label)
-                ax[j].set_xlabel('lag')
-                ax[j].set_ylabel('correlation coefficient')
-                #ax.legend()
+                #fig.tight_layout(pad=1.0)
+                for j, during_or_outside_label in enumerate(['During', 'Outside']):
+                    row_data = acorr_data_dfs[j].iloc[i]
+                    ch1, ch2, _ = row_data[-3:]
+                    print("%s %s %s" % (b, ch1, ch2))
+                    acorr_trace = np.array(row_data)
+                    acorr_trace = acorr_trace[0:-3]
 
-            plt.savefig("%s/cross correlation between %i and %i in batch %i " % (exp_dir, ch1, ch2, b))
-            plt.close()
+                    # Plotting only middle of acorr plot
+                    mid_point = len(acorr_trace) // 2
+                    acorr_trace = acorr_trace[mid_point-400:mid_point+400]
 
+                    ax[j].plot(np.arange(len(acorr_trace)),
+                            acorr_trace)#/np.max(acorr_trace))
+                    ax[j].set_ylim([min_trough, max_peak])
+                    ax[j].set_title(during_or_outside_label)
+                    ax[j].set_xlabel('lag')
+                    ax[j].set_ylabel('correlation coefficient')
+                    #ax.legend()
+
+                plt.savefig("%s/cross correlation between %i and %i in batch %i " % (exp_dir, ch1, ch2, b))
+                plt.close()
+
+    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs(self):
+        """Collects the 128 batch dfs together
+           Makes mean and var values for each channel for each angle across all
+           batches
+           Plots per channel"""
+        # Prepare general variables
+        exp_dir = os.path.join(self.session_dir,
+                               'SynchronyExp1')
+        acorr_dir = os.path.join(exp_dir, 'acorrs')
+
+
+
+        for b in range(3):#128):
+            acorr_data_dfs = [pd.read_pickle(os.path.join(self.session_dir,
+                                'cross_correlation_results_%s_%s.pkl' % (b, label)))
+                              for label in ['during', 'outside']]
+
+            max_peak = max([np.max(np.max(df.iloc[:,1:-3])) for df in acorr_data_dfs])
+            min_trough = min([np.min(np.min(df.iloc[:,1:-3])) for df in acorr_data_dfs])
+
+            # Plot results
+            for i in range(len(acorr_data_dfs[0])):
+                fig, ax = plt.subplots(2,figsize=(8,9))
+
+                #fig.tight_layout(pad=1.0)
+                for j, during_or_outside_label in enumerate(['During', 'Outside']):
+                    row_data = acorr_data_dfs[j].iloc[i]
+                    ch1, ch2, _ = row_data[-3:]
+                    print("%s %s %s" % (b, ch1, ch2))
+                    acorr_trace = np.array(row_data)
+                    acorr_trace = acorr_trace[0:-3]
+
+                    # Plotting only middle of acorr plot
+                    mid_point = len(acorr_trace) // 2
+                    acorr_trace = acorr_trace[mid_point-400:mid_point+400]
+
+                    ax[j].plot(np.arange(len(acorr_trace)),
+                            acorr_trace)#/np.max(acorr_trace))
+                    ax[j].set_ylim([min_trough, max_peak])
+                    ax[j].set_title(during_or_outside_label)
+                    ax[j].set_xlabel('lag')
+                    ax[j].set_ylabel('correlation coefficient')
+                    #ax.legend()
+
+                plt.savefig("%s/cross correlation between %i and %i in batch %i " % (exp_dir, ch1, ch2, b))
+                plt.close()
+
+    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_overlay(self):
+        """Collects the 128 batch dfs together
+           Collects the acorr data for each trace
+           Plots per channel for all batches for that angle"""
+        # Prepare general variables
+        exp_dir = os.path.join(self.session_dir,
+                               'SynchronyExp1')
+        acorr_dir = os.path.join(exp_dir, 'acorrs_overlayed')
+
+        # Variables I need to bear in mind are 'duringoutisde' 'batch'&'angle' 'channel'
+        ch_data_during  = pd.DataFrame()
+        ch_data_outside = pd.DataFrame()
+        batch_groups = [list(range(64)), list(range(64,128))]
+        max_peak = 28
+        min_trough = -20
+
+        for bg_angle_index, bg_angle in enumerate(batch_groups):
+            for ch1 in range(self.num_ch):
+                for ch2 in range(self.num_ch):
+                    print("%s %s %s" % (bg_angle, ch1, ch2))
+
+                    #create plots and prepare to overlay
+                    fig, ax = plt.subplots(2,figsize=(8,9))
+                    for b in bg_angle:
+                        print("%s" % (b))
+
+                        dfs = \
+                            [pd.read_pickle(os.path.join(exp_dir,
+                                 'cross_correlation_results_%s_%s.pkl' % (
+                                 b, label)))
+                             for label in ['during', 'outside']]
+
+                        # Just get the channel combination you want
+                        for j in range(len(dfs)):
+                            cond_a = dfs[j]['channel A'] == ch1
+                            cond_b = dfs[j]['channel B'] == ch2
+                            cond = cond_a & cond_b
+                            dfs[j] = dfs[j][cond]
+                            dfs[j] = np.array(dfs[j].iloc[:, 1:-3])
+
+                        for j, label in enumerate(['During', 'Outside']):
+
+                            title = \
+                                "%s/Cross correlation between %i and %i in batch %i" % (exp_dir, ch1, ch2, bg_angle_index)
+
+                            acorr_trace = dfs[j]
+                            acorr_trace = acorr_trace.squeeze()
+                            mid_point = len(acorr_trace) // 2
+                            acorr_trace = acorr_trace[
+                                          (mid_point - 400):(mid_point + 400)]
+                            ax[j].plot(np.arange(len(acorr_trace)),
+                                       acorr_trace, c='blue', alpha=0.25)  # /np.max(acorr_trace))
+                            ax[j].set_ylim([min_trough, max_peak])
+                            ax[j].set_title(label)
+                            ax[j].set_xlabel('lag')
+                            ax[j].set_ylabel('correlation coefficient')
+                            plt.savefig(title)
+                    plt.savefig(title)
+                    plt.close()
+
+
+
+
+        for b in range(3):#128):
+            acorr_data_dfs = [pd.read_pickle(os.path.join(self.session_dir,
+                                'cross_correlation_results_%s_%s.pkl' % (b, label)))
+                              for label in ['during', 'outside']]
+
+            max_peak = max([np.max(np.max(df.iloc[:,1:-3])) for df in acorr_data_dfs])
+            min_trough = min([np.min(np.min(df.iloc[:,1:-3])) for df in acorr_data_dfs])
+
+            # Plot results
+            for i in range(len(acorr_data_dfs[0])):
+                fig, ax = plt.subplots(2,figsize=(8,9))
+
+                #fig.tight_layout(pad=1.0)
+                for j, during_or_outside_label in enumerate(['During', 'Outside']):
+                    row_data = acorr_data_dfs[j].iloc[i]
+                    ch1, ch2, _ = row_data[-3:]
+                    print("%s %s %s" % (b, ch1, ch2))
+                    acorr_trace = np.array(row_data)
+                    acorr_trace = acorr_trace[0:-3]
+
+                    # Plotting only middle of acorr plot
+                    mid_point = len(acorr_trace) // 2
+                    acorr_trace = acorr_trace[mid_point-400:mid_point+400]
+
+                    ax[j].plot(np.arange(len(acorr_trace)),
+                            acorr_trace)#/np.max(acorr_trace))
+                    ax[j].set_ylim([min_trough, max_peak])
+                    ax[j].set_title(during_or_outside_label)
+                    ax[j].set_xlabel('lag')
+                    ax[j].set_ylabel('correlation coefficient')
+                    #ax.legend()
+
+                plt.savefig("%s/cross correlation between %i and %i in batch %i " % (exp_dir, ch1, ch2, b))
+                plt.close()
 
 
 

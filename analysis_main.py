@@ -77,10 +77,11 @@ def main():
     # am.explore_oscillations() #hasn't been used in a long time
 
 
-
     # am.print_activity_maps_by_batch_ch_double_stim() # TODO make this into one function with the single stim print activity maps function.
-    am.synchrony_experiment1_overlapping_rec_fields('single')
-    am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs()
+    # am.synchrony_experiment1_overlapping_rec_fields('single')
+    # am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_individually()
+    am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_overlay()
+
 
 if __name__ == '__main__':
     main()
