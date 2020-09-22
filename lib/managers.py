@@ -1811,7 +1811,8 @@ class ExperimentalStimuliGenerationManager:
                              contrast=1,
                              repeat=None,
                              folder_name='FolderNameUnfilled',
-                             save_image=True): #Be sure to change double defaults
+                             save_image=True,
+                             clip=False): #Be sure to change double defaults
 
         #original defaults:
         # (self,
@@ -1875,6 +1876,21 @@ class ExperimentalStimuliGenerationManager:
 
         # Multiply base image by filter
         fshape = filtr.shape
+
+        if clip:  # Clips away the edges of the filter so it fits
+            max_size = self.base_image.shape[-1]  # Assumes a square image
+            for dim in [0,1]:
+                if fshape[dim] > max_size:
+                    excess = fshape[dim] - max_size
+                    excesshalf = excess//2 + 1
+                    if dim == 0:
+                        filtr = filtr[excesshalf: -excesshalf, :]
+                    if dim == 1:
+                        filtr = filtr[:, excesshalf: -excesshalf]
+
+            # reset new fshape
+            fshape = filtr.shape
+
         hf_h, hf_w = int(fshape[0] / 2), int(fshape[1] / 2)
         new_image = self.base_image.clone()
 
@@ -1917,6 +1933,8 @@ class ExperimentalStimuliGenerationManager:
                              save_string,
                              nrow=1, normalize=True, range=(0, 1))
         return new_image
+
+
 
     def generate_single_gabor_dataset__contrast_and_angle(self):
         print("Careful, running this function might overwrite your "+
@@ -2014,10 +2032,11 @@ class ExperimentalStimuliGenerationManager:
         for i, a in enumerate(angles):
             im = self.single_gabor_image(angle=a,
                                          contrast=contrast,
-                                         spat_asp_ratio=0.17,
+                                         spat_asp_ratio=0.01,#was 0.17
                                          repeat=i,
                                          folder_name=os.path.join(folder_name1,
-                                                                 folder_name2))
+                                                                 folder_name2),
+                                         clip=True)
 
     def generate_single_gabor_dataset__just_angle_few_angles(self):
         print("Careful, running this function might overwrite your "+
