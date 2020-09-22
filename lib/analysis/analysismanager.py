@@ -18,6 +18,8 @@ import torch
 from scipy import optimize
 import lib.analysis.datamanager as datamanager
 
+import array2gif as a2g
+
 # In future work, use config files for the experimental settings, including
 # for the parameters used to generate the stims. Save the config files with
 # the data or models. It'll save you having to copy the info over to analysis
@@ -51,11 +53,18 @@ class AnalysisManager:
         self.primary_model_exp_name = self.primary_model + single_exp_stem + '_contrast_and_angle'
         self.just_angles_exp_name = self.just_angles_model + single_exp_stem + '_just_angle'
         self.just_angles_few_angles_exp_name = self.just_angle_few_angles_model + single_exp_stem + '_just_angle_few_angles'
-        self.long_just_angles_exp_name = self.long_just_angles_model + single_exp_stem + '_long_just_angle'
+        self.long_just_angles_exp_name = self.long_just_angles_model + single_exp_stem + '_long_just_fewangles'
+
         self.session_name = self.primary_model  # session_name
 
         double_exp_stem = '/orientations_present_double_gabor'
-        self.double_stim_synchr_exp_name = self.double_stim_synchr_model + double_exp_stem + '_fewlocs_and_angles'
+        self.double_stim_synchr_exp_name = self.double_stim_synchr_model + double_exp_stem + '_fewlocs_and_fewerangles'
+
+        self.exp_names_dct = {'primary': self.primary_model_exp_name,
+                              'just_angle': self.just_angles_exp_name,
+                              'just_angle_few_angles': self.just_angles_few_angles_exp_name,
+                              'long_just_fewangles': self.long_just_angles_exp_name,
+                              'double_stim': self.double_stim_synchr_exp_name}
 
         # Make base analysis results dir if it doesn't exist
         if not os.path.isdir('analysis_results'):
@@ -76,6 +85,7 @@ class AnalysisManager:
         self.primary_stim_stop  = 2100
 
         self.num_ch = 32
+        self.double_stim_horizextent = 6
 
         self.extracted_im_size = 32
         self.autocorr_phase_len = 1000 - 1
@@ -115,6 +125,7 @@ class AnalysisManager:
                 self.just_angle_angle_contrast_pairs.append((a, c))
 
         ## Just angles Few angles exp
+        self.just_angles_few_angles_batchgroupangles = [0.0, 0.5*np.pi]
         self.just_angles_few_angles_angles = sorted([0.0, np.pi * 0.5] * 64)
         self.just_angles_few_angles_contrasts = [2.4]
         self.just_angle_few_angles_angle_contrast_pairs = []
@@ -123,10 +134,9 @@ class AnalysisManager:
                 self.just_angle_few_angles_angle_contrast_pairs.append((a, c))
 
 
-        ## Long just angle exp
-        self.long_just_angle_angles = np.linspace(start=0.0,
-                                             stop=np.pi * 2,
-                                             num=128)
+        ## Long just angle few angles exp
+        self.long_just_angles_few_angles_batchgroupangles = [0.0, 0.5*np.pi]
+        self.long_just_angle_angles = self.just_angles_few_angles_angles
         self.long_just_angle_contrasts = [2.4]
         self.long_just_angle_angle_contrast_pairs = []
         for a in self.long_just_angle_angles:
@@ -137,29 +147,37 @@ class AnalysisManager:
         ## Double stim exp
         ## ensure these settings are the same as in
         # managers.ExperimentalStimuliGenerationManager.\
-        # generate_double_gabor_dataset__fewlocs_and_angles
+        # generate_double_gabor_dataset__fewlocs_and_fewerangles
         self.double_stim_contrasts = [2.4]
         self.double_stim_static_y = 13
         self.double_stim_static_x = 16
+        self.double_stim_static_angle = np.pi * 0.5
 
-        angle_min = 0.0
-        angle_max = np.pi * 2
-        angle_incr = (np.pi * 2) / 8
-        self.double_stim_angles = np.arange(start=angle_min, stop=angle_max,
-                                step=angle_incr)
+        self.double_stim_static_y_0centre = self.double_stim_static_y - self.extracted_im_size//2
+        self.double_stim_static_x_0centre = self.double_stim_static_x - self.extracted_im_size//2
+
+        angle_range = [0.0] * 8
+        angle_range.extend([np.pi * 0.5] * 8)
+        self.double_stim_angles = angle_range * 8
+
+        self.double_stim_batchgroupangles = [0.0, 0.5*np.pi] * 8
+
 
         y_min = -4
-        y_max = 12
-        y_incr = 2
-        y_range = list(np.arange(y_min, y_max, y_incr))
+        y_range = [-3, 1, 5, 9]
 
-        x_min = 0
-        x_max = 9
-        x_incr = 8
-        x_range = list(range(x_min, x_max, x_incr))
+
+        x_range = [0, 7]
+
         self.double_stim_locs_x_range = x_range
         self.double_stim_locs_y_range = y_range
-        self.double_stim_locs = [[i, j] for i in y_range for j in x_range]
+        self.double_stim_locs = [[j, i] for i in y_range for j in x_range]
+
+        self.double_stim_batchgroup_locs = []
+        for loc in self.double_stim_locs:
+            self.double_stim_batchgroup_locs.append(loc)
+            self.double_stim_batchgroup_locs.append(loc)
+
 
         # General
         self.get_contrasts_from_images()
@@ -249,7 +267,7 @@ class AnalysisManager:
             angles = self.just_angles_few_angles_angles
             contrasts = self.just_angles_few_angles_contrasts
             angle_contrast_pairs = self.just_angle_few_angles_angles_contrast_pairs
-        elif exp_type == 'long_just_angles':
+        elif exp_type == 'long_just_fewangles':
             model_exp_name = self.long_just_angles_exp_name
             angles = self.long_just_angle_angles
             contrasts = self.long_just_angle_contrasts
@@ -275,6 +293,7 @@ class AnalysisManager:
 
 
         for ch in range(self.num_ch):
+
             print("Channel %s" % str(ch))
             # Gets data
             dm = datamanager.DataManager(root_path=self.args.root_path,
@@ -406,16 +425,21 @@ class AnalysisManager:
     def print_activity_maps_by_batch_ch(self, exp_name='primary'):
 
         # Make dir to save plots for this experiment
-        exp_dir = os.path.join(self.session_dir,
+        maps_dir = os.path.join(self.session_dir,
                                'activity maps')
+        exp_dir = os.path.join(maps_dir,
+                               exp_name)
+        if not os.path.isdir(maps_dir):
+            os.mkdir(maps_dir)
         if not os.path.isdir(exp_dir):
             os.mkdir(exp_dir)
+
 
         # Load data and prepare variables
         pixel_inds = [(i, j) for i in list(range(self.extracted_im_size))
                       for j in range(self.extracted_im_size)]
         full_data = pd.read_pickle(os.path.join(self.session_dir,
-                      'neuron_activity_results_alternativeformat_primary.pkl'))
+                      'neuron_activity_results_alternativeformat_%s.pkl' % exp_name))
 
         for b in range(128):
             for ch in range(self.num_ch):
@@ -520,6 +544,7 @@ class AnalysisManager:
                 plt.close()
 
 
+
     def print_activity_map(self):
         print("Making activity maps for channels and batches")
         nrnact = pd.read_pickle(
@@ -574,6 +599,84 @@ class AnalysisManager:
                 os.path.join(self.session_dir,
                              "neuron activity locations b%i.png" % b))
 
+    def print_activity_map_GIFs_by_batch_ch(self, exp_name='just_angle'):
+
+
+        # Make dir to save plots for this experiment
+        maps_dir = os.path.join(self.session_dir,
+                               'activity maps')
+        exp_dir = os.path.join(maps_dir,
+                               exp_name)
+        if not os.path.isdir(maps_dir):
+            os.mkdir(maps_dir)
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+
+
+        # Set general variables
+        model_exp_name = self.exp_names_dct[exp_name]
+        var_names = ['state']
+        pixel_inds = [(i, j) for i in list(range(self.extracted_im_size))
+                      for j in range(self.extracted_im_size)]
+
+        norm = plt.Normalize()
+
+
+        for ch in range(self.num_ch):
+            print("Channel %s" % ch)
+
+            # Get data
+            dm = datamanager.DataManager(root_path=self.args.root_path,
+                                         model_exp_name=model_exp_name,
+                                         var_names=var_names,
+                                         state_layers=[1],
+                                         batches=None,
+                                         channels=[ch],
+                                         hw=[self.top_left_pnt,
+                                             self.top_right_pnt],
+                                         timesteps=None)
+
+            # Process data
+            dm.data['state_1'] = dm.data[
+                'state_1'].squeeze()  # get rid of ch dim
+            # reshaped_activities = [np.arange(len(dm.timesteps)).reshape(
+            #     len(dm.timesteps), 1)]  # make TS data
+            # reshaped_activities.extend([
+            #     dm.data['state_1'].reshape(len(dm.timesteps),
+            #                                -1)])  # extend TS data with actual data
+            arr_sh = dm.data['state_1'].shape[1:]
+            dm.data['state_1'] = dm.data['state_1'].transpose()
+
+            for b in [0, int(128/4)]:
+                print("Batch %i" % b)
+                # Get data and normalize it
+                traces = dm.data['state_1'][:,:,b,:]
+                traces = (traces - np.min(traces))
+                traces = traces / np.max(traces)
+                traces = (traces * 255).astype(int)
+
+                # Add the three color channels and the signifier frames
+                signlen = 10
+                ones = 1
+                traces[0:11,1, 0:signlen*2] = ones
+                traces[0:21,1, self.primary_stim_start-signlen:self.primary_stim_start] = ones
+                traces[0:31,1, self.primary_stim_stop-signlen:self.primary_stim_stop]   = ones
+
+                intervals = np.linspace(start=0,stop=2700,num=2700)
+                intervals = [int((itv/2700)*32) for itv in intervals]
+
+                # GIF Progress bar
+                for j, itv in enumerate(intervals):
+                    traces[0:itv,0,j] = 1
+
+                traces = np.repeat(traces[np.newaxis, :, :, :], 3, axis=0)
+                traces = [traces[:,:,:,i] for i in range(traces.shape[-1])]
+                title = os.path.join(exp_dir,
+                                 "movie %s locs ch%i_b%i.gif" % (
+                                 var_names[0], ch, b))
+
+                #colors = plt.cm.jet(norm(traces),bytes=True)
+                a2g.write_gif(traces, title, fps=75)
 
     def find_orientation_preferences(self):
         print("Finding orientation preferences of neurons")
@@ -849,8 +952,6 @@ class AnalysisManager:
             trace_specgram_acorr_acorr,
             contrast_specgram_comparison
             """
-
-
 
         # Make dir to save plots for this experiment
         exp_dir = os.path.join(self.session_dir,
@@ -2353,14 +2454,306 @@ class AnalysisManager:
         neurons in the same channel that are right beside each other. That
         might actually be more similar to Gray et al.'s original experiment."""
 
+    def synchrony_experiment1_overlapping_rec_fields_fit_Gabors(self):
+        """Git Gabor functions to plots as in Gray et al. (1989)."""
+        # Prepare general variables and dirs
+        exp_dir = os.path.join(self.session_dir,
+                               'SynchronyExp1')
+        acorr_dir = os.path.join(exp_dir, 'acorrs_gabor_fitted')
+
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+        if not os.path.isdir(acorr_dir):
+            os.mkdir(acorr_dir)
+
+        batch_groups = [list(range(64)), list(range(64,128))]
+        mid_len = 150
+        x = np.arange(start=-mid_len, stop=mid_len) # x values
+
+        plotting = False#True
+
+
+        # Set initial gabor params (gaussian components) [sigma, amplitude]
+        p01 = [7e1, 400.0]#[5e2, 5., 1.0, 0.] ######[7e2, 0.9, 500.0, 0.]
+        p02 = [7e1, 500.0]#[5e2, -0.5, 100.0, 0.]
+        p03 = [7e1, 600.0]#[7e2, 0.9, 500.0, 0.]
+        init_params_gabor = [p02]#[p01, p02, p03]#, p04]
+
+
+        for bg_angle_index, bg in enumerate(batch_groups):
+
+            # Collect all the dfs for this batch group (batch group = one stim)
+            dfs_all = \
+                [[pd.read_pickle(os.path.join(exp_dir,
+                     'cross_correlation_results_%s_%s.pkl' % (b, label)))
+                for label in ['during', 'outside']] for b in bg]
+
+            # Go through all the batchelements for that stim
+            for b in bg:
+                param_df = pd.DataFrame()  # df to save results
+                # which is saved every batch
+
+                for i, label in enumerate(['during', 'outside']):
+
+                    # Select the df for this batch and this time-period
+                    acorr_df = dfs_all[b-(len(bg)*bg_angle_index)][i]
+
+                    for ch1 in range(self.num_ch):
+                        for ch2 in range(self.num_ch):
+                            # Select the specific xcorr plot
+                            print("Channels %s %s" % (ch1, ch2))
+                            cond1 = acorr_df['channel A'] == ch1
+                            cond2 = acorr_df['channel B'] == ch2
+                            cond = cond1 & cond2
+
+                            acorr_data = np.array(acorr_df[cond]).squeeze()
+                            acorr_data = acorr_data[1:-3]
+                            midpoint = len(acorr_data) // 2
+                            acorr_data = acorr_data[(midpoint-mid_len):
+                                                    (midpoint+mid_len)]
+
+
+                            # Fit sine function first
+                            ## Take a guess for lambda by counting peaks. This
+                            ## works because most look pretty oscillatory to
+                            ## begin with.
+                            peaks = find_peaks(acorr_data,
+                                               height=0,
+                                               rel_height=3.,
+                                               prominence=np.max(acorr_data) / 5,
+                                               distance=3)
+                            avg_peak_dist = (mid_len*2) / len(peaks[0])
+
+                            ## Set init sine params
+                            max_acorr = np.max(acorr_data) * 0.7
+                            amplitude0 = max_acorr
+                            guess_lmda = 7/avg_peak_dist # 7 is just a constant
+                            # that seemed to work
+
+                            num_incr = 5
+                            negs = num_incr // 2
+                            exps = range(-negs, num_incr-negs)
+                            lambdas = [guess_lmda * (1.15**n) for n in exps]
+                            phaseshift0 = 0.
+                            mean0 = 0.
+                            init_params_sine = [[phaseshift0, mean0,
+                                              lambdas[i]]
+                                            for i in range(len(lambdas))]
+                            sine_curve = lambda p: (amplitude0 * np.cos(x * p[2] + p[0]) + p[1]) #* (1 / (np.sqrt(2 * np.pi) * base_sd)) * np.exp(-(x ** 2) / (2 * base_sd ** 2)) * 70
+                            opt_func_sine = lambda p: sine_curve(p) - acorr_data
+
+                            # Go through each of the init param settings
+                            # for fitting the SINE component of the Gabor and
+                            # choose the one with the lowest resulting cost
+                            costs_sine = []
+                            est_params_sine = []
+                            for p0x in init_params_sine:
+                                opt_result = \
+                                    optimize.least_squares(opt_func_sine, p0x)
+                                est_params_sine.append(opt_result.x)
+                                costs_sine.append(opt_result.cost)
+                            print(np.argmin(costs_sine))
+                            cost_sine = costs_sine[np.argmin(costs_sine)]
+                            est_params_sine = \
+                                list(est_params_sine[np.argmin(costs_sine)])
+                            fitted_sine = sine_curve(est_params_sine)
+
+
+                            # Fit Gaussian component of Gabor function
+                            gabor_func = lambda p: (
+                                        (1 / (np.sqrt(2 * np.pi) * p[0])) \
+                                        * np.exp(-(x ** 2) / (2 * p[0] ** 2)) *
+                                        p[1] * \
+                                        fitted_sine)
+                            opt_func = lambda p: gabor_func(p) - acorr_data
+
+
+
+                            costs_gabor = []
+                            est_params_gabor = []
+                            for p0x in init_params_gabor:
+                                opt_result = optimize.least_squares(opt_func, p0x)
+                                est_params_gabor.append(opt_result.x)
+                                costs_gabor.append(opt_result.cost)
+                            print(np.argmin(costs_gabor))
+                            orig_params = init_params_gabor[np.argmin(costs_gabor)]
+                            cost_gabor = costs_gabor[np.argmin(costs_gabor)]
+                            print(cost_gabor)
+                            est_params_gabor = list(est_params_gabor[np.argmin(costs_gabor)])
+                            print(str(est_params_gabor))
+                            est_params_gabor.append(costs_gabor)
+
+                            # Take stock of and save results
+                            est_gabor_curve = gabor_func(est_params_gabor)
+                            min_gab = np.min(est_gabor_curve)
+                            max_gab = np.max(est_gabor_curve)
+                            est_params_dict = {'channel A': ch1,
+                                               'channel B': ch2,
+                                               'dur_or_out': i,
+                                               'batch': b,
+                                               'batch_group': bg_angle_index,
+                                               'max_acorr': max_acorr,
+                                               'min_gabor': min_gab,
+                                               'max_gabor': max_gab,
+                                               'amplitude': (max_gab-min_gab)/2,
+                                               'freq_scale': (1/est_params_sine[2]),
+                                               'sine_phase': est_params_sine[0],
+                                               'sine_mean': est_params_sine[1],
+                                               'gauss_sigma':est_params_gabor[0],
+                                               'gauss_amp': est_params_gabor[1],
+                                               'cost_sine':  cost_sine,
+                                               'cost_gabor': cost_gabor}
+                            param_df = \
+                                param_df.append(est_params_dict,
+                                                ignore_index=True)
+
+                            if plotting:
+                                # Plot results
+                                fig, ax = plt.subplots(1, figsize=(9, 5))
+                                ax.plot(x, acorr_data)  # /np.max(acorr_trace))
+                                # ax.plot(np.arange(len(acorr_data)),
+                                #                      gabor_func(orig_params) )
+                                ax.plot(x, est_gabor_curve )
+                                ax.scatter(x[peaks[0]], acorr_data[peaks[0]])
+                                # ax.plot(x, orig_sine )
+                                # ax.plot(np.arange(len(acorr_data)),
+                                #                      sine_curve(est_params_sine) )
+
+
+                                ax.set_xlabel('lag')
+                                ax.set_ylabel('correlation coefficient')
+                                # ax.legend()
+
+                                plt.savefig(
+                                    "%s/cross correlation between %i and %i in batch %i for %s" % (
+                                    acorr_dir, ch1, ch2, b,label))
+                                plt.close()
+
+                df_title = "%s/estimated_gabor_params_batch_%i " % (exp_dir, b)
+                param_df.to_pickle(df_title)
+
+        ##Fitting sinewave
+        # fig, ax = plt.subplots(4,8, sharey=True, sharex=True)
+        # fig.set_size_inches(23, 8)
+        # k = 0
+        # angle_axis = [round((180/np.pi) * angle, 1) for angle in angles]
+        # orient_prefs = pd.DataFrame(columns=est_param_names)
+        # for i in range(4):
+        #     for j in range(8):
+        #         print("%i, %i" % (i,j))
+        #         normed_data = sum_angles_df[k] - np.mean(sum_angles_df[k])
+        #         normed_data = normed_data / \
+        #                       np.linalg.norm(normed_data)
+        #
+        #         amplitude0  = 2.0
+        #         phaseshift0 = 0
+        #         mean0  = 0.
+        #         params0 = [amplitude0, phaseshift0, mean0]
+        #         opt_func = lambda x: x[0] * np.cos(2*angles + x[1]) + x[
+        #             2] - normed_data
+        #
+        #         est_params = \
+        #             optimize.leastsq(opt_func, params0)[0]
+        #
+        #         ax[i,j].plot(angle_axis, normed_data)
+        #         ax[i,j].text(0.08, 0.27, 'Channel %s' % k)
+        #
+        #         if est_params[0] < 0.:
+        #             est_params[0] = est_params[0] * -1
+        #             est_params[1] += np.pi
+        #
+        #         if est_params[1] < 0.:
+        #             est_params[1] += 2 * np.pi
+        #
+        #         fitted_curve = est_params[0] * np.cos(2*angles + est_params[1]) \
+        #                        + est_params[2]
+
+
+    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_overlay(self):
+        """Collects the 128 batch dfs together
+           Collects the acorr data for each trace
+           Plots per channel for all batches for that angle"""
+        # Prepare general variables
+        exp_dir = os.path.join(self.session_dir,
+                               'SynchronyExp1')
+        acorr_dir = os.path.join(exp_dir, 'acorrs_overlayed')
+
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+        if not os.path.isdir(acorr_dir):
+            os.mkdir(acorr_dir)
+
+
+        # Variables I need to bear in mind are 'duringoutisde' 'batch'&'angle' 'channel'
+        ch_data_during  = pd.DataFrame()
+        ch_data_outside = pd.DataFrame()
+        batch_groups = [list(range(64)), list(range(64,128))]
+        max_peak = 28
+        min_trough = -20
+
+        for bg_angle_index, bg in enumerate(batch_groups):
+
+            # Collect all the dfs for this batch group (this stim)
+            dfs_all = \
+                [[pd.read_pickle(os.path.join(exp_dir,
+                                             'cross_correlation_results_%s_%s.pkl' % (
+                                                 b, label)))
+                 for label in ['during', 'outside']] for b in bg]
+
+            # Go through each channel
+            for ch1 in range(self.num_ch):
+                for ch2 in range(self.num_ch):
+                    print("%s %s %s" % (bg, ch1, ch2))
+
+                    #create plots and prepare to overlay
+                    fig, ax = plt.subplots(2,figsize=(8,9))
+                    for k, label in enumerate(['During', 'Outside']):
+                        ax[k].set_ylim([min_trough, max_peak])
+                        ax[k].set_title(label)
+                        ax[k].set_xlabel('lag')
+                        ax[k].set_ylabel('correlation coefficient')
+
+
+                    for batch_idx, b in enumerate(bg):
+                        print("%s" % (b))
+
+                        dfs = dfs_all[batch_idx].copy()
+
+                        # Just get the channel combination you want
+                        for j in range(len(dfs)):
+                            cond_a = dfs[j]['channel A'] == ch1
+                            cond_b = dfs[j]['channel B'] == ch2
+                            cond = cond_a & cond_b
+                            dfs[j] = dfs[j][cond]
+                            dfs[j] = np.array(dfs[j].iloc[:, 1:-3])
+
+                        for j, label in enumerate(['During', 'Outside']):
+
+                            title = \
+                                "Cross correlation between %i and %i for stim-type %i" % (ch1, ch2, bg_angle_index)
+
+                            acorr_trace = dfs[j]
+                            acorr_trace = acorr_trace.squeeze()
+                            display_len = 400
+                            mid_point = len(acorr_trace) // 2
+                            acorr_trace = acorr_trace[
+                                 (mid_point - display_len):(mid_point + display_len)]
+                            ax[j].plot(np.arange(0-display_len, 0+display_len),
+                                       acorr_trace, c='blue', alpha=0.25)  # /np.max(acorr_trace))
+
+                            # plt.savefig(acorr_dir + '/' + title)
+                    plt.savefig(acorr_dir + '/' + title)
+                    plt.close()
+
     def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_individually(self):
+        """ This prints 32 x 32 x 128 plots so is rarely used"""
         # Prepare general variables
         exp_dir = os.path.join(self.session_dir,
                                'SynchronyExp1')
         acorr_dir = os.path.join(exp_dir, 'individual acorrs')
 
 
-        for b in range(3):#128):
+        for b in range(3):#128): # otherwise way too many
             acorr_data_dfs = [pd.read_pickle(os.path.join(self.session_dir,
                                 'cross_correlation_results_%s_%s.pkl' % (b, label)))
                               for label in ['during', 'outside']]
@@ -2442,103 +2835,1237 @@ class AnalysisManager:
                 plt.savefig("%s/cross correlation between %i and %i in batch %i " % (exp_dir, ch1, ch2, b))
                 plt.close()
 
-    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_overlay(self):
-        """Collects the 128 batch dfs together
-           Collects the acorr data for each trace
-           Plots per channel for all batches for that angle"""
-        # Prepare general variables
+
+
+    def synchrony_experiment1_overlapping_rec_fields_Analyze_fitted_Gabors(self):
+        """Analyze the fited Gabor functions as in Gray et al. (1989).
+
+        Needs to
+         - Collect all the params in one df
+         - Recreate the fitted line and count its peaks
+         - Perform a one-sided t-test on the amplitudes for each stim.
+
+        """
+        # Prepare general variables and dirs
         exp_dir = os.path.join(self.session_dir,
                                'SynchronyExp1')
-        acorr_dir = os.path.join(exp_dir, 'acorrs_overlayed')
+        acorr_dir = os.path.join(exp_dir, 'acorrs_gabor_reconstructed')
 
-        # Variables I need to bear in mind are 'duringoutisde' 'batch'&'angle' 'channel'
-        ch_data_during  = pd.DataFrame()
-        ch_data_outside = pd.DataFrame()
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+        if not os.path.isdir(acorr_dir):
+            os.mkdir(acorr_dir)
+
         batch_groups = [list(range(64)), list(range(64,128))]
-        max_peak = 28
-        min_trough = -20
+        mid_len = 150
+        x = np.arange(start=-mid_len, stop=mid_len) # x values
 
-        for bg_angle_index, bg_angle in enumerate(batch_groups):
+        plotting = False
+
+        allb_params = pd.DataFrame()
+
+        for bg_angle_index, bg in enumerate(batch_groups):
+
+            # Go through all the batchelements for that stim
+            for b in bg:
+                df_title = "%s/estimated_gabor_params_batch_%i " % (exp_dir, b)
+                batch_params_df = pd.read_pickle(df_title)
+                allb_params = allb_params.append(batch_params_df,
+                                                 ignore_index=True)
+        allb_params['num_peaks'] = -1.
+
+        for index, row in allb_params.iterrows():
+            print("Row %i out of %i" % (index, len(allb_params)-1))
+            # Create lists of params for use in sine func and gabor func
+            amplitude0 = row['max_acorr'] * 0.7 # as in func that fits Gabors
+            sine_params = [row['sine_phase'],
+                           row['sine_mean'],
+                           (1/row['freq_scale'])] # as in func that fits Gabors
+
+            gabor_params = [row['gauss_sigma'], row['gauss_amp']]
+
+            # Create sine curve
+            sine_curve = lambda p: (
+                        amplitude0 * np.cos(x * p[2] + p[0]) + p[1])
+
+            # Use sine curve to create gabor curve
+            fitted_sine = sine_curve(sine_params)
+
+            gabor_func = lambda p: (
+                    (1 / (np.sqrt(2 * np.pi) * p[0])) \
+                    * np.exp(-(x ** 2) / (2 * p[0] ** 2)) *
+                    p[1] * \
+                    fitted_sine)
+
+            # Calculate the curve
+            gabor_curve = gabor_func(gabor_params)
+
+            # Count peaks on fitted Gabor curve and add result to df row
+            peaks = find_peaks(gabor_curve,
+                               height=0,
+                               prominence=0.01,
+                               rel_height=3.)
+
+            row['num_peaks'] = len(peaks[0])
+
+            if plotting:
+                # Plot results
+                fig, ax = plt.subplots(1, figsize=(9, 5))
+                ax.plot(x, gabor_curve)  # /np.max(acorr_trace))
+                ax.scatter(x[peaks[0]], gabor_curve[peaks[0]])
+                ax.set_xlabel('lag')
+                ax.set_ylabel('correlation coefficient')
+                # ax.legend()
+
+                fig.savefig(
+                 "%s/diagnostic plot for fitted gabors_ch %i and %i in batch %i for %s.jpg" % (
+                     acorr_dir, int(row['channel A']), int(row['channel B']),
+                     int(row['batch']), str(row['dur_or_out'])))
+                plt.close()
+
+        # Group allb_df by stim and then count mean number of peaks per stim
+        grouping_vars = ['batch_group', 'dur_or_out', 'channel A', 'channel B']
+        mean_num_peaks = []
+        results_df_peaks = allb_params.groupby(grouping_vars, as_index=False).mean()
+
+        # Do t-test to see if amplitude significantly different from 0
+        groups = allb_params.groupby(grouping_vars, as_index=False)
+        groups = [g for g in groups]
+        groups = [(group[0], np.array(group[1]['amplitude']))
+                  for group in groups]
+        groups_results = [(g[0], spst.ttest_1samp(g[1], popmean=0.)) for g in
+                          groups]
+        groups_results = [list(g[0]) + list(g[1]) for g in groups_results]
+
+        # Assign results to ttest dataframe
+        ttest_df_column_names = grouping_vars
+        ttest_df_column_names.extend(['stat_peaks', 'pvalue_peaks'])
+        ttest_results_df = pd.DataFrame(columns=ttest_df_column_names)
+
+        for i, name in enumerate(grouping_vars):
+            nums = [g[i] for g in groups_results]
+            ttest_results_df[name] = nums
+
+        # Add mean amplitude value and num peaks to get final df
+        results_df = ttest_results_df
+        results_df['amplitude'] = results_df_peaks['amplitude']
+        results_df['num_peaks'] = results_df_peaks['num_peaks']
+
+
+        # Check if amplitude during is more than 10% of amplitude outside
+        dur_or_out_groups = [g[1] for g in results_df.groupby(
+            ['dur_or_out'], as_index=False)]
+        dur_or_out_groups = [np.array(g['amplitude'])
+                             for g in dur_or_out_groups]
+        dur_out_comparison = dur_or_out_groups[0] > (0.1 * dur_or_out_groups[1])
+        # dur_out_comparison = np.concatenate(
+        #     (dur_out_comparison, np.ones_like(dur_out_comparison) * -1))
+        results_df['dur_out_amp_compar'] = -1.
+
+        dur_index = results_df[results_df['dur_or_out'] == 0.0].index
+        out_index = results_df[results_df['dur_or_out'] == 1.0].index
+
+        results_df.loc[dur_index, 'dur_out_amp_compar'] = dur_out_comparison
+        #results_df.loc[out_index, 'dur_out_amp_compar'] = np.ones_like(dur_out_comparison) * -1.
+
+        results_df.to_pickle(
+            "%s/synchexp1 acorr analysis results.pkl" % self.session_dir)
+
+
+    def synchrony_experiment1_overlapping_rec_fields_OriPref_vs_OscAmp(self):
+        # Prepare general variables and dirs
+        exp_dir = os.path.join(self.session_dir,
+                               'SynchronyExp1')
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+
+        # batch_groups = [list(range(64)), list(range(64, 128))]
+        bg_angles = self.just_angles_few_angles_batchgroupangles
+
+
+        acorr_results_df = pd.read_pickle(
+            "%s/synchexp1 acorr analysis results.pkl" % self.session_dir)
+        acorr_results_df = acorr_results_df[acorr_results_df['dur_or_out']==0.]
+
+        ori_pref = pd.read_pickle(
+            os.path.join(self.session_dir,
+                         'orientation_pref_results_just_angles.pkl'))
+
+        ori_pref = ori_pref.drop(['mean', 'amplitude'], axis=1)
+        ori_pref = ori_pref.rename(columns={'phaseshift': 'ori_pref'})
+
+        ori_pref_a = ori_pref.rename(columns={'channel': 'channel A',
+                                              'ori_pref': 'ori_pref A'})
+        ori_pref_b = ori_pref.rename(columns={'channel': 'channel B',
+                                              'ori_pref': 'ori_pref B'})
+
+        # Get the ori prefs of channel A
+        acorr_results_df = pd.merge(acorr_results_df, ori_pref_a)
+
+        # Get the ori prefs of channel B
+        acorr_results_df = pd.merge(acorr_results_df, ori_pref_b)
+
+        # Calculate the difference in ori pref for each acorr comparison
+        difference = acorr_results_df['ori_pref A'] - \
+                     acorr_results_df['ori_pref B']
+        angle_diff = np.pi - np.abs(np.abs(difference) - np.pi) #TODO confirm this is correct
+        acorr_results_df['angle_diff'] = angle_diff
+
+        # Get data for the difference in ori pref and osc amplitude
+        not_self_cond = acorr_results_df['channel A'] != acorr_results_df['channel B']
+        ori_pref_data = acorr_results_df['angle_diff'][not_self_cond]
+        osc_amp_data = acorr_results_df['amplitude'][not_self_cond]
+
+        ##Other secondarily important data
+        num_peaks_data = acorr_results_df['num_peaks'][not_self_cond]
+
+        # Fit a line and plot
+        m, c = np.polyfit(ori_pref_data, osc_amp_data, 1)
+        fig, ax = plt.subplots(1, figsize=(9, 5))
+        ax.scatter(ori_pref_data, osc_amp_data, cmap='hsv', c=acorr_results_df['channel B'][not_self_cond])
+        plt.plot(ori_pref_data, m * ori_pref_data + c, c='r')
+        ax.set_xlabel('Angle difference')
+        ax.set_ylabel('Oscillation amplitude')
+        plt.savefig(os.path.join(exp_dir,
+                                 "Angle_diff vs Oscillation amplitude.png"))
+        plt.close()
+
+
+        # Plot angle diff vs freq (secondary imporance)
+        m, c = np.polyfit(ori_pref_data, num_peaks_data, 1)
+
+        fig, ax = plt.subplots(1, figsize=(9, 5))
+        ax.scatter(ori_pref_data, num_peaks_data)
+        plt.plot(ori_pref_data, m * ori_pref_data + c, c='r')
+        ax.set_xlabel('Angle difference')
+        ax.set_ylabel('Num of peaks')
+        plt.savefig(os.path.join(exp_dir,
+                                 "Angle_diff vs Num Peaks.png"))
+        plt.close()
+
+        stim_angles = np.array([bg_angles[int(i)] for i in
+                                acorr_results_df['batch_group']])
+
+        # See whether there is a match between BOTH channels and the stim
+        thresh_ang = 10
+        match_0_A = (np.abs(acorr_results_df['ori_pref A'] - stim_angles) < thresh_ang*np.pi/180)
+        match_180_A = (np.abs(acorr_results_df['ori_pref A'] + np.pi - stim_angles) < thresh_ang*np.pi/180)
+        match_0_B = (np.abs(acorr_results_df['ori_pref B'] - stim_angles) < thresh_ang * np.pi / 180)
+        match_180_B = (np.abs(acorr_results_df['ori_pref B'] + np.pi - stim_angles) < thresh_ang * np.pi / 180)
+        orientation_match = \
+            (match_0_A | match_180_A) & (match_0_B | match_180_B)
+
+        ori_pref_data = acorr_results_df['angle_diff'][not_self_cond & orientation_match]
+        osc_amp_data = acorr_results_df['amplitude'][not_self_cond & orientation_match]
+
+        m, c = np.polyfit(ori_pref_data, osc_amp_data, 1)
+        fig, ax = plt.subplots(1, figsize=(9, 5))
+        ax.scatter(ori_pref_data, osc_amp_data, cmap='hsv', c=acorr_results_df['channel A'][not_self_cond & orientation_match])
+        plt.plot(ori_pref_data, m * ori_pref_data + c, c='r')
+        ax.set_xlabel('Angle difference')
+        ax.set_ylabel('Oscillation amplitude')
+        plt.savefig(os.path.join(exp_dir,
+                                 "Angle_diff vs Oscillation amplitude w ori match.png"))
+        plt.close()
+
+
+    # SYNCH EXP 2
+    def synchrony_experiment2_xcorrs(self, patch_or_idx=None):
+        """Takes the column/patch of channels at the site of the static stimulus
+        and the site of the mobile stimulus, then calculates
+        the autocorrelation plot between each channel's trace. """
+
+        print("Performing Synchrony Experiment 2: Two stimuli " +\
+              "Fields")
+
+        # Make dir to save plots for this experiment
+        exp_dir = os.path.join(self.session_dir,
+                               'SynchronyExp2')
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+
+        # Load data
+        presaved_path = os.path.join(self.session_dir,
+            "neuron_activity_results_alternativeformat_double_stim.pkl")
+        full_data = pd.read_pickle(presaved_path)
+        #"/home/lee/Documents/AI_ML_neur_projects/deep_attractor_network/analysis_results/20200731-040415__rndidx_60805_loaded20200722-144054__rndidx_25624_experiment_at_8490its"
+        # Add stim_orientation info to data
+        stim_angles = [self.double_stim_angles[i] for i in
+                       full_data['batch_idx']]
+        full_data['stim_ori'] = stim_angles
+
+
+        if patch_or_idx == 'patch': # probably remove this in future. unlikely to use patch but maybe in future.
+            centre1 = self.central_patch_min
+            centre2 = self.central_patch_max
+            central_patch_size = self.central_patch_size
+            save_name = 'patch'
+        else:
+            centre = 16
+            centre1 = [16,16] #todo softcode
+            centre2 = centre1
+            central_patch_size = 1
+            save_name = 'neuron'
+
+        # Prepare general variables
+        model_exp_name = self.double_stim_synchr_exp_name
+        num_batches = 128 # todo soft code
+        full_state_traces = pd.DataFrame()
+
+        # Go through each channel and get the traces that you need (all
+        # batches)
+        for ch in range(self.num_ch):
+
+            print("Channel %s" % str(ch))
+            # Prepare/reset variables for data managers
+            var_names = ['state']
+
+            # Get data
+            dm = datamanager.DataManager(root_path=self.args.root_path,
+                                         model_exp_name=model_exp_name,
+                                         var_names=var_names,
+                                         state_layers=[1],
+                                         batches=None,
+                                         channels=[ch],
+                                         hw=[self.top_left_pnt,
+                                             self.top_right_pnt],
+                                         timesteps=None)
+
+            # Process data
+            dm.data['state_1'] = dm.data[
+                'state_1'].squeeze()  # get rid of ch dim
+            reshaped_activities = [np.arange(len(dm.timesteps)).reshape(
+                len(dm.timesteps), 1)]  # make TS data
+            reshaped_activities.extend([
+                dm.data['state_1'].reshape(len(dm.timesteps),
+                                           -1)])  # extend TS data with actual data
+            arr_sh = dm.data['state_1'].shape[1:]
+
+            # Make column names from indices of batches, height, and width
+            inds = np.meshgrid(np.arange(arr_sh[0]),
+                               np.arange(arr_sh[1]),
+                               np.arange(arr_sh[2]),
+                               sparse=False, indexing='ij')
+            inds = [i.reshape(-1) for i in inds]
+
+            colnames = ['Timestep']
+            for i, j, k in zip(*inds):
+                colnames.append(
+                    'state_1__b%s_h%s_w%s' % (i, self.top_left_pnt[0] + j,
+                                              self.top_left_pnt[1] + k))
+
+            activities = np.concatenate(reshaped_activities, axis=1)
+            activities_df = pd.DataFrame(activities, columns=colnames)
+            del activities, reshaped_activities
+
+            # Find the subset of the nrnact df for this channel only and get
+            # the h, w values for on neurons in each batch
+            # An extra condition for double stim experiments is that we only
+            # select the neuron at the static stimulus location in all batches
+            # but only the stimulus site for other batches
+
+            nrnact_ch = full_data.loc[full_data['channel'] == ch]
+
+            mobile_locs = [self.double_stim_locs[i % 8] for i in nrnact_ch['batch_idx']]
+            mobile_locs_x = [centre + mobile_locs[i][0] for i in range(len(mobile_locs))]
+            mobile_locs_y = [centre + mobile_locs[i][1] for i in range(len(mobile_locs))]
+
+            mobile_cond = (nrnact_ch['height'] == mobile_locs_y) & \
+                          (nrnact_ch['width'] == mobile_locs_x)
+            static_cond = (nrnact_ch['height'] == self.double_stim_static_y) & \
+                          (nrnact_ch['width'] == self.double_stim_static_x)
+
+            cond = static_cond | mobile_cond
+            nrnact_ch = nrnact_ch.loc[cond]
+            nrnact_ch = nrnact_ch.reset_index()
+
+            # Get the names of the columns
+            print("Defining names of neurons")
+
+            on_colnames = []
+            on_col_inds = []
+            batches = []
+            heights = []
+            widths = []
+            stim_oris = []
+            for i in range(len(nrnact_ch)):
+                bhw = tuple(nrnact_ch.loc[i][1:4])
+                stim_ori = nrnact_ch.loc[i]['stim_ori']
+                on_colname = 'state_1__b%i_h%i_w%i' % bhw
+                on_colnames.append(on_colname)
+                on_col_inds.append(bhw)
+                batches.append(bhw[0])
+                heights.append(bhw[1])
+                widths.append(bhw[2])
+                stim_oris.append(stim_ori)
+
+            # For the  in the above-defined subset of nrnact, get
+            # their timeseries from the arrays
+            state_traces = activities_df[on_colnames]
+            # state_traces.columns = self.true_contrast_and_angle_contrasts
+            state_traces = state_traces.transpose()
+            state_traces['batch']     = batches
+            state_traces['height']    = heights
+            state_traces['width']     = widths
+            state_traces['stim_oris'] = stim_oris
+            state_traces['channel']   = ch
+
+            if full_state_traces.empty:
+                full_state_traces = state_traces
+            else:
+                full_state_traces = full_state_traces.append(state_traces)
+
+        # Now, having collected all the state traces of the neurons of
+        # interest, compute cross correlation plots between neurons in
+        # different channels in the same batch element:
+        for b in range(num_batches):
+
+
+            acorr_data_during = pd.DataFrame()
+            acorr_data_outside = pd.DataFrame()
+            acorr_data_dfs = [acorr_data_during, acorr_data_outside]
+
+            # Define the mobile neuron location for this batch
+            mobile_loc = self.double_stim_locs[b % 8]
+            mobile_loc_x = centre + mobile_loc[0]
+            mobile_loc_y = centre + mobile_loc[1]
+
+            cond_mobilex = full_state_traces['width'] == mobile_loc_x
+            cond_mobiley = full_state_traces['height'] == mobile_loc_y
+
+            cond_staticx = full_state_traces['width'] == self.double_stim_static_x
+            cond_staticy = full_state_traces['height'] == self.double_stim_static_y
+
+            cond_b = full_state_traces['batch'] == b
+
             for ch1 in range(self.num_ch):
                 for ch2 in range(self.num_ch):
-                    print("%s %s %s" % (bg_angle, ch1, ch2))
 
-                    #create plots and prepare to overlay
-                    fig, ax = plt.subplots(2,figsize=(8,9))
-                    for b in bg_angle:
-                        print("%s" % (b))
+                    print("%s   %s    %s" % (b, ch1, ch2))
 
-                        dfs = \
-                            [pd.read_pickle(os.path.join(exp_dir,
-                                 'cross_correlation_results_%s_%s.pkl' % (
-                                 b, label)))
-                             for label in ['during', 'outside']]
+                    # Define conditions to get traces from full df
+                    cond1_ch = full_state_traces['channel'] == ch1
+                    cond2_ch = full_state_traces['channel'] == ch2
 
-                        # Just get the channel combination you want
-                        for j in range(len(dfs)):
-                            cond_a = dfs[j]['channel A'] == ch1
-                            cond_b = dfs[j]['channel B'] == ch2
-                            cond = cond_a & cond_b
-                            dfs[j] = dfs[j][cond]
-                            dfs[j] = np.array(dfs[j].iloc[:, 1:-3])
+                    cond1 = cond1_ch & cond_mobilex & cond_mobiley & cond_b
+                    cond2 = cond2_ch & cond_staticx & cond_staticy & cond_b
 
-                        for j, label in enumerate(['During', 'Outside']):
+                    if not np.any(cond1) or not np.any(cond2):
+                        print("Skipping %s   %s    %s" % (b, ch1, ch2))
+                        continue
 
-                            title = \
-                                "%s/Cross correlation between %i and %i in batch %i" % (exp_dir, ch1, ch2, bg_angle_index)
+                    # Get traces from full df
+                    trace_1 = full_state_traces.loc[cond1]
+                    trace_2 = full_state_traces.loc[cond2]
 
-                            acorr_trace = dfs[j]
-                            acorr_trace = acorr_trace.squeeze()
-                            mid_point = len(acorr_trace) // 2
-                            acorr_trace = acorr_trace[
-                                          (mid_point - 400):(mid_point + 400)]
-                            ax[j].plot(np.arange(len(acorr_trace)),
-                                       acorr_trace, c='blue', alpha=0.25)  # /np.max(acorr_trace))
-                            ax[j].set_ylim([min_trough, max_peak])
-                            ax[j].set_title(label)
-                            ax[j].set_xlabel('lag')
-                            ax[j].set_ylabel('correlation coefficient')
-                            plt.savefig(title)
-                    plt.savefig(title)
+                    # Convert to array
+                    trace_1 = np.array(trace_1).squeeze()
+                    trace_2 = np.array(trace_2).squeeze()
+
+                    # Remove channel,batch information to get only traces
+                    trace_1 = trace_1[0:2700] #todo softcode
+                    trace_2 = trace_2[0:2700]
+
+                    # Split traces into 'during stim' and 'outside stim'
+                    #TODO consider limiting the timesteps that are included in the acorr
+                    t1_duringstim = trace_1[self.primary_stim_start:self.primary_stim_stop]
+                    t2_duringstim = trace_2[self.primary_stim_start:self.primary_stim_stop]
+                    traces_during = [t1_duringstim, t2_duringstim]
+
+                    t1_outsidestim = trace_1[self.burn_in_len:self.primary_stim_start]
+                    t2_outsidestim = trace_2[self.burn_in_len:self.primary_stim_start]
+                    traces_outside = [t1_outsidestim, t2_outsidestim]
+
+                    traces_d_and_o = [traces_during, traces_outside]
+                    for j, (during_or_outside_label, traces) in \
+                            enumerate(zip(['during','outside'],
+                                          traces_d_and_o)):
+                        t1 = traces[0]
+                        t2 = traces[1]
+
+                        # Run acorr funcs and save results
+                        acorr_result = np.correlate(t1-np.mean(t1),
+                                                    t2-np.mean(t2),
+                                                    mode='full')
+                        acorr_result = pd.DataFrame(acorr_result).transpose()
+                        acorr_result['channel_static'] = ch1
+                        acorr_result['channel_mobile'] = ch2
+                        acorr_result['mob_loc_x'] = mobile_loc_x
+                        acorr_result['mob_loc_y'] = mobile_loc_y
+                        acorr_result['batch'] = b
+                        acorr_data_dfs[j] = acorr_data_dfs[j].append(acorr_result)
+            acorr_data_dfs = [df.reset_index() for df in acorr_data_dfs]
+
+            # Save results periodically, per batch
+            for ac_df, label in zip(acorr_data_dfs,['during', 'outside']):
+                ac_df.to_pickle(os.path.join(exp_dir,
+                                'cross_correlation_results_%s_%s.pkl' % (b, label)) )
+
+    def synchrony_experiment2_fit_Gabors(self):
+        """Git Gabor functions to xcorr plots as in Gray et al. (1989)."""
+        # Prepare general variables and dirs
+        exp_dir = os.path.join(self.session_dir,
+                               'SynchronyExp2')
+        acorr_dir = os.path.join(exp_dir, 'acorrs_gabor_fitted')
+
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+        if not os.path.isdir(acorr_dir):
+            os.mkdir(acorr_dir)
+
+        bg_starts = [i for i in range(128) if (i % 8)==0]
+        batch_groups = [list(range(bg_start,bg_start+8))
+                        for bg_start in bg_starts]
+
+        mid_len = 150
+        x = np.arange(start=-mid_len, stop=mid_len) # x values
+
+        plotting = False #True
+
+
+        # Set initial gabor params (gaussian components) [sigma, amplitude]
+        p01 = [7e1, 400.0]#[5e2, 5., 1.0, 0.] ######[7e2, 0.9, 500.0, 0.]
+        p02 = [7e1, 500.0]#[5e2, -0.5, 100.0, 0.]
+        p03 = [7e1, 600.0]#[7e2, 0.9, 500.0, 0.]
+        init_params_gabor = [p02]#[p01, p02, p03]#, p04]
+
+
+        for bg_angle_index, bg in enumerate(batch_groups):
+
+            # Collect all the dfs for this batch group (batch group = one stim)
+            dfs_all = \
+                [[pd.read_pickle(os.path.join(exp_dir,
+                     'cross_correlation_results_%s_%s.pkl' % (b, label)))
+                for label in ['during', 'outside']] for b in bg]
+
+            # Go through all the batchelements for that stim
+            for b in bg:
+                param_df = pd.DataFrame()  # df to save results
+                # which is saved every batch
+
+                for i, label in enumerate(['during', 'outside']):
+
+                    # Select the df for this batch and this time-period
+                    acorr_df = dfs_all[b-(len(bg)*bg_angle_index)][i]
+
+                    for ch1 in range(self.num_ch):
+                        for ch2 in range(self.num_ch):
+                            # Select the specific xcorr plot
+                            print("Channels %s %s" % (ch1, ch2))
+                            cond1 = acorr_df['channel_static'] == ch1
+                            cond2 = acorr_df['channel_mobile'] == ch2
+                            cond = cond1 & cond2
+                            acorr_data = acorr_df[cond]
+
+                            x_loc = acorr_data['mob_loc_x']
+                            y_loc = acorr_data['mob_loc_y']
+
+                            acorr_data = np.array(acorr_data).squeeze()
+                            acorr_data = acorr_data[1:-5]
+                            midpoint = len(acorr_data) // 2
+                            acorr_data = acorr_data[(midpoint-mid_len):
+                                                    (midpoint+mid_len)]
+
+                            # Fit sine function first
+                            ## Take a guess for lambda by counting peaks. This
+                            ## works because most look pretty oscillatory to
+                            ## begin with.
+                            peaks = find_peaks(acorr_data,
+                                               height=0,
+                                               rel_height=3.,
+                                               prominence=np.max(acorr_data) / 5,
+                                               distance=3)
+                            avg_peak_dist = (mid_len*2) / len(peaks[0])
+
+                            ## Set init sine params
+                            max_acorr = np.max(acorr_data) * 0.7
+                            amplitude0 = max_acorr
+                            guess_lmda = 7/avg_peak_dist # 7 is just a constant
+                            # that seemed to work
+
+                            num_incr = 5
+                            negs = num_incr // 2
+                            exps = range(-negs, num_incr-negs)
+                            lambdas = [guess_lmda * (1.15**n) for n in exps]
+                            phaseshift0 = 0.
+                            mean0 = 0.
+                            init_params_sine = [[phaseshift0, mean0,
+                                              lambdas[i]]
+                                            for i in range(len(lambdas))]
+                            sine_curve = lambda p: (amplitude0 * np.cos(x * p[2] + p[0]) + p[1]) #* (1 / (np.sqrt(2 * np.pi) * base_sd)) * np.exp(-(x ** 2) / (2 * base_sd ** 2)) * 70
+                            opt_func_sine = lambda p: sine_curve(p) - acorr_data
+
+                            # Go through each of the init param settings
+                            # for fitting the SINE component of the Gabor and
+                            # choose the one with the lowest resulting cost
+                            costs_sine = []
+                            est_params_sine = []
+                            for p0x in init_params_sine:
+                                opt_result = \
+                                    optimize.least_squares(opt_func_sine, p0x)
+                                est_params_sine.append(opt_result.x)
+                                costs_sine.append(opt_result.cost)
+                            print(np.argmin(costs_sine))
+                            cost_sine = costs_sine[np.argmin(costs_sine)]
+                            est_params_sine = \
+                                list(est_params_sine[np.argmin(costs_sine)])
+                            fitted_sine = sine_curve(est_params_sine)
+
+
+                            # Fit Gaussian component of Gabor function
+                            gabor_func = lambda p: (
+                                        (1 / (np.sqrt(2 * np.pi) * p[0])) \
+                                        * np.exp(-(x ** 2) / (2 * p[0] ** 2)) *
+                                        p[1] * \
+                                        fitted_sine)
+                            opt_func = lambda p: gabor_func(p) - acorr_data
+
+
+
+                            costs_gabor = []
+                            est_params_gabor = []
+                            for p0x in init_params_gabor:
+                                opt_result = optimize.least_squares(opt_func, p0x)
+                                est_params_gabor.append(opt_result.x)
+                                costs_gabor.append(opt_result.cost)
+                            print(np.argmin(costs_gabor))
+                            orig_params = init_params_gabor[np.argmin(costs_gabor)]
+                            cost_gabor = costs_gabor[np.argmin(costs_gabor)]
+                            print(cost_gabor)
+                            est_params_gabor = list(est_params_gabor[np.argmin(costs_gabor)])
+                            print(str(est_params_gabor))
+                            est_params_gabor.append(costs_gabor)
+
+                            # Take stock of and save results
+                            est_gabor_curve = gabor_func(est_params_gabor)
+                            min_gab = np.min(est_gabor_curve)
+                            max_gab = np.max(est_gabor_curve)
+                            est_params_dict = {'channel A': ch1,
+                                               'channel B': ch2,
+                                               'mob_loc_x': x_loc,
+                                               'mob_loc_y': y_loc,
+                                               'dur_or_out': i,
+                                               'batch': b,
+                                               'batch_group': bg_angle_index,
+                                               'max_acorr': max_acorr,
+                                               'min_gabor': min_gab,
+                                               'max_gabor': max_gab,
+                                               'amplitude': (max_gab-min_gab)/2,
+                                               'freq_scale': (1/est_params_sine[2]),
+                                               'sine_phase': est_params_sine[0],
+                                               'sine_mean': est_params_sine[1],
+                                               'gauss_sigma':est_params_gabor[0],
+                                               'gauss_amp': est_params_gabor[1],
+                                               'cost_sine':  cost_sine,
+                                               'cost_gabor': cost_gabor}
+                            param_df = \
+                                param_df.append(est_params_dict,
+                                                ignore_index=True)
+
+                            if plotting:
+                                # Plot results
+                                fig, ax = plt.subplots(1, figsize=(9, 5))
+                                ax.plot(x, acorr_data)  # /np.max(acorr_trace))
+                                # ax.plot(np.arange(len(acorr_data)),
+                                #                      gabor_func(orig_params) )
+                                ax.plot(x, est_gabor_curve )
+                                ax.scatter(x[peaks[0]], acorr_data[peaks[0]])
+                                # ax.plot(x, orig_sine )
+                                # ax.plot(np.arange(len(acorr_data)),
+                                #                      sine_curve(est_params_sine) )
+
+                                ax.set_xlabel('lag')
+                                ax.set_ylabel('correlation coefficient')
+
+                                plt.savefig(
+                                    "%s/Xcorr between static ch %i and mobile ch %i at (x%i,y%i) in batch %i for %s" % (
+                                    acorr_dir, ch1, ch2, x_loc,y_loc,b,label))
+                                plt.close()
+
+                df_title = "%s/estimated_gabor_params_batch_%i " % (exp_dir, b)
+                param_df.to_pickle(df_title)
+
+    def synchrony_experiment2_Analyze_fitted_Gabors(self):
+        """Analyze the fitted Gabor functions as in Gray et al. (1989).
+
+        Needs to
+         - Collect all the params in one df
+         - Recreate the fitted line and count its peaks
+         - Perform a one-sided t-test on the amplitudes for each stim.
+        """
+        # Prepare general variables and dirs
+        exp_dir = os.path.join(self.session_dir,
+                               'SynchronyExp2')
+        acorr_dir = os.path.join(exp_dir, 'acorrs_gabor_reconstructed')
+
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+        if not os.path.isdir(acorr_dir):
+            os.mkdir(acorr_dir)
+
+        allb_params_title = "%s/estimated_gabor_params_all_batches.pkl" % exp_dir
+
+
+        bg_starts = [i for i in range(128) if (i % 8)==0]
+        batch_groups = [list(range(bg_start,bg_start+8))
+                        for bg_start in bg_starts]
+        mid_len = 150
+        x = np.arange(start=-mid_len, stop=mid_len) # x values
+        plotting = False
+        overwrite_allb_params = True
+        allb_params = pd.DataFrame()
+
+        for bg_angle_index, bg in enumerate(batch_groups):
+            print(bg)
+            # Go through all the batchelements for that stim and collect data
+            for b in bg:
+                df_title = "%s/estimated_gabor_params_batch_%i " % (exp_dir, b)
+                batch_params_df = pd.read_pickle(df_title)
+                allb_params = allb_params.append(batch_params_df,
+                                                 ignore_index=True)
+        allb_params['num_peaks'] = -1.
+
+        for index, row in allb_params.iterrows():
+            print("Row %i out of %i" % (index, len(allb_params)-1))
+            # Create lists of params for use in sine func and gabor func
+            amplitude0 = row['max_acorr'] * 0.7 # as in func that fits Gabors
+            sine_params = [row['sine_phase'],
+                           row['sine_mean'],
+                           (1/row['freq_scale'])] # as in func that fits Gabors
+
+            gabor_params = [row['gauss_sigma'], row['gauss_amp']]
+
+            # Create sine curve
+            sine_curve = lambda p: (
+                        amplitude0 * np.cos(x * p[2] + p[0]) + p[1])
+
+            # Use sine curve to create gabor curve
+            fitted_sine = sine_curve(sine_params)
+
+            gabor_func = lambda p: (
+                    (1 / (np.sqrt(2 * np.pi) * p[0])) \
+                    * np.exp(-(x ** 2) / (2 * p[0] ** 2)) *
+                    p[1] * \
+                    fitted_sine)
+
+            # Calculate the curve
+            gabor_curve = gabor_func(gabor_params)
+
+            # Count peaks on fitted Gabor curve and add result to df row
+            peaks = find_peaks(gabor_curve,
+                               height=0,
+                               prominence=0.01,
+                               rel_height=3.)
+
+            row['num_peaks'] = len(peaks[0])
+
+
+            allb_params.loc[index] = row
+
+            if plotting:
+                # Plot results
+                fig, ax = plt.subplots(1, figsize=(9, 5))
+                ax.plot(x, gabor_curve)  # /np.max(acorr_trace))
+                ax.scatter(x[peaks[0]], gabor_curve[peaks[0]])
+                ax.set_xlabel('lag')
+                ax.set_ylabel('correlation coefficient')
+                # ax.legend()
+
+                fig.savefig(
+                 "%s/diagnostic plot for fitted gabors_ch %i and %i in batch %i for %s.jpg" % (
+                     acorr_dir, int(row['channel A']), int(row['channel B']),
+                     int(row['batch']), str(row['dur_or_out'])))
+                plt.close()
+
+        # Save results
+        if overwrite_allb_params and not os.path.exists(allb_params_title):
+            allb_params.to_pickle(allb_params_title)
+
+        # Group allb_df by stim and then count mean number of peaks per stim
+        grouping_vars = ['batch_group', 'dur_or_out', 'channel A', 'channel B']
+        mean_num_peaks = []
+        results_df_peaks = allb_params.groupby(grouping_vars, as_index=False).mean()
+
+        # Do t-test to see if amplitude significantly different from 0
+        groups = allb_params.groupby(grouping_vars, as_index=False)
+        amp_groups = [g for g in groups]
+        amp_groups = [(group[0], np.array(group[1]['amplitude']))
+                      for group in amp_groups]
+        amp_groups_results = [(g[0], spst.ttest_1samp(g[1], popmean=0.))
+                              for g in amp_groups]
+        amp_groups_results = [list(g[0]) + list(g[1]) for g in amp_groups_results]
+
+        # Do another t-test to see if phaseshift significantly different from 0
+        phase_groups = [g for g in groups]
+        phase_groups = [(group[0], np.array(group[1]['sine_phase']))
+                  for group in phase_groups]
+        phase_groups_results = [(g[0], spst.ttest_1samp(g[1], popmean=0.))
+                                for g in phase_groups]
+        all_groups_results = [ar + list(tt[1]) for ar, tt in
+                              zip(amp_groups_results,phase_groups_results)]
+
+        # Assign results to ttest dataframe
+        ttest_df_column_names = grouping_vars
+        ttest_df_column_names.extend(['amp_stat_peaks', 'amp_pvalue_peaks', 'phase_stat_peaks', 'phase_pvalue_peaks'])
+        ttest_results_df = pd.DataFrame(columns=ttest_df_column_names)
+
+        for i, name in enumerate(grouping_vars):
+            nums = [g[i] for g in all_groups_results]
+            ttest_results_df[name] = nums
+
+        # Add mean amplitude value and num peaks to get final df
+        results_df = ttest_results_df
+        results_df['amplitude'] = results_df_peaks['amplitude']
+        results_df['sine_phase'] = results_df_peaks['sine_phase']
+        results_df['num_peaks'] = results_df_peaks['num_peaks']
+
+
+        # Check if amplitude during is more than 10% of amplitude outside
+        dur_or_out_groups = [g[1] for g in results_df.groupby(
+            ['dur_or_out'], as_index=False)]
+        dur_or_out_groups = [np.array(g['amplitude'])
+                             for g in dur_or_out_groups]
+        dur_out_comparison = dur_or_out_groups[0] > (0.1 * dur_or_out_groups[1])
+        # dur_out_comparison = np.concatenate(
+        #     (dur_out_comparison, np.ones_like(dur_out_comparison) * -1))
+        results_df['dur_out_amp_compar'] = -1.
+
+        dur_index = results_df[results_df['dur_or_out'] == 0.0].index
+        out_index = results_df[results_df['dur_or_out'] == 1.0].index
+
+        results_df.loc[dur_index, 'dur_out_amp_compar'] = dur_out_comparison
+        #results_df.loc[out_index, 'dur_out_amp_compar'] = np.ones_like(dur_out_comparison) * -1.
+
+        results_df.to_pickle(
+            "%s/synchexp2 acorr analysis results.pkl" % self.session_dir)
+
+
+    def synchrony_experiment2_OriPref_OR_Distance_vs_OscAmp_OR_vs_Phase(self):
+
+        # Prepare general variables and dirs
+        exp_dir = os.path.join(self.session_dir,
+                               'SynchronyExp2')
+        acorr_dir = os.path.join(exp_dir, 'acorrs_gabor_reconstructed')
+
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+        if not os.path.isdir(acorr_dir):
+            os.mkdir(acorr_dir)
+
+        anlsys_res_title = "%s/synchexp2 acorr analysis results.pkl" % self.session_dir
+
+        bg_starts = [i for i in range(128) if (i % 8)==0]
+        batch_groups = [list(range(bg_start,bg_start+8))
+                        for bg_start in bg_starts]
+        bg_angles = self.double_stim_batchgroupangles
+        bg_locs = self.double_stim_batchgroup_locs
+        mid_len = 150
+        x = np.arange(start=-mid_len, stop=mid_len) # x values
+        cmap = 'spring'
+
+
+
+        acorr_results_df = pd.read_pickle(anlsys_res_title)
+        acorr_results_df = acorr_results_df[acorr_results_df['dur_or_out']==0.]
+
+        ori_pref = pd.read_pickle(
+            os.path.join(self.session_dir,
+                         'orientation_pref_results_just_angles.pkl'))
+
+        ori_pref = ori_pref.drop(['mean', 'amplitude'], axis=1)
+        ori_pref = ori_pref.rename(columns={'phaseshift': 'ori_pref'})
+
+        ori_pref_a = ori_pref.rename(columns={'channel': 'channel A',
+                                              'ori_pref': 'ori_pref A'})
+        ori_pref_b = ori_pref.rename(columns={'channel': 'channel B',
+                                              'ori_pref': 'ori_pref B'})
+
+        # Get the ori prefs of channel A
+        acorr_results_df = pd.merge(acorr_results_df, ori_pref_a)
+
+        # Get the ori prefs of channel B
+        acorr_results_df = pd.merge(acorr_results_df, ori_pref_b)
+
+        # Calculate the difference in ori pref for each acorr comparison
+        difference = acorr_results_df['ori_pref A'] - \
+                     acorr_results_df['ori_pref B']
+        angle_diff = np.pi - np.abs(np.abs(difference) - np.pi)
+        acorr_results_df['angle_diff'] = angle_diff
+
+        # Add the location data for the mobile stim in each batchgroup
+        locs = [bg_locs[int(i)] for i in acorr_results_df['batch_group']]
+        mob_locs_x = [loc[0] for loc in locs]
+        mob_locs_y = [loc[1] for loc in locs]
+        acorr_results_df['mob_loc_x'] = mob_locs_x
+        acorr_results_df['mob_loc_y'] = mob_locs_y
+
+        ## Make mobile loc relative to static loc
+        acorr_results_df['mob_loc_x'] = acorr_results_df['mob_loc_x'] - \
+            self.double_stim_static_x_0centre
+        acorr_results_df['mob_loc_y'] = acorr_results_df['mob_loc_y'] - \
+            self.double_stim_static_y_0centre
+
+        # Calculate (square) distance of mobile from static stim
+        # as the max distance along an axis
+        xbiggery = \
+            acorr_results_df['mob_loc_x'] > acorr_results_df['mob_loc_y']
+        acorr_results_df['mob_sq_dist'] = acorr_results_df['mob_loc_x'].where(
+            xbiggery, other=acorr_results_df['mob_loc_y'])
+
+        # Calculate euclidian distance of mobile from static stim
+        centred_x_locs = [xy[0] - self.double_stim_static_x_0centre for xy in
+         self.double_stim_batchgroup_locs]
+        centred_y_locs = [xy[1] - self.double_stim_static_y_0centre for xy in
+            self.double_stim_batchgroup_locs]
+        eucl_dists = [np.sqrt(x**2 + y**2)
+                 for (x,y) in zip(centred_x_locs, centred_y_locs)]
+
+        acorr_results_df['mob_eucl_dist'] = \
+            [eucl_dists[int(i)] for i in acorr_results_df['batch_group']]
+
+        # Assign stim angles
+        stim_angles = np.array([bg_angles[int(i)] for i in
+                                acorr_results_df['batch_group']])
+        acorr_results_df['mob_stim_angle'] = stim_angles
+
+        # Define the conditions and their labels for plotting in a for-loop
+        df = acorr_results_df  # for brevity
+
+        #not_overlap_cond = df['mob_loc_x'] > -1 #for debugging
+        not_overlap_cond = ~((df['mob_loc_x'] == 0) & (df['mob_loc_y']==0))
+
+        ori_same_below_all = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] == 0)
+        ori_same_beside_all = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] != 0)
+        ori_different_below_all = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] == 0)
+        ori_different_beside_all = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] != 0)
+        ori_same_below_onlyhorizconnect = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] == 0) & (df['mob_loc_y'] < self.double_stim_horizextent)
+        ori_same_beside_onlyhorizconnect = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] != 0) & (df['mob_loc_y'] < self.double_stim_horizextent)
+        ori_different_below_onlyhorizconnect = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] == 0) & (df['mob_loc_y'] < self.double_stim_horizextent)
+        ori_different_beside_onlyhorizconnect = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] != 0) & (df['mob_loc_y'] < self.double_stim_horizextent)
+        ori_same_below_onlyNOThorizconnect = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] == 0) & (df['mob_loc_y'] >= self.double_stim_horizextent)
+        ori_same_beside_onlyNOThorizconnect = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] != 0) & (df['mob_loc_y'] >= self.double_stim_horizextent)
+        ori_different_below_onlyNOThorizconnect = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] == 0) & (df['mob_loc_y'] >= self.double_stim_horizextent)
+        ori_different_beside_onlyNOThorizconnect = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] != 0) & (df['mob_loc_y'] >= self.double_stim_horizextent)
+
+        ori_same_below_all_label = "Static and mobile stims with same orientation, mobile stim below static stim (i.e. colinear)"
+        ori_same_beside_all_label = "Static and mobile stims with same orientation, mobile stim beside static stim (i.e. not colinear)"
+        ori_different_below_all_label = "Static and mobile stims with different orientation, mobile stim below static stim"
+        ori_different_beside_all_label = "Static and mobile stims with different orientation, mobile stim beside static stim"
+        ori_same_below_onlyhorizconnect_label = "Static and mobile stims with same orientation, mobile stim below static stim and within horizontal connections"
+        ori_same_beside_onlyhorizconnect_label = "Static and mobile stims with same orientation, mobile stim beside static stim and within horizontal connections"
+        ori_different_below_onlyhorizconnect_label = "Static and mobile stims with different orientation, mobile stim below static stim and within horizontal connections"
+        ori_different_beside_onlyhorizconnect_label = "Static and mobile stims with different orientation, mobile stim beside static stim and within horizontal connections"
+        ori_same_below_onlyNOThorizconnect_label = "Static and mobile stims with same orientation, mobile stim below static stim and outside horizontal connections"
+        ori_same_beside_onlyNOThorizconnect_label = "Static and mobile stims with same orientation, mobile stim beside static stim and outside horizontal connections"
+        ori_different_below_onlyNOThorizconnect_label = "Static and mobile stims with different orientation, mobile stim below static stim and outside horizontal connections"
+        ori_different_beside_onlyNOThorizconnect_label = "Static and mobile stims with different orientation, mobile stim beside static stim and outside horizontal connections"
+
+        cond_and_labs = [[ori_same_below_all, ori_same_below_all_label],
+                         [ori_same_beside_all, ori_same_beside_all_label],
+                         [ori_different_below_all, ori_different_below_all_label],
+                         [ori_different_beside_all, ori_different_beside_all_label],
+                         [ori_same_below_onlyhorizconnect, ori_same_below_onlyhorizconnect_label],
+                         [ori_same_beside_onlyhorizconnect, ori_same_beside_onlyhorizconnect_label],
+                         [ori_different_below_onlyhorizconnect, ori_different_below_onlyhorizconnect_label],
+                         [ori_different_beside_onlyhorizconnect, ori_different_beside_onlyhorizconnect_label],
+                         [ori_same_below_onlyNOThorizconnect, ori_same_below_onlyNOThorizconnect_label],
+                         [ori_same_beside_onlyNOThorizconnect, ori_same_beside_onlyNOThorizconnect_label],
+                         [ori_different_below_onlyNOThorizconnect, ori_different_below_onlyNOThorizconnect_label],
+                         [ori_different_beside_onlyNOThorizconnect, ori_different_beside_onlyNOThorizconnect_label]]
+
+        # Go through the various conditions and data and make plots
+        for indep_label in ['angle_diff', 'mob_eucl_dist', 'mob_sq_dist']:
+            for dependent_label in ['amplitude', 'sine_phase', 'num_peaks']:
+
+                # Prepare directory for saving plots
+                plot_dir = os.path.join(exp_dir, indep_label+" vs "+dependent_label)
+                if not os.path.isdir(plot_dir):
+                    os.mkdir(plot_dir)
+
+                for cond, label in cond_and_labs:
+                    print(indep_label, dependent_label, label)
+                    # Define data using conds
+                    indep_data = acorr_results_df[indep_label][not_overlap_cond & cond]
+                    dependent_data = acorr_results_df[dependent_label][not_overlap_cond & cond]
+                    # num_peaks_data = acorr_results_df['num_peaks'][not_overlap_cond & cond]
+
+
+                    # Plot basic plot
+                    m, c = np.polyfit(indep_data, dependent_data, 1) # Calc line
+                    fig, ax = plt.subplots(1, figsize=(9, 5))
+                    ax.scatter(indep_data, dependent_data, cmap=cmap, c=acorr_results_df['mob_sq_dist'][not_overlap_cond & cond])
+                    plt.plot(indep_data, m * indep_data + c, c='r')  # Plot line
+                    ax.set_xlabel('%s' % indep_label)
+                    ax.set_ylabel('Oscillation %s' % dependent_label)
+                    plot_title = "%s vs Oscillation %s for " % (indep_label, dependent_label)
+                    plot_title = plot_title + label
+                    plt.savefig(os.path.join(plot_dir,
+                                             "SynchExp2 " + plot_title + ".png"))
                     plt.close()
 
 
+                    # Plots with ori match:
+                    ## See whether there is a match between BOTH channels and the stim
+                    thresh_ang = 10
+                    match_0_A = (np.abs(acorr_results_df['ori_pref A'] - stim_angles) < thresh_ang*np.pi/180)
+                    match_180_A = (np.abs(acorr_results_df['ori_pref A'] + np.pi - stim_angles) < thresh_ang*np.pi/180)
+                    match_0_B = (np.abs(acorr_results_df['ori_pref B'] - stim_angles) < thresh_ang * np.pi / 180)
+                    match_180_B = (np.abs(acorr_results_df['ori_pref B'] + np.pi - stim_angles) < thresh_ang * np.pi / 180)
+                    orientation_match = \
+                        (match_0_A | match_180_A) & (match_0_B | match_180_B)
+
+                    ## Redefine data
+                    indep_data = acorr_results_df[indep_label][not_overlap_cond & cond & orientation_match]
+                    dependent_data = acorr_results_df[dependent_label][not_overlap_cond & cond & orientation_match]
+
+                    ## plot
+                    m, c = np.polyfit(indep_data, dependent_data, 1)
+                    fig, ax = plt.subplots(1, figsize=(9, 5))
+                    ax.scatter(indep_data, dependent_data, cmap=cmap, c=acorr_results_df['mob_sq_dist'][not_overlap_cond & cond & orientation_match])
+                    plt.plot(indep_data, m * indep_data + c, c='r')
+                    ax.set_xlabel('%s' % indep_label)
+                    ax.set_ylabel('Oscillation %s' % dependent_label)
+                    plot_title = "%s vs Oscillation %s with ori match for " % (indep_label, dependent_label)
+                    plot_title = plot_title + label
+                    plt.savefig(os.path.join(plot_dir,
+                                             "SynchExp2 " + plot_title + ".png"))
+                    plt.close()
+
+    # SYNCH EXP 3
+    def synchrony_experiment3_xcorrs(self, patch_or_idx=None):
+        """Takes the column/patch of channels at the site of the static stimulus
+        and the site of the mobile stimulus, then calculates
+        the autocorrelation plot between each channel's trace. """
+
+        print("Performing Synchrony Experiment 3: Long stimulus")
+
+        # Make dir to save plots for this experiment
+        exp_dir = os.path.join(self.session_dir,
+                               'SynchronyExp3')
+        if not os.path.isdir(exp_dir):
+            os.mkdir(exp_dir)
+
+        # Load data
+        presaved_path = os.path.join(self.session_dir,
+            "neuron_activity_results_alternativeformat_long_just_fewangles.pkl")
+        full_data = pd.read_pickle(presaved_path)
+        #"/home/lee/Documents/AI_ML_neur_projects/deep_attractor_network/analysis_results/20200731-040415__rndidx_60805_loaded20200722-144054__rndidx_25624_experiment_at_8490its"
+        # Add stim_orientation info to data
+        stim_angles = [self.double_stim_angles[i] for i in
+                       full_data['batch_idx']]
+        full_data['stim_ori'] = stim_angles
 
 
-        for b in range(3):#128):
-            acorr_data_dfs = [pd.read_pickle(os.path.join(self.session_dir,
-                                'cross_correlation_results_%s_%s.pkl' % (b, label)))
-                              for label in ['during', 'outside']]
+        if patch_or_idx == 'patch': # probably remove this in future. unlikely to use patch but maybe in future.
+            centre1 = self.central_patch_min
+            centre2 = self.central_patch_max
+            central_patch_size = self.central_patch_size
+            save_name = 'patch'
+        else:
+            centre = 16
+            centre1 = [16,16] #todo softcode
+            centre2 = centre1
+            central_patch_size = 1
+            save_name = 'neuron'
 
-            max_peak = max([np.max(np.max(df.iloc[:,1:-3])) for df in acorr_data_dfs])
-            min_trough = min([np.min(np.min(df.iloc[:,1:-3])) for df in acorr_data_dfs])
+        # Prepare general variables
+        model_exp_name = self.double_stim_synchr_exp_name
+        num_batches = 128 # todo soft code
+        full_state_traces = pd.DataFrame()
 
-            # Plot results
-            for i in range(len(acorr_data_dfs[0])):
-                fig, ax = plt.subplots(2,figsize=(8,9))
+        # Go through each channel and get the traces that you need (all
+        # batches)
+        for ch in range(self.num_ch):
 
-                #fig.tight_layout(pad=1.0)
-                for j, during_or_outside_label in enumerate(['During', 'Outside']):
-                    row_data = acorr_data_dfs[j].iloc[i]
-                    ch1, ch2, _ = row_data[-3:]
-                    print("%s %s %s" % (b, ch1, ch2))
-                    acorr_trace = np.array(row_data)
-                    acorr_trace = acorr_trace[0:-3]
+            print("Channel %s" % str(ch))
+            # Prepare/reset variables for data managers
+            var_names = ['state']
 
-                    # Plotting only middle of acorr plot
-                    mid_point = len(acorr_trace) // 2
-                    acorr_trace = acorr_trace[mid_point-400:mid_point+400]
+            # Get data
+            dm = datamanager.DataManager(root_path=self.args.root_path,
+                                         model_exp_name=model_exp_name,
+                                         var_names=var_names,
+                                         state_layers=[1],
+                                         batches=None,
+                                         channels=[ch],
+                                         hw=[self.top_left_pnt,
+                                             self.top_right_pnt],
+                                         timesteps=None)
 
-                    ax[j].plot(np.arange(len(acorr_trace)),
-                            acorr_trace)#/np.max(acorr_trace))
-                    ax[j].set_ylim([min_trough, max_peak])
-                    ax[j].set_title(during_or_outside_label)
-                    ax[j].set_xlabel('lag')
-                    ax[j].set_ylabel('correlation coefficient')
-                    #ax.legend()
+            # Process data
+            dm.data['state_1'] = dm.data[
+                'state_1'].squeeze()  # get rid of ch dim
+            reshaped_activities = [np.arange(len(dm.timesteps)).reshape(
+                len(dm.timesteps), 1)]  # make TS data
+            reshaped_activities.extend([
+                dm.data['state_1'].reshape(len(dm.timesteps),
+                                           -1)])  # extend TS data with actual data
+            arr_sh = dm.data['state_1'].shape[1:]
 
-                plt.savefig("%s/cross correlation between %i and %i in batch %i " % (exp_dir, ch1, ch2, b))
-                plt.close()
+            # Make column names from indices of batches, height, and width
+            inds = np.meshgrid(np.arange(arr_sh[0]),
+                               np.arange(arr_sh[1]),
+                               np.arange(arr_sh[2]),
+                               sparse=False, indexing='ij')
+            inds = [i.reshape(-1) for i in inds]
+
+            colnames = ['Timestep']
+            for i, j, k in zip(*inds):
+                colnames.append(
+                    'state_1__b%s_h%s_w%s' % (i, self.top_left_pnt[0] + j,
+                                              self.top_left_pnt[1] + k))
+
+            activities = np.concatenate(reshaped_activities, axis=1)
+            activities_df = pd.DataFrame(activities, columns=colnames)
+            del activities, reshaped_activities
+
+            # Find the subset of the nrnact df for this channel only and get
+            # the h, w values for on neurons in each batch
+            # An extra condition for double stim experiments is that we only
+            # select the neuron at the static stimulus location in all batches
+            # but only the stimulus site for other batches
+
+            nrnact_ch = full_data.loc[full_data['channel'] == ch]
+
+            mobile_locs = [self.double_stim_locs[i % 8] for i in nrnact_ch['batch_idx']]
+            mobile_locs_x = [centre + mobile_locs[i][0] for i in range(len(mobile_locs))]
+            mobile_locs_y = [centre + mobile_locs[i][1] for i in range(len(mobile_locs))]
+
+            mobile_cond = (nrnact_ch['height'] == mobile_locs_y) & \
+                          (nrnact_ch['width'] == mobile_locs_x)
+            static_cond = (nrnact_ch['height'] == self.double_stim_static_y) & \
+                          (nrnact_ch['width'] == self.double_stim_static_x)
+
+            cond = static_cond | mobile_cond
+            nrnact_ch = nrnact_ch.loc[cond]
+            nrnact_ch = nrnact_ch.reset_index()
+
+            # Get the names of the columns
+            print("Defining names of neurons")
+
+            on_colnames = []
+            on_col_inds = []
+            batches = []
+            heights = []
+            widths = []
+            stim_oris = []
+            for i in range(len(nrnact_ch)):
+                bhw = tuple(nrnact_ch.loc[i][1:4])
+                stim_ori = nrnact_ch.loc[i]['stim_ori']
+                on_colname = 'state_1__b%i_h%i_w%i' % bhw
+                on_colnames.append(on_colname)
+                on_col_inds.append(bhw)
+                batches.append(bhw[0])
+                heights.append(bhw[1])
+                widths.append(bhw[2])
+                stim_oris.append(stim_ori)
+
+            # For the  in the above-defined subset of nrnact, get
+            # their timeseries from the arrays
+            state_traces = activities_df[on_colnames]
+            # state_traces.columns = self.true_contrast_and_angle_contrasts
+            state_traces = state_traces.transpose()
+            state_traces['batch']     = batches
+            state_traces['height']    = heights
+            state_traces['width']     = widths
+            state_traces['stim_oris'] = stim_oris
+            state_traces['channel']   = ch
+
+            if full_state_traces.empty:
+                full_state_traces = state_traces
+            else:
+                full_state_traces = full_state_traces.append(state_traces)
+
+        # Now, having collected all the state traces of the neurons of
+        # interest, compute cross correlation plots between neurons in
+        # different channels in the same batch element:
+        for b in range(num_batches):
+
+
+            acorr_data_during = pd.DataFrame()
+            acorr_data_outside = pd.DataFrame()
+            acorr_data_dfs = [acorr_data_during, acorr_data_outside]
+
+            # Define the mobile neuron location for this batch
+            mobile_loc = self.double_stim_locs[b % 8]
+            mobile_loc_x = centre + mobile_loc[0]
+            mobile_loc_y = centre + mobile_loc[1]
+
+            cond_mobilex = full_state_traces['width'] == mobile_loc_x
+            cond_mobiley = full_state_traces['height'] == mobile_loc_y
+
+            cond_staticx = full_state_traces['width'] == self.double_stim_static_x
+            cond_staticy = full_state_traces['height'] == self.double_stim_static_y
+
+            cond_b = full_state_traces['batch'] == b
+
+            for ch1 in range(self.num_ch):
+                for ch2 in range(self.num_ch):
+
+                    print("%s   %s    %s" % (b, ch1, ch2))
+
+                    # Define conditions to get traces from full df
+                    cond1_ch = full_state_traces['channel'] == ch1
+                    cond2_ch = full_state_traces['channel'] == ch2
+
+                    cond1 = cond1_ch & cond_mobilex & cond_mobiley & cond_b
+                    cond2 = cond2_ch & cond_staticx & cond_staticy & cond_b
+
+                    if not np.any(cond1) or not np.any(cond2):
+                        print("Skipping %s   %s    %s" % (b, ch1, ch2))
+                        continue
+
+                    # Get traces from full df
+                    trace_1 = full_state_traces.loc[cond1]
+                    trace_2 = full_state_traces.loc[cond2]
+
+                    # Convert to array
+                    trace_1 = np.array(trace_1).squeeze()
+                    trace_2 = np.array(trace_2).squeeze()
+
+                    # Remove channel,batch information to get only traces
+                    trace_1 = trace_1[0:2700] #todo softcode
+                    trace_2 = trace_2[0:2700]
+
+                    # Split traces into 'during stim' and 'outside stim'
+                    #TODO consider limiting the timesteps that are included in the acorr
+                    t1_duringstim = trace_1[self.primary_stim_start:self.primary_stim_stop]
+                    t2_duringstim = trace_2[self.primary_stim_start:self.primary_stim_stop]
+                    traces_during = [t1_duringstim, t2_duringstim]
+
+                    t1_outsidestim = trace_1[self.burn_in_len:self.primary_stim_start]
+                    t2_outsidestim = trace_2[self.burn_in_len:self.primary_stim_start]
+                    traces_outside = [t1_outsidestim, t2_outsidestim]
+
+                    traces_d_and_o = [traces_during, traces_outside]
+                    for j, (during_or_outside_label, traces) in \
+                            enumerate(zip(['during','outside'],
+                                          traces_d_and_o)):
+                        t1 = traces[0]
+                        t2 = traces[1]
+
+                        # Run acorr funcs and save results
+                        acorr_result = np.correlate(t1-np.mean(t1),
+                                                    t2-np.mean(t2),
+                                                    mode='full')
+                        acorr_result = pd.DataFrame(acorr_result).transpose()
+                        acorr_result['channel_static'] = ch1
+                        acorr_result['channel_mobile'] = ch2
+                        acorr_result['mob_loc_x'] = mobile_loc_x
+                        acorr_result['mob_loc_y'] = mobile_loc_y
+                        acorr_result['batch'] = b
+                        acorr_data_dfs[j] = acorr_data_dfs[j].append(acorr_result)
+            acorr_data_dfs = [df.reset_index() for df in acorr_data_dfs]
+
+            # Save results periodically, per batch
+            for ac_df, label in zip(acorr_data_dfs,['during', 'outside']):
+                ac_df.to_pickle(os.path.join(exp_dir,
+                                'cross_correlation_results_%s_%s.pkl' % (b, label)) )
+
+
+
+
+
 
 
 
