@@ -621,6 +621,9 @@ class AnalysisManager:
 
         norm = plt.Normalize()
 
+        batch_eles = {'just_angle': [0, 32],
+                      'long_just_fewangles': [0,65]}
+
 
         for ch in range(self.num_ch):
             print("Channel %s" % ch)
@@ -647,8 +650,9 @@ class AnalysisManager:
             arr_sh = dm.data['state_1'].shape[1:]
             dm.data['state_1'] = dm.data['state_1'].transpose()
 
-            for b in [0, int(128/4)]:
-                print("Batch %i" % b)
+            for b in batch_eles[exp_name]:
+
+                print("Batch element %i" % b)
                 # Get data and normalize it
                 traces = dm.data['state_1'][:,:,b,:]
                 traces = (traces - np.min(traces))

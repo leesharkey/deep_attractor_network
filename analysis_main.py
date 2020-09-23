@@ -44,7 +44,7 @@ def main():
     # am.find_active_neurons('just_angles')
     #am.find_active_neurons('just_angles_few_angles')
     # am.find_active_neurons('double_stim')
-    #am.find_active_neurons('long_just_fewangles')
+    am.find_active_neurons('long_just_fewangles')
 
     #am.print_activity_maps_by_batch_ch()
     #am.print_activity_map_GIFs_by_batch_ch()
@@ -96,7 +96,7 @@ def main():
     # am.synchrony_experiment2_Analyze_fitted_Gabors()
     # am.synchrony_experiment2_OriPref_OR_Distance_vs_OscAmp_OR_vs_Phase()
 
-    am.synchrony_experiment3_xcorrs()
+    #am.synchrony_experiment3_xcorrs()
 
 
 
