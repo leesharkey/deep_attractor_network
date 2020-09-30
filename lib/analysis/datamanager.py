@@ -32,6 +32,7 @@ class DataManager:
         get_ts_full_path = os.path.join(self.root_path,
                                         self.model_exp_name,
                                         get_ts_key)
+        print("Getting %s" % get_ts_full_path)
         (_, _, filenames) = next(os.walk(get_ts_full_path))
         if timesteps == None:
             self.timesteps = range(len(
