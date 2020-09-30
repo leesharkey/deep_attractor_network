@@ -1955,10 +1955,11 @@ class ExperimentalStimuliGenerationManager:
         full_folder_name = os.path.join(self.save_path_root,
                                         folder_name1,
                                         folder_name2)
-
-        if not os.path.exists(full_folder_name):
+        if not os.path.exists(os.path.join(self.save_path_root,
+                                  folder_name1)):
             os.mkdir(os.path.join(self.save_path_root,
                                   folder_name1))
+        if not os.path.exists(full_folder_name):
             os.mkdir(os.path.join(self.save_path_root,
                                   folder_name1,
                                   folder_name2))
@@ -1989,11 +1990,11 @@ class ExperimentalStimuliGenerationManager:
                                         folder_name1,
                                         folder_name2)
 
-        if not os.path.exists(full_folder_name):
-            if not os.path.exists(os.path.join(self.save_path_root,
+        if not os.path.exists(os.path.join(self.save_path_root,
                                   folder_name1)):
-                os.mkdir(os.path.join(self.save_path_root,
-                                      folder_name1))
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1))
+        if not os.path.exists(full_folder_name):
             os.mkdir(os.path.join(self.save_path_root,
                                   folder_name1,
                                   folder_name2))
@@ -2023,11 +2024,13 @@ class ExperimentalStimuliGenerationManager:
                                         folder_name2)
 
         if not os.path.exists(os.path.join(self.save_path_root,
-                                           folder_name1)):
+                                  folder_name1)):
             os.mkdir(os.path.join(self.save_path_root,
                                   folder_name1))
         if not os.path.exists(full_folder_name):
-            os.mkdir(full_folder_name)
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1,
+                                  folder_name2))
 
         for i, a in enumerate(angles):
             im = self.single_gabor_image(angle=a,
@@ -2059,11 +2062,11 @@ class ExperimentalStimuliGenerationManager:
                                         folder_name1,
                                         folder_name2)
 
-        if not os.path.exists(full_folder_name):
-            if not os.path.exists(os.path.join(self.save_path_root,
+        if not os.path.exists(os.path.join(self.save_path_root,
                                   folder_name1)):
-                os.mkdir(os.path.join(self.save_path_root,
-                                      folder_name1))
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1))
+        if not os.path.exists(full_folder_name):
             os.mkdir(os.path.join(self.save_path_root,
                                   folder_name1,
                                   folder_name2))
@@ -2083,9 +2086,11 @@ class ExperimentalStimuliGenerationManager:
                                         folder_name1,
                                         folder_name2)
 
-        if not os.path.exists(full_folder_name):
+        if not os.path.exists(os.path.join(self.save_path_root,
+                                  folder_name1)):
             os.mkdir(os.path.join(self.save_path_root,
                                   folder_name1))
+        if not os.path.exists(full_folder_name):
             os.mkdir(os.path.join(self.save_path_root,
                                   folder_name1,
                                   folder_name2))
@@ -2146,9 +2151,10 @@ class ExperimentalStimuliGenerationManager:
                                   folder_name1)):
             os.mkdir(os.path.join(self.save_path_root,
                                   folder_name1))
-
         if not os.path.exists(full_folder_name):
-            os.mkdir(full_folder_name)
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1,
+                                  folder_name2))
 
         contrast = 2.4
 
@@ -2222,9 +2228,10 @@ class ExperimentalStimuliGenerationManager:
                                   folder_name1)):
             os.mkdir(os.path.join(self.save_path_root,
                                   folder_name1))
-
         if not os.path.exists(full_folder_name):
-            os.mkdir(full_folder_name)
+            os.mkdir(os.path.join(self.save_path_root,
+                                  folder_name1,
+                                  folder_name2))
 
         contrast = 2.4
 
