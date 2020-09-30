@@ -1238,7 +1238,7 @@ class ExperimentsManager(Manager):
         self.img_str = 'images'
         # self.save_vars = ['momenta', 'all_states', 'binary_net_outputs',
         #                   'energies']
-        self.base_save_dir = '/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data'
+        self.base_save_dir = self.args.exp_data_root_path
         self.save_dir_model = self.base_save_dir + '/' + self.model.model_name + '_loaded' + self.loaded_model_name
         self.save_dir_exp = None
         self.data_save_dirs = self.momenta_strs
@@ -1579,7 +1579,7 @@ class ExperimentsManager(Manager):
 
             np.save(grad_str,  grad)
             np.save(state_str, state)
-            np.save(bno_str,   bno)
+            # np.save(bno_str,   bno)
             np.save(enrg_str,  enrg)
             np.save(mom_str,   state_mom)
 
