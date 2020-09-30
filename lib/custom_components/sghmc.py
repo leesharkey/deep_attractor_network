@@ -84,6 +84,18 @@ class SGHMC(Optimizer):
         if len(self.args.mom_clip_vals) == 1:
             self.momenta_clip_norm_vals = self.args.mom_clip_vals * len(self.args.state_sizes)
         self.state_layer_idx = state_layer
+
+        # If you want to use fixed minv_t values
+        # if len(self.args.state_sizes)==4:
+        #     self.minv_t_fixed_vals = {0: 28.647678,
+        #                               1: 37.066040,
+        #                               2: 34.481689,
+        #                               3: 9.399337}
+        #     # do for ==6 if you ever use that bigger model.
+        # self.minv_t_fixed_val = self.minv_t_fixed_vals[self.state_layer_idx]
+        # self.minv_t = torch.normal(torch.ones(self.args.state_sizes[state_layer], device=torch.device('cuda:0')) * self.minv_t_fixed_val, std=6.)
+        # self.minv_t = self.minv_t.clamp_(min=self.minv_t_fixed_val/2)
+
         self.printing_grad_mom_info = self.args.printing_grad_mom_info
 
         self.bump_scaler = 1e-3
@@ -119,10 +131,10 @@ class SGHMC(Optimizer):
                     gaussian = sps.norm(mean_0, sd)
                     densities = gaussian.pdf(channels)
 
-                    # import matplotlib.pyplot as plot
-                    # plot.plot(np.arange(len(densities)), densities)
-                    # plot.savefig("circulargaussian.png")
-                    #plot.clf()
+                    # import matplotlib.pyplot as plt
+                    # plt.plot(np.arange(len(densities)), densities)
+                    # plt.savefig("circulargaussian.png")
+                    # plt.clf()
 
                     #densities = densities / np.max(densities)  # Normalize
                     densities = np.roll(densities, num_ch//2)  # centre on ch 0
@@ -134,6 +146,18 @@ class SGHMC(Optimizer):
                         weights = torch.tensor(densities_rolled)
                         self.inv_M_weights.append(weights)
                     self.inv_M_weights = torch.stack(self.inv_M_weights)
+
+                    # import matplotlib.pyplot as plt
+                    # plt.imshow(self.inv_M_weights, cmap='hot',
+                    #            interpolation='nearest')
+                    # plt.colorbar()
+                    # plt.clim(0., 1.)
+                    # plt.xticks(np.arange(0, self.inv_M_weights.shape[0], 2.0))
+                    # plt.yticks(np.arange(0, self.inv_M_weights.shape[0], 2.0))
+                    # plt.tight_layout()
+                    # plt.savefig("inv_M_weights matrix.png")
+                    # plt.clf()
+
                     self.inv_M_weights = self.inv_M_weights.to(parameter.device)
 
 
@@ -200,6 +224,28 @@ class SGHMC(Optimizer):
                 #  }}} Burn-in updates #
 
                 lr_scaled = lr / torch.sqrt(scale_grad)
+
+                # Reintroduced from before
+                if self.args.mean_batch_minv_t:
+                    minv_t = minv_t.mean(dim=0)  # average the variances over batches #lee
+                    minv_t = torch.stack(self.batch_size * [minv_t])
+                # end of reintro
+
+                # TODO remove this experimental feature
+                # mean along channel
+                # num_pix = minv_t.shape[3]
+                # orig_shape = minv_t.shape
+                # minv_t = minv_t.mean(dim=[2, 3])  # average the variances over batches #lee
+                # minv_t = torch.stack((num_pix ** 2) * [minv_t], dim=2)
+                # minv_t = minv_t.reshape(orig_shape)
+
+                # TODO remove this experimental feature if unsuccessful
+                # use fixed minv_t val
+                # minv_t = torch.ones_like(minv_t) * self.minv_t_fixed_val
+                #minv_t = minv_t.normal_(self.minv_t_fixed_val, std=1.)
+                #minv_t = self.minv_t
+
+
 
                 #  Draw random sample {{{ #
 
