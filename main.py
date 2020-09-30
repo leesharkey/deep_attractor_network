@@ -1643,8 +1643,11 @@ def main():
                         'matrix. The analogy is imposing lateral inhibition' +
                         'on the dynamics of the network.')
     parser.set_defaults(non_diag_inv_mass=False)
-    #TODO consider settings for ch--variance settings
-
+    ngroup.add_argument('--mean_batch_minv_t', action='store_true',
+                        help='Whether or not to use the mean minv_t' +
+                        'value for all batches. This should make it more' +
+                        'consistent.')
+    parser.set_defaults(mean_batch_minv_t=False)
 
 
     ngroup.add_argument('--model_weight_norm', action='store_true',
@@ -1737,6 +1740,13 @@ def main():
                              'tensorboard logs are saved. Default:'+
                              ' %(default)s.',
                         required=False)
+    mgroup.add_argument('--exp_data_root_path', type=str,
+                        default='/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data',
+                        help='The path of the directory into which '+
+                             'experimental data are saved, e.g. traces. Default:'+
+                             ' %(default)s.',
+                        required=False)
+
     mgroup.add_argument('--log_histograms', action='store_true',
                         help='Whether or not to log histograms of weights ' +
                              'and other variables. Warning: Storage intensive.')
@@ -1833,8 +1843,7 @@ def main():
 
     if args.gen_exp_stim:
         esgm = managers.ExperimentalStimuliGenerationManager()
-        #TODO set this so they go automatically without having to change any
-        # settings. You know, like a frickin computer program.
+        #TODO remove hashtags for final version
 
         #esgm.generate_single_gabor_dataset__just_angle()
         #esgm.generate_single_gabor_dataset__contrast_and_angle()
@@ -1854,8 +1863,8 @@ def main():
                                                   writer,
                                                   device,
                                                   sample_log_dir)
-        #expm.orientations_present("single", "just_angle")
-        #expm.orientations_present("single", "contrast_and_angle")
+        expm.orientations_present("single", "just_angle")
+        expm.orientations_present("single", "contrast_and_angle")
         expm.orientations_present("single", "just_angle_few_angles")
         expm.orientations_present("double", "fewlocs_and_fewerangles")
         expm.orientations_present("single", "long_just_fewangles")
@@ -1903,5 +1912,5 @@ if __name__ == '__main__':
 # Model name (If a brand new model, it is the session name; if it is reloading for training purposes, it is the session name; if reloading for analysis or viz purposes, it is the original model name)
 # Model history (keeps track of the history of models/session used in training this model)
 
-# Also use config files rather than having to go into the pycharm configs every time. It's not very user friendly. And it'll be easier to save config files.
+# Also use config files rather than having to go into the pycharm configs every time. It's not very user friendly. And it'll be easier to save config files. Have a master config file that gets copied and saved to the experimental session.
 # Plus when you make new configs during development, make them default to some value that nullifies them
