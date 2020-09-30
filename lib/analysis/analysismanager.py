@@ -4,7 +4,7 @@ import pandas as pd
 import scipy.stats as spst
 from scipy.signal import butter, filtfilt, detrend, welch, find_peaks
 from scipy.stats import shapiro
-import seaborn as sns
+# import seaborn as sns
 import matplotlib.pyplot as plt
 from torchvision import transforms, utils
 from PIL import Image
@@ -2356,7 +2356,7 @@ class AnalysisManager:
         p01 = [7e1, 400.0]#[5e2, 5., 1.0, 0.] ######[7e2, 0.9, 500.0, 0.]
         p02 = [7e1, 500.0]#[5e2, -0.5, 100.0, 0.]
         p03 = [7e1, 600.0]#[7e2, 0.9, 500.0, 0.]
-        init_params_gabor = [p02]#[p01, p02, p03]#, p04]
+        init_params_gabor = [p01, p02, p03]#[p02]##, p04]
 
 
         for bg_angle_index, bg in enumerate(batch_groups):
@@ -2380,7 +2380,7 @@ class AnalysisManager:
                     for ch1 in range(self.num_ch):
                         for ch2 in range(self.num_ch):
                             # Select the specific xcorr plot
-                            print("Channels %s %s" % (ch1, ch2))
+                            print("Batch: %s ;   Channels %s %s" % (b, ch1, ch2))
                             cond1 = acorr_df['channel A'] == ch1
                             cond2 = acorr_df['channel B'] == ch2
                             cond = cond1 & cond2
@@ -3159,7 +3159,7 @@ class AnalysisManager:
         p01 = [7e1, 400.0]#[5e2, 5., 1.0, 0.] ######[7e2, 0.9, 500.0, 0.]
         p02 = [7e1, 500.0]#[5e2, -0.5, 100.0, 0.]
         p03 = [7e1, 600.0]#[7e2, 0.9, 500.0, 0.]
-        init_params_gabor = [p02]#[p01, p02, p03]#, p04]
+        init_params_gabor = [p01, p02, p03]#[p02]#[p01, p02, p03]#, p04]
 
 
         for bg_angle_index, bg in enumerate(batch_groups):
@@ -3183,7 +3183,7 @@ class AnalysisManager:
                     for ch1 in range(self.num_ch):
                         for ch2 in range(self.num_ch):
                             # Select the specific xcorr plot
-                            print("Channels %s %s" % (ch1, ch2))
+                            print("Batch: %s ;   Channels %s %s" % (b, ch1, ch2))
                             cond1 = acorr_df['channel_static'] == ch1
                             cond2 = acorr_df['channel_mobile'] == ch2
                             cond = cond1 & cond2
@@ -3906,7 +3906,7 @@ class AnalysisManager:
         p01 = [7e1, 400.0]#[5e2, 5., 1.0, 0.] ######[7e2, 0.9, 500.0, 0.]
         p02 = [7e1, 500.0]#[5e2, -0.5, 100.0, 0.]
         p03 = [7e1, 600.0]#[7e2, 0.9, 500.0, 0.]
-        init_params_gabor = [p02]#[p01, p02, p03]#, p04]
+        init_params_gabor = [p01, p02, p03]#[p02]#[p01, p02, p03]#, p04]
 
         for bg_angle_index, bg in enumerate(batch_groups):
 
@@ -3923,7 +3923,7 @@ class AnalysisManager:
 
                 for i, label in enumerate(['during', 'outside']):
                     for ch in range(self.num_ch):
-                        print("Channels %s" % (ch))
+                        print("Batch: %s ;   Channel %s" % (b, ch))
 
                         # Select the df for this batch and this time-period
                         acorr_df = dfs_all[ch][b - (len(bg) * bg_angle_index)][i]
@@ -4535,53 +4535,53 @@ class AnalysisManager:
 
 
 
-    def single_neuron_dynamics_plot_Ham_case(self):
-        """The oscillatory dynamics of a randomly selected neuron in the HD
-        networks. But also include activations of the momentum variables."""
-        print("Plotting single neuron dynamics (Hamiltonian case)")
-        model_exp_name = self.primary_model_exp_name
-        var_names = ['energy', 'state', 'momenta', 'grad']
-        var_label_pairs = [('energy_1', 'Energy'),
-                           ('momenta_1', 'Momenta'),
-                           ('state_1', 'State'),
-                           ('grad_1', 'Gradient')]
-
-        # Extract data from storage into DataManager
-        dm = datamanager.DataManager(root_path=self.args.root_path,
-                                     model_exp_name=model_exp_name,
-                                     var_names=var_names,
-                                     state_layers=[1],
-                                     batches=[0],#range(6,11),
-                                     channels=[3],
-                                     hw=[[14,14],[15,15]],
-                                     timesteps=range(0, 6999))
-
-        # Process data before putting in a dataframe
-        reshaped_data = [np.arange(len(dm.timesteps)).reshape(
-            len(dm.timesteps), 1)]
-        reshaped_data.extend([
-                    dm.data[var].reshape(len(dm.timesteps), -1) for var, _ in var_label_pairs])
-        data = np.concatenate(reshaped_data, axis=1)
-        colnames = ['Timestep']
-        colnames.extend([label for var, label in var_label_pairs])
-        df = pd.DataFrame(data, columns=colnames)
-
-        # Make one plot per variable
-        for var, label in var_label_pairs:
-            sns.set(style="darkgrid")
-            plot = sns.lineplot(x="Timestep", y=label, data=df)
-            plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
-            plt.tight_layout()  # Stops y label being cut off
-            fig = plot.get_figure()
-            fig.savefig(self.session_dir + '/' + 'plot_%s.png' % label)
-            fig.clf()  # Clears figure so plots aren't put on top of one another
-
-        # Make pairs plot
-        g = sns.PairGrid(df)
-        g.map(sns.lineplot)
-        g.savefig(self.session_dir + '/' + 'pairs plot.png')
-        plt.close()
-        # plot two plots, one for state/energy and the other for momenta
+    # def single_neuron_dynamics_plot_Ham_case(self):
+    #     """The oscillatory dynamics of a randomly selected neuron in the HD
+    #     networks. But also include activations of the momentum variables."""
+    #     print("Plotting single neuron dynamics (Hamiltonian case)")
+    #     model_exp_name = self.primary_model_exp_name
+    #     var_names = ['energy', 'state', 'momenta', 'grad']
+    #     var_label_pairs = [('energy_1', 'Energy'),
+    #                        ('momenta_1', 'Momenta'),
+    #                        ('state_1', 'State'),
+    #                        ('grad_1', 'Gradient')]
+    #
+    #     # Extract data from storage into DataManager
+    #     dm = datamanager.DataManager(root_path=self.args.root_path,
+    #                                  model_exp_name=model_exp_name,
+    #                                  var_names=var_names,
+    #                                  state_layers=[1],
+    #                                  batches=[0],#range(6,11),
+    #                                  channels=[3],
+    #                                  hw=[[14,14],[15,15]],
+    #                                  timesteps=range(0, 6999))
+    #
+    #     # Process data before putting in a dataframe
+    #     reshaped_data = [np.arange(len(dm.timesteps)).reshape(
+    #         len(dm.timesteps), 1)]
+    #     reshaped_data.extend([
+    #                 dm.data[var].reshape(len(dm.timesteps), -1) for var, _ in var_label_pairs])
+    #     data = np.concatenate(reshaped_data, axis=1)
+    #     colnames = ['Timestep']
+    #     colnames.extend([label for var, label in var_label_pairs])
+    #     df = pd.DataFrame(data, columns=colnames)
+    #
+    #     # Make one plot per variable
+    #     for var, label in var_label_pairs:
+    #         sns.set(style="darkgrid")
+    #         plot = sns.lineplot(x="Timestep", y=label, data=df)
+    #         plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
+    #         plt.tight_layout()  # Stops y label being cut off
+    #         fig = plot.get_figure()
+    #         fig.savefig(self.session_dir + '/' + 'plot_%s.png' % label)
+    #         fig.clf()  # Clears figure so plots aren't put on top of one another
+    #
+    #     # Make pairs plot
+    #     g = sns.PairGrid(df)
+    #     g.map(sns.lineplot)
+    #     g.savefig(self.session_dir + '/' + 'pairs plot.png')
+    #     plt.close()
+    #     # plot two plots, one for state/energy and the other for momenta
 
 
     def single_neuron_dynamics_plot_LD_case(self):
@@ -4589,265 +4589,265 @@ class AnalysisManager:
         networks."""
         raise NotImplementedError()
 
-    def single_neuron_autocorrelation(self):
-        """The oscillatory dynamics of a randomly selected neuron in the HD
-        networks. But also include activations of the momentum variables."""
-        print("Plotting the autocorrelation of a single neuron")
-        model_exp_name = self.primary_model_exp_name
-        var_names = ['energy', 'state', 'momenta', 'grad']
-        var_label_pairs = [('energy_1', 'Energy'),
-                           ('momenta_1', 'Momenta'),
-                           ('state_1', 'State'),
-                           ('grad_1', 'Gradient')]
+    # def single_neuron_autocorrelation(self):
+    #     """The oscillatory dynamics of a randomly selected neuron in the HD
+    #     networks. But also include activations of the momentum variables."""
+    #     print("Plotting the autocorrelation of a single neuron")
+    #     model_exp_name = self.primary_model_exp_name
+    #     var_names = ['energy', 'state', 'momenta', 'grad']
+    #     var_label_pairs = [('energy_1', 'Energy'),
+    #                        ('momenta_1', 'Momenta'),
+    #                        ('state_1', 'State'),
+    #                        ('grad_1', 'Gradient')]
+    #
+    #     # Extract data from storage into DataManager
+    #     dm = datamanager.DataManager(root_path=self.args.root_path,
+    #                                  model_exp_name=model_exp_name,
+    #                                  var_names=var_names,
+    #                                  state_layers=[1],
+    #                                  batches=[0],#range(6,11),
+    #                                  channels=[3],
+    #                                  hw=[[14,14],[15,15]],
+    #                                  timesteps=range(0, 6999))
+    #
+    #     # Process data before putting in a dataframe
+    #     reshaped_data = [np.arange(len(dm.timesteps)).reshape(
+    #         len(dm.timesteps), 1)]
+    #     reshaped_data.extend([
+    #                 dm.data[var].reshape(len(dm.timesteps), -1) for var, _ in var_label_pairs])
+    #     data = np.concatenate(reshaped_data, axis=1)
+    #     colnames = ['Timestep']
+    #     colnames.extend([label for var, label in var_label_pairs])
+    #     df = pd.DataFrame(data, columns=colnames)
+    #
+    #     # Make one autocorrelation plot per variable
+    #     for var, label in var_label_pairs:
+    #         sns.set(style="darkgrid")
+    #         _, _, plot1, plot2 = plt.acorr(df[label],
+    #                                        detrend=lambda x: x - np.mean(x),
+    #                                        maxlags=2000)
+    #         plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
+    #         plt.tight_layout()  # Stops y label being cut off
+    #         fig = plot1.get_figure()
+    #         fig.savefig(self.session_dir + '/' + 'plot_acf_%s.png' % label)
+    #         fig.clf()
 
-        # Extract data from storage into DataManager
-        dm = datamanager.DataManager(root_path=self.args.root_path,
-                                     model_exp_name=model_exp_name,
-                                     var_names=var_names,
-                                     state_layers=[1],
-                                     batches=[0],#range(6,11),
-                                     channels=[3],
-                                     hw=[[14,14],[15,15]],
-                                     timesteps=range(0, 6999))
+    # def two_neuron_crosscorrelation(self):
+    #     """The oscillatory dynamics of a randomly selected neuron in the HD
+    #     networks. But also include activations of the momentum variables."""
+    #     print("Plotting the cross correlation between two neurons")
+    #     model_exp_name = self.primary_model_exp_name
+    #     var_names = ['energy', 'state', 'momenta', 'grad']
+    #     var_label_pairs = [('energy_1', 'Energy'),
+    #                        ('momenta_1', 'Momenta'),
+    #                        ('state_1', 'State'),
+    #                        ('grad_1', 'Gradient')]
+    #
+    #     # Extract data from storage into DataManager
+    #     dm1 = datamanager.DataManager(root_path=self.args.root_path,
+    #                                   model_exp_name=model_exp_name,
+    #                                   var_names=var_names,
+    #                                   state_layers=[1],
+    #                                   batches=[0],#range(6,11),
+    #                                   channels=[3],
+    #                                   hw=[[14,14],[15,15]],
+    #                                   timesteps=range(0, 6999))
+    #     dm2 = datamanager.DataManager(root_path=self.args.root_path,
+    #                                   model_exp_name=model_exp_name,
+    #                                   var_names=var_names,
+    #                                   state_layers=[1],
+    #                                   batches=[0],#range(6,11),
+    #                                   channels=[3],
+    #                                   hw=[[20,20],[21,21]],
+    #                                   timesteps=range(0, 6999))
+    #
+    #
+    #     # Process data before putting in a dataframe
+    #     reshaped_data1 = [np.arange(len(dm1.timesteps)).reshape(
+    #         len(dm1.timesteps), 1)]
+    #     reshaped_data1.extend([
+    #                 dm1.data[var].reshape(len(dm1.timesteps), -1) for var, _ in var_label_pairs])
+    #     data1 = np.concatenate(reshaped_data1, axis=1)
+    #
+    #     reshaped_data2 = [np.arange(len(dm2.timesteps)).reshape(
+    #         len(dm2.timesteps), 1)]
+    #     reshaped_data2.extend([
+    #         dm2.data[var].reshape(len(dm2.timesteps), -1) for var, _ in
+    #         var_label_pairs])
+    #     data2 = np.concatenate(reshaped_data2, axis=1)
+    #
+    #     colnames = ['Timestep']
+    #     colnames.extend([label for var, label in var_label_pairs])
+    #     df1 = pd.DataFrame(data1, columns=colnames)
+    #     df2 = pd.DataFrame(data2, columns=colnames)
+    #
+    #     # Make one autocorrelation plot per variable
+    #     for var, label in var_label_pairs:
+    #         fig, ax = plt.subplots()
+    #         sns.set(style="darkgrid")
+    #         ax.set_title("%s cross correlation for random neurons" % label)
+    #         _, _, plot1, plot2 = plt.xcorr(x=df1[label],
+    #                                        y=df2[label],
+    #                                        detrend=lambda x: x - np.mean(x),
+    #                                        maxlags=2000)
+    #         plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
+    #         plt.tight_layout()  # Stops y label being cut off
+    #         fig = plot1.get_figure()
+    #         fig.savefig(self.session_dir + '/' + 'plot_xcf3_%s.png' % label)
+    #         fig.clf()
 
-        # Process data before putting in a dataframe
-        reshaped_data = [np.arange(len(dm.timesteps)).reshape(
-            len(dm.timesteps), 1)]
-        reshaped_data.extend([
-                    dm.data[var].reshape(len(dm.timesteps), -1) for var, _ in var_label_pairs])
-        data = np.concatenate(reshaped_data, axis=1)
-        colnames = ['Timestep']
-        colnames.extend([label for var, label in var_label_pairs])
-        df = pd.DataFrame(data, columns=colnames)
+    # def plot_energy_timeseries(self):
+    #     """Plot the decrease in energy as time progresses. Should be faster
+    #     in the HD case than in the LD case."""
+    #     print("Plotting the decrease in energy over time for both HD and LD")
+    #
+    #     # TODO
+    #     #  still need to run the LD experiments
+    #     #  then need to confirm this is working
+    #     #  Confirm what the error bars in their figure are and include them
+    #     var_names = ['energy']
+    #     var_label_pairs = [('energy_1', 'Energy (HD)'),
+    #                        ('energy_1', 'Energy (LD)')]
+    #     hd_model_exp_name = self.primary_model_exp_name
+    #     # TODO change the LD model name when you've done the inference
+    #     ld_model_exp_name = self.primary_model_exp_name
+    #
+    #     # Extract data from storage into DataManager
+    #     hd_dm = datamanager.DataManager(root_path=self.args.root_path,
+    #                                      model_exp_name=hd_model_exp_name,
+    #                                      var_names=var_names,
+    #                                      state_layers=[1],
+    #                                      batches=None,  # range(6,11),
+    #                                      channels=None,
+    #                                      hw=[[14,14],[15,15]],
+    #                                      timesteps=range(1, 100))
+    #     ld_dm = datamanager.DataManager(root_path=self.args.root_path,
+    #                                      model_exp_name=ld_model_exp_name,
+    #                                      var_names=var_names,
+    #                                      state_layers=[1],
+    #                                      batches=None,
+    #                                      channels=None,
+    #                                      hw=[[14,14],[15,15]],
+    #                                      timesteps=range(1, 100))
+    #
+    #     # Process data before putting in a dataframe
+    #     hd_energysum = hd_dm.data['energy_1'].sum(axis=(1, 2, 3, 4))
+    #     ld_energysum = ld_dm.data['energy_1'].sum(axis=(1, 2, 3, 4))
+    #
+    #     reshaped_data = [np.arange(len(hd_dm.timesteps)).reshape(
+    #         len(hd_dm.timesteps), 1)]
+    #     reshaped_data.extend([
+    #         hd_energysum.reshape(len(hd_dm.timesteps), -1)])
+    #     reshaped_data.extend([
+    #         ld_energysum.reshape(len(ld_dm.timesteps), -1)])
+    #
+    #     data = np.concatenate(reshaped_data, axis=1)
+    #     colnames = ['Timestep']
+    #     colnames.extend([label for var, label in var_label_pairs])
+    #     df = pd.DataFrame(data, columns=colnames)
+    #
+    #     # Plot the data in the dataframe, overlaying the HD and LD cases in
+    #     # one plot
+    #     sns.set(style="darkgrid")
+    #     plot1 = sns.lineplot(x="Timestep", y='Energy (HD)', data=df)
+    #     plot2 = sns.lineplot(x="Timestep", y='Energy (LD)', data=df)
+    #     plt.ticklabel_format(axis="y", style="sci",
+    #                          scilimits=(0, 0))  # Uses sci notation for units
+    #     plt.tight_layout()  # Stops y label being cut off
+    #     fig = plot1.get_figure()
+    #     fig.savefig(self.session_dir + '/' + 'plot_2%s.png' % 'HDLD_energy')
 
-        # Make one autocorrelation plot per variable
-        for var, label in var_label_pairs:
-            sns.set(style="darkgrid")
-            _, _, plot1, plot2 = plt.acorr(df[label],
-                                           detrend=lambda x: x - np.mean(x),
-                                           maxlags=2000)
-            plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
-            plt.tight_layout()  # Stops y label being cut off
-            fig = plot1.get_figure()
-            fig.savefig(self.session_dir + '/' + 'plot_acf_%s.png' % label)
-            fig.clf()
-
-    def two_neuron_crosscorrelation(self):
-        """The oscillatory dynamics of a randomly selected neuron in the HD
-        networks. But also include activations of the momentum variables."""
-        print("Plotting the cross correlation between two neurons")
-        model_exp_name = self.primary_model_exp_name
-        var_names = ['energy', 'state', 'momenta', 'grad']
-        var_label_pairs = [('energy_1', 'Energy'),
-                           ('momenta_1', 'Momenta'),
-                           ('state_1', 'State'),
-                           ('grad_1', 'Gradient')]
-
-        # Extract data from storage into DataManager
-        dm1 = datamanager.DataManager(root_path=self.args.root_path,
-                                      model_exp_name=model_exp_name,
-                                      var_names=var_names,
-                                      state_layers=[1],
-                                      batches=[0],#range(6,11),
-                                      channels=[3],
-                                      hw=[[14,14],[15,15]],
-                                      timesteps=range(0, 6999))
-        dm2 = datamanager.DataManager(root_path=self.args.root_path,
-                                      model_exp_name=model_exp_name,
-                                      var_names=var_names,
-                                      state_layers=[1],
-                                      batches=[0],#range(6,11),
-                                      channels=[3],
-                                      hw=[[20,20],[21,21]],
-                                      timesteps=range(0, 6999))
-
-
-        # Process data before putting in a dataframe
-        reshaped_data1 = [np.arange(len(dm1.timesteps)).reshape(
-            len(dm1.timesteps), 1)]
-        reshaped_data1.extend([
-                    dm1.data[var].reshape(len(dm1.timesteps), -1) for var, _ in var_label_pairs])
-        data1 = np.concatenate(reshaped_data1, axis=1)
-
-        reshaped_data2 = [np.arange(len(dm2.timesteps)).reshape(
-            len(dm2.timesteps), 1)]
-        reshaped_data2.extend([
-            dm2.data[var].reshape(len(dm2.timesteps), -1) for var, _ in
-            var_label_pairs])
-        data2 = np.concatenate(reshaped_data2, axis=1)
-
-        colnames = ['Timestep']
-        colnames.extend([label for var, label in var_label_pairs])
-        df1 = pd.DataFrame(data1, columns=colnames)
-        df2 = pd.DataFrame(data2, columns=colnames)
-
-        # Make one autocorrelation plot per variable
-        for var, label in var_label_pairs:
-            fig, ax = plt.subplots()
-            sns.set(style="darkgrid")
-            ax.set_title("%s cross correlation for random neurons" % label)
-            _, _, plot1, plot2 = plt.xcorr(x=df1[label],
-                                           y=df2[label],
-                                           detrend=lambda x: x - np.mean(x),
-                                           maxlags=2000)
-            plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
-            plt.tight_layout()  # Stops y label being cut off
-            fig = plot1.get_figure()
-            fig.savefig(self.session_dir + '/' + 'plot_xcf3_%s.png' % label)
-            fig.clf()
-
-    def plot_energy_timeseries(self):
-        """Plot the decrease in energy as time progresses. Should be faster
-        in the HD case than in the LD case."""
-        print("Plotting the decrease in energy over time for both HD and LD")
-
-        # TODO
-        #  still need to run the LD experiments
-        #  then need to confirm this is working
-        #  Confirm what the error bars in their figure are and include them
-        var_names = ['energy']
-        var_label_pairs = [('energy_1', 'Energy (HD)'),
-                           ('energy_1', 'Energy (LD)')]
-        hd_model_exp_name = self.primary_model_exp_name
-        # TODO change the LD model name when you've done the inference
-        ld_model_exp_name = self.primary_model_exp_name
-
-        # Extract data from storage into DataManager
-        hd_dm = datamanager.DataManager(root_path=self.args.root_path,
-                                         model_exp_name=hd_model_exp_name,
-                                         var_names=var_names,
-                                         state_layers=[1],
-                                         batches=None,  # range(6,11),
-                                         channels=None,
-                                         hw=[[14,14],[15,15]],
-                                         timesteps=range(1, 100))
-        ld_dm = datamanager.DataManager(root_path=self.args.root_path,
-                                         model_exp_name=ld_model_exp_name,
-                                         var_names=var_names,
-                                         state_layers=[1],
-                                         batches=None,
-                                         channels=None,
-                                         hw=[[14,14],[15,15]],
-                                         timesteps=range(1, 100))
-
-        # Process data before putting in a dataframe
-        hd_energysum = hd_dm.data['energy_1'].sum(axis=(1, 2, 3, 4))
-        ld_energysum = ld_dm.data['energy_1'].sum(axis=(1, 2, 3, 4))
-
-        reshaped_data = [np.arange(len(hd_dm.timesteps)).reshape(
-            len(hd_dm.timesteps), 1)]
-        reshaped_data.extend([
-            hd_energysum.reshape(len(hd_dm.timesteps), -1)])
-        reshaped_data.extend([
-            ld_energysum.reshape(len(ld_dm.timesteps), -1)])
-
-        data = np.concatenate(reshaped_data, axis=1)
-        colnames = ['Timestep']
-        colnames.extend([label for var, label in var_label_pairs])
-        df = pd.DataFrame(data, columns=colnames)
-
-        # Plot the data in the dataframe, overlaying the HD and LD cases in
-        # one plot
-        sns.set(style="darkgrid")
-        plot1 = sns.lineplot(x="Timestep", y='Energy (HD)', data=df)
-        plot2 = sns.lineplot(x="Timestep", y='Energy (LD)', data=df)
-        plt.ticklabel_format(axis="y", style="sci",
-                             scilimits=(0, 0))  # Uses sci notation for units
-        plt.tight_layout()  # Stops y label being cut off
-        fig = plot1.get_figure()
-        fig.savefig(self.session_dir + '/' + 'plot_2%s.png' % 'HDLD_energy')
-
-    def timeseries_EI_balance(self):
-        """As in Fig 5 of Aitcheson and Lengyel (2016)."""
-        print("Plotting the timeseries of the sum of the potential energy"+
-              " and the kinetic energy to demonstrate EI balance")
-        model_exp_name = self.primary_model_exp_name
-        var_names = ['energy', 'state', 'momenta', 'grad']
-        dm = datamanager.DataManager(root_path=self.args.root_path,
-                                     model_exp_name=model_exp_name,
-                                     var_names=var_names,
-                                     state_layers=[1],
-                                     batches=None,
-                                     channels=[3],
-                                     hw=[[14,14],[15,15]],
-                                     timesteps=range(0, 6999))
-
-        var_label_pairs = [('momenta_1', 'Momenta'),
-                           ('energy_1', 'Energy'),
-                           ('state_1', 'State'),
-                           ('grad_1', 'Gradient')]
-
-        # Put data into a df
-        data = [dm.data[var].sum(axis=(2,3,4))
-                              for var, _ in var_label_pairs
-                if var in ['momenta_1', 'energy_1']] #gets only mom and energy and unsqueezes
-        data = [v - v.mean(axis=0) for v in data]
-        reshaped_data = [rsd.reshape(len(dm.timesteps), self.num_batches)
-                              for rsd in data] # make into columns
-        summed_data = reshaped_data[0] + reshaped_data[1]  # Sum momenta and energy
-
-        num_ts = len(dm.timesteps)
-        timesteps = [np.arange(num_ts).reshape(num_ts, 1)] * self.num_batches #time idxs
-        timesteps = np.concatenate(timesteps, axis=0)
-        summed_data = summed_data.reshape(num_ts * self.num_batches, 1)
-        df_data = np.concatenate([timesteps, summed_data], axis=1)
-        colnames = ['Timestep', 'Mean-centred sum of momentum and energy']
-        df = pd.DataFrame(df_data, columns=colnames)
-
-        # Plot the data in the dataframe
-        sns.set(style="darkgrid")
-        plot = sns.lineplot(x=colnames[0],
-                            y=colnames[1],
-                            data=df)
-        #plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
-        plt.tight_layout()  # Stops y label being cut off
-        fig = plot.get_figure()
-        fig.savefig(self.session_dir + '/' + 'plot_%s vs %s.png' % (colnames[1], colnames[0]))
-        fig.clf()  # Clears figure so plots aren't put on top of one another
+    # def timeseries_EI_balance(self):
+    #     """As in Fig 5 of Aitcheson and Lengyel (2016)."""
+    #     print("Plotting the timeseries of the sum of the potential energy"+
+    #           " and the kinetic energy to demonstrate EI balance")
+    #     model_exp_name = self.primary_model_exp_name
+    #     var_names = ['energy', 'state', 'momenta', 'grad']
+    #     dm = datamanager.DataManager(root_path=self.args.root_path,
+    #                                  model_exp_name=model_exp_name,
+    #                                  var_names=var_names,
+    #                                  state_layers=[1],
+    #                                  batches=None,
+    #                                  channels=[3],
+    #                                  hw=[[14,14],[15,15]],
+    #                                  timesteps=range(0, 6999))
+    #
+    #     var_label_pairs = [('momenta_1', 'Momenta'),
+    #                        ('energy_1', 'Energy'),
+    #                        ('state_1', 'State'),
+    #                        ('grad_1', 'Gradient')]
+    #
+    #     # Put data into a df
+    #     data = [dm.data[var].sum(axis=(2,3,4))
+    #                           for var, _ in var_label_pairs
+    #             if var in ['momenta_1', 'energy_1']] #gets only mom and energy and unsqueezes
+    #     data = [v - v.mean(axis=0) for v in data]
+    #     reshaped_data = [rsd.reshape(len(dm.timesteps), self.num_batches)
+    #                           for rsd in data] # make into columns
+    #     summed_data = reshaped_data[0] + reshaped_data[1]  # Sum momenta and energy
+    #
+    #     num_ts = len(dm.timesteps)
+    #     timesteps = [np.arange(num_ts).reshape(num_ts, 1)] * self.num_batches #time idxs
+    #     timesteps = np.concatenate(timesteps, axis=0)
+    #     summed_data = summed_data.reshape(num_ts * self.num_batches, 1)
+    #     df_data = np.concatenate([timesteps, summed_data], axis=1)
+    #     colnames = ['Timestep', 'Mean-centred sum of momentum and energy']
+    #     df = pd.DataFrame(df_data, columns=colnames)
+    #
+    #     # Plot the data in the dataframe
+    #     sns.set(style="darkgrid")
+    #     plot = sns.lineplot(x=colnames[0],
+    #                         y=colnames[1],
+    #                         data=df)
+    #     #plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
+    #     plt.tight_layout()  # Stops y label being cut off
+    #     fig = plot.get_figure()
+    #     fig.savefig(self.session_dir + '/' + 'plot_%s vs %s.png' % (colnames[1], colnames[0]))
+    #     fig.clf()  # Clears figure so plots aren't put on top of one another
 
 
-    def xcorr_EI_lag(self):
-        """As in Fig 5 of Aitcheson and Lengyel (2016).
-
-        It's supposed to show that the excitation leads the inhibition slightly
-        by showing a peak offset in the Xcorr plot. But """
-        print("Plotting the cross correlation between energy and momentum")
-        model_exp_name = self.primary_model_exp_name
-        var_names = ['energy', 'state', 'momenta', 'grad']
-        dm = datamanager.DataManager(root_path=self.args.root_path,
-                                     model_exp_name=model_exp_name,
-                                     var_names=var_names,
-                                     state_layers=[1],
-                                     batches=None,
-                                     channels=[3],
-                                     hw=[[14,14],[15,15]],
-                                     timesteps=range(0, 6999))
-
-        var_label_pairs = [('momenta_1', 'Momenta'),
-                           ('energy_1', 'Energy')]
-
-        # Process data before plotting
-        data = [dm.data[var].sum(axis=(2,3,4))
-                              for var, _ in var_label_pairs]  #unsqueezes
-        data = [v - v.mean(axis=0) for v in data]  # mean of timeseries to centre
-        reshaped_data = [rsd.reshape(len(dm.timesteps), self.num_batches)
-                              for rsd in data]  # make into columns
-        mean_data = [np.mean(rsdata, axis=1) for rsdata in reshaped_data]  # takes mean across batches
-
-        # Plot
-        sns.set(style="darkgrid")
-        fig, ax = plt.subplots()
-        ax.set_title("Cross correlation avg. momentum and avg. energy")
-        _, _, plot1, plot2 = plt.xcorr(x=mean_data[1],#1 is energy
-                                       y=mean_data[0],#0 is momentum
-                                       detrend=lambda x: x - np.mean(x),
-                                       maxlags=300)
-        plt.ticklabel_format(axis="y", style="sci",
-                             scilimits=(0, 0))  # Uses sci notation for units
-        plt.tight_layout()  # Stops y label being cut off
-        fig = plot1.get_figure()
-        fig.savefig(self.session_dir + '/' + 'plot_xcf_avgmom_avgenergy.png')
-        fig.clf()
+    # def xcorr_EI_lag(self):
+    #     """As in Fig 5 of Aitcheson and Lengyel (2016).
+    #
+    #     It's supposed to show that the excitation leads the inhibition slightly
+    #     by showing a peak offset in the Xcorr plot. But """
+    #     print("Plotting the cross correlation between energy and momentum")
+    #     model_exp_name = self.primary_model_exp_name
+    #     var_names = ['energy', 'state', 'momenta', 'grad']
+    #     dm = datamanager.DataManager(root_path=self.args.root_path,
+    #                                  model_exp_name=model_exp_name,
+    #                                  var_names=var_names,
+    #                                  state_layers=[1],
+    #                                  batches=None,
+    #                                  channels=[3],
+    #                                  hw=[[14,14],[15,15]],
+    #                                  timesteps=range(0, 6999))
+    #
+    #     var_label_pairs = [('momenta_1', 'Momenta'),
+    #                        ('energy_1', 'Energy')]
+    #
+    #     # Process data before plotting
+    #     data = [dm.data[var].sum(axis=(2,3,4))
+    #                           for var, _ in var_label_pairs]  #unsqueezes
+    #     data = [v - v.mean(axis=0) for v in data]  # mean of timeseries to centre
+    #     reshaped_data = [rsd.reshape(len(dm.timesteps), self.num_batches)
+    #                           for rsd in data]  # make into columns
+    #     mean_data = [np.mean(rsdata, axis=1) for rsdata in reshaped_data]  # takes mean across batches
+    #
+    #     # Plot
+    #     sns.set(style="darkgrid")
+    #     fig, ax = plt.subplots()
+    #     ax.set_title("Cross correlation avg. momentum and avg. energy")
+    #     _, _, plot1, plot2 = plt.xcorr(x=mean_data[1],#1 is energy
+    #                                    y=mean_data[0],#0 is momentum
+    #                                    detrend=lambda x: x - np.mean(x),
+    #                                    maxlags=300)
+    #     plt.ticklabel_format(axis="y", style="sci",
+    #                          scilimits=(0, 0))  # Uses sci notation for units
+    #     plt.tight_layout()  # Stops y label being cut off
+    #     fig = plot1.get_figure()
+    #     fig.savefig(self.session_dir + '/' + 'plot_xcf_avgmom_avgenergy.png')
+    #     fig.clf()
 
     def plot_pixel_vs_activity(self):
         print("Plotting pixel vs activity map")
