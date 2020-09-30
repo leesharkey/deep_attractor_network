@@ -20,7 +20,8 @@ class AnalysisManager:
         # self.large_storage_loc = "/media/lee/DATA/DDocs/AI_neuro_work/DAN"
 
         # Define model name paths
-        self.primary_model = "20200731-040415__rndidx_60805_loaded20200722-144054__rndidx_25624_experiment_at_8490its"
+        self.primary_model = "20200929-025034__rndidx_55061_loaded20200922-152859__rndidx_22892_at_47500_its"
+        #self.primary_model = "20200731-040415__rndidx_60805_loaded20200722-144054__rndidx_25624_experiment_at_8490its" #main one that preliminary analysis was before moving to final
         #self.primary_model = "20200812-223329__rndidx_31944_loaded20200808-163842__rndidx_90277"
         #self.primary_model = "20200808-114216__rndidx_11284_loaded20200723-124229__rndidx_32787"
         #self.primary_model = "20200731-040415__rndidx_60805_loaded20200722-144054__rndidx_25624_experiment_at_8490its"
