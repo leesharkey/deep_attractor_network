@@ -291,7 +291,7 @@ class AnalysisManager:
             angles = self.just_angles_few_angles_angles
             contrasts = self.just_angles_few_angles_contrasts
             angle_contrast_pairs = \
-                self.just_angle_few_angles_angles_contrast_pairs
+                self.just_angle_few_angles_angle_contrast_pairs
         elif exp_type == 'long_just_fewangles':
             model_exp_name = self.long_just_angles_exp_name
             angles = self.long_just_angle_angles

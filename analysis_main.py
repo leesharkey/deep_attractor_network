@@ -45,8 +45,8 @@ def main():
 
     # In each experiment, find the active neurons, the mean activities
     # during and outside of stimulation, and shapiro tests.
-    am.find_active_neurons('primary')
-    am.find_active_neurons('just_angles')
+    # am.find_active_neurons('primary')
+    # am.find_active_neurons('just_angles')
     am.find_active_neurons('just_angles_few_angles')
     am.find_active_neurons('double_stim')
     am.find_active_neurons('long_just_fewangles')
