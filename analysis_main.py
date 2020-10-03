@@ -65,12 +65,11 @@ def main():
     # am.plot_contrast_specgram_comparison_local(None)
     # am.plot_contrast_specgram_comparison_LFP()
     # am.plot_contrast_power_spectra_LFP()
-    am.plot_contrast_dependent_transients_of_active_neurons('patch')
-    am.plot_contrast_dependent_transients_of_active_neurons(None)
-
-    am.plot_state_traces('patch')
-    am.plot_state_traces()
-    am.plot_single_neuron_state_traces()
+    # am.plot_contrast_dependent_transients_of_active_neurons('patch')
+    # am.plot_contrast_dependent_transients_of_active_neurons(None)
+    #
+    # am.plot_state_traces('patch')
+    # am.plot_state_traces()
     #TODO: am.plot_single_neuron_energy_traces()
     # TODO: am.plot_single_neuron_mom_traces()
     am.find_oscillating_neurons()  #memory error?
