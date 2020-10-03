@@ -49,22 +49,22 @@ def main():
     # am.find_active_neurons('just_angles')
     # am.find_active_neurons('just_angles_few_angles')
     # am.find_active_neurons('double_stim')
-    am.find_active_neurons('long_just_fewangles')
-
-    am.print_activity_maps_by_batch_ch()
-    am.print_activity_map_GIFs_by_batch_ch()
-
-    am.print_activity_maps_by_batch_ch('long_just_fewangles')
-    am.print_activity_map_GIFs_by_batch_ch('long_just_fewangles') #TODO fix the exp_name issue for getting state traces
-
-    am.find_orientation_preferences()
-    am.assign_ori_info()
-    am.plot_state_traces_with_spec_and_acorr('patch')
-    am.plot_state_traces_with_spec_and_acorr(None)
-    am.plot_contrast_specgram_comparison_local('patch')
-    am.plot_contrast_specgram_comparison_local(None)
-    am.plot_contrast_specgram_comparison_LFP()
-    am.plot_contrast_power_spectra_LFP()
+    # am.find_active_neurons('long_just_fewangles')
+    #
+    # am.print_activity_maps_by_batch_ch()
+    # am.print_activity_map_GIFs_by_batch_ch()
+    #
+    # am.print_activity_maps_by_batch_ch('long_just_fewangles')
+    # am.print_activity_map_GIFs_by_batch_ch('long_just_fewangles') #TODO fix the exp_name issue for getting state traces
+    #
+    # am.find_orientation_preferences()
+    # am.assign_ori_info()
+    # am.plot_state_traces_with_spec_and_acorr('patch')
+    # am.plot_state_traces_with_spec_and_acorr(None)
+    # am.plot_contrast_specgram_comparison_local('patch')
+    # am.plot_contrast_specgram_comparison_local(None)
+    # am.plot_contrast_specgram_comparison_LFP()
+    # am.plot_contrast_power_spectra_LFP()
     am.plot_contrast_dependent_transients_of_active_neurons('patch')
     am.plot_contrast_dependent_transients_of_active_neurons(None)
 
