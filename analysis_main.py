@@ -52,6 +52,8 @@ def main():
     # am.find_active_neurons('long_just_fewangles')
     #
     # am.print_activity_maps_by_batch_ch()
+    # am.make_retinotopy_figure()
+
     # am.print_activity_map_GIFs_by_batch_ch()
     #
     # am.print_activity_maps_by_batch_ch('long_just_fewangles')
@@ -70,10 +72,14 @@ def main():
     #
     # am.plot_state_traces('patch')
     # am.plot_state_traces()
-    #TODO: am.plot_single_neuron_energy_traces()
-    # TODO: am.plot_single_neuron_mom_traces()
-    am.find_oscillating_neurons()  #memory error?
-    am.plot_contrast_frequency_plots()
+
+
+    # am.boop()
+    #
+    # #TODO: am.plot_single_neuron_energy_traces()
+    # # TODO: am.plot_single_neuron_mom_traces()
+    # am.find_oscillating_neurons()  #memory error?
+    # am.plot_contrast_frequency_plots()
 
 
     # #am.single_neuron_dynamics_plot_Ham_case()
