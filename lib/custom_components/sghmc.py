@@ -226,9 +226,10 @@ class SGHMC(Optimizer):
                 lr_scaled = lr / torch.sqrt(scale_grad)
 
                 # Reintroduced from before
-                if self.args.mean_batch_minv_t:
-                    minv_t = minv_t.mean(dim=0)  # average the variances over batches #lee
-                    minv_t = torch.stack(self.batch_size * [minv_t])
+                if hasattr(self.args, 'mean_batch_minv_t'):
+                    if self.args.mean_batch_minv_t:
+                        minv_t = minv_t.mean(dim=0)  # average the variances over batches #lee
+                        minv_t = torch.stack(self.batch_size * [minv_t])
                 # end of reintro
 
                 # TODO remove this experimental feature
