@@ -546,7 +546,7 @@ class FC2(nn.Module):
         layers.append(fc_end)
         self.net = nn.Sequential(*layers)
 
-    def forward(self, inputs, class_id=None): #I think I might have misnamed the pre and post states.
+    def forward(self, inputs, class_id=None):
         reshaped_inps = [inp.view(inp.shape[0], -1) for inp in inputs]
         inputs = torch.cat(reshaped_inps, dim=1)
         pre_quad_out = self.net(inputs)
