@@ -1706,7 +1706,8 @@ class ExperimentalStimuliGenerationManager:
     def double_gabor_image(self,
                              loc=[0, 0],
                              sigma=0.7,
-                             angle=0,
+                             angle1=0,
+                             angle2=0,
                              wavelength=3.0,
                              spat_asp_ratio=0.5,
                              ellipicity=1,
@@ -1726,22 +1727,23 @@ class ExperimentalStimuliGenerationManager:
         #  folder_name='FolderNameUnfilled',
         #  save_image=True)
 
-        static_y = 13
+        static_y = 16
         static_x = 16
 
         loc = np.array(loc) + self.center
         for i in loc:
             if i > 32:
+                print(i)
                 raise ValueError(
                     'Location cannot be outside the bounds of image')
 
         # Get gabor filters
 
-        filtr1 = self.gabor(sigma=0.7, theta=np.pi*0.5, gamma=0.4,
+        filtr1 = self.gabor(sigma=0.7, theta=angle1, gamma=0.4,
                            Lambda=3., psi=1,
                            contrast=contrast)
 
-        filtr2 = self.gabor(sigma=sigma, theta=angle, gamma=spat_asp_ratio,
+        filtr2 = self.gabor(sigma=sigma, theta=angle2, gamma=spat_asp_ratio,
                            Lambda=wavelength, psi=ellipicity,
                            contrast=contrast)
 
@@ -1749,7 +1751,6 @@ class ExperimentalStimuliGenerationManager:
         mask2 = np.zeros_like(self.base_image)
         fshape1 = filtr1.shape
         fshape2 = filtr2.shape
-
 
         # Multiply base masks by filter
         ##1
@@ -1783,9 +1784,10 @@ class ExperimentalStimuliGenerationManager:
             for l in loc:
                 loc_string += str(l) + '-'
             loc_string = loc_string[:-1]
-            save_string = 'gf_loc%s_sgm%s_th%s_w%s_rat%s_el%s_c%s' % (loc_string,
+            save_string = 'gf_loc%s_sgm%s_thst%s_thmb%s_w%s_rat%s_el%s_c%s' % (loc_string,
                                                           '%.5g' % sigma,
-                                                          '%.5f' % angle,
+                                                          '%.5f' % angle1,
+                                                          '%.5f' % angle2,
                                                           '%.5g' % wavelength,
                                                           '%.5g' % spat_asp_ratio,
                                                           '%.5g' % ellipicity,
@@ -2013,8 +2015,12 @@ class ExperimentalStimuliGenerationManager:
 
         contrast = 2.4
 
-        angles = [0.0] * 64
-        angles.extend([np.pi * 0.5] * 64)
+        # angles = [0.0] * 64
+        # angles.extend([np.pi * 0.5] * 64)
+        angles = np.arange(0, 2*np.pi, (np.pi * 2) / 8)
+        angles = list(angles)
+        angles = angles * 16
+        angles = sorted(angles)
 
         # Make the folders to save the images in
         folder_name1 = 'single'
@@ -2048,12 +2054,16 @@ class ExperimentalStimuliGenerationManager:
 
 
         contrast = 2.4
-        angle_min = 0.0
-        angle_max = np.pi * 2
-        angle_incr = (np.pi * 2) / 128
+        # angle_min = 0.0
+        # angle_max = np.pi * 2
+        # angle_incr = (np.pi * 2) / 128
+        # angles = [0.0] * 64
+        # angles.extend([np.pi * 0.5] * 64)
 
-        angles = [0.0] * 64
-        angles.extend([np.pi * 0.5] * 64)
+        angles = np.arange(0, 2*np.pi, (np.pi * 2) / 8)
+        angles = list(angles)
+        angles = angles * 16
+        angles = sorted(angles)
 
         # Make the folders to save the images in
         folder_name1 = 'single'
@@ -2139,82 +2149,82 @@ class ExperimentalStimuliGenerationManager:
                                  save_string,
                                  nrow=1, normalize=True, range=(0, 1))
 
-    def generate_double_gabor_dataset__fewlocs_and_angles(self):
-        folder_name1 = 'double'
-        folder_name2 = 'fewlocs_and_angles'
-
-        full_folder_name = os.path.join(self.save_path_root,
-                                        folder_name1,
-                                        folder_name2)
-
-        if not os.path.exists(os.path.join(self.save_path_root,
-                                  folder_name1)):
-            os.mkdir(os.path.join(self.save_path_root,
-                                  folder_name1))
-        if not os.path.exists(full_folder_name):
-            os.mkdir(os.path.join(self.save_path_root,
-                                  folder_name1,
-                                  folder_name2))
-
-        contrast = 2.4
-
-        angle_min = 0.0
-        angle_max = np.pi * 2
-        angle_incr = (np.pi * 2) / 8
-        angle_range = np.arange(start=angle_min, stop=angle_max,
-                                step=angle_incr)
-
-        y_min = -4
-        y_max = 12
-        y_incr = 2
-        y_range = list(np.arange(y_min, y_max, y_incr))
-
-        x_min = 0
-        x_max = 9
-        x_incr = 8
-        x_range = list(range(x_min, x_max, x_incr))
-        locs = [[i, j] for i in y_range for j in x_range]
-        print(len([(a, l) for a in angle_range for l in locs]))  # remove
-
-        # single_base_im = self.single_gabor_image(angle=0.5*np.pi,
-        #                                          save_image=False)
-        # centred_base_im = single_base_im - self.base_image
-        save_name_idx = 0
-        for loc in locs:
-            for angle in angle_range:
-
-                print([angle, loc])
-                # Create second gabor filter
-                new_im = self.double_gabor_image(angle=angle,
-                                                 loc=loc,
-                                                 contrast=contrast,
-                                                 save_image=False)
-
-                # # Combine first and second images into one
-                # centred_new_im = new_im - self.base_image
-                # centred_combo = centred_new_im + centred_base_im
-                # new_im = centred_combo + self.base_image
-
-                # Create name of image based on attributes
-                loc_string = ''
-                for l in loc:
-                    loc_string += str(l) + '-'
-                loc_string = loc_string[:-1]
-                save_string = '%04d_gf_loc%s_th%s' % (save_name_idx,
-                                                    loc_string, '%.5f' % angle)
-                save_string = os.path.join(self.save_path_root,
-                                           folder_name1,
-                                           folder_name2,
-                                           save_string)
-                save_string += '.png'
-                print(save_string)
-
-                # Save image
-                utils.save_image(new_im,
-                                 save_string,
-                                 nrow=1, normalize=True, range=(0, 1))
-
-                save_name_idx += 1
+    # def generate_double_gabor_dataset__fewlocs_and_angles(self): #not used as far as I remember. Used fewlocs and fewer angles instead.
+    #     folder_name1 = 'double'
+    #     folder_name2 = 'fewlocs_and_angles'
+    #
+    #     full_folder_name = os.path.join(self.save_path_root,
+    #                                     folder_name1,
+    #                                     folder_name2)
+    #
+    #     if not os.path.exists(os.path.join(self.save_path_root,
+    #                               folder_name1)):
+    #         os.mkdir(os.path.join(self.save_path_root,
+    #                               folder_name1))
+    #     if not os.path.exists(full_folder_name):
+    #         os.mkdir(os.path.join(self.save_path_root,
+    #                               folder_name1,
+    #                               folder_name2))
+    #
+    #     contrast = 2.4
+    #
+    #     angle_min = 0.0
+    #     angle_max = np.pi * 2
+    #     angle_incr = (np.pi * 2) / 8
+    #     angle_range = np.arange(start=angle_min, stop=angle_max,
+    #                             step=angle_incr)
+    #
+    #     y_min = -4
+    #     y_max = 12
+    #     y_incr = 2
+    #     y_range = list(np.arange(y_min, y_max, y_incr))
+    #
+    #     x_min = 0
+    #     x_max = 9
+    #     x_incr = 8
+    #     x_range = list(range(x_min, x_max, x_incr))
+    #     locs = [[i, j] for i in y_range for j in x_range]
+    #     print(len([(a, l) for a in angle_range for l in locs]))  # remove
+    #
+    #     # single_base_im = self.single_gabor_image(angle=0.5*np.pi,
+    #     #                                          save_image=False)
+    #     # centred_base_im = single_base_im - self.base_image
+    #     save_name_idx = 0
+    #     for loc in locs:
+    #         for angle in angle_range:
+    #
+    #             print([angle, loc])
+    #             # Create second gabor filter
+    #             new_im = self.double_gabor_image(angle=angle,
+    #                                              loc=loc,
+    #                                              contrast=contrast,
+    #                                              save_image=False)
+    #
+    #             # # Combine first and second images into one
+    #             # centred_new_im = new_im - self.base_image
+    #             # centred_combo = centred_new_im + centred_base_im
+    #             # new_im = centred_combo + self.base_image
+    #
+    #             # Create name of image based on attributes
+    #             loc_string = ''
+    #             for l in loc:
+    #                 loc_string += str(l) + '-'
+    #             loc_string = loc_string[:-1]
+    #             save_string = '%04d_gf_loc%s_th%s' % (save_name_idx,
+    #                                                 loc_string, '%.5f' % angle)
+    #             save_string = os.path.join(self.save_path_root,
+    #                                        folder_name1,
+    #                                        folder_name2,
+    #                                        save_string)
+    #             save_string += '.png'
+    #             print(save_string)
+    #
+    #             # Save image
+    #             utils.save_image(new_im,
+    #                              save_string,
+    #                              nrow=1, normalize=True, range=(0, 1))
+    #
+    #             save_name_idx += 1
 
     def generate_double_gabor_dataset__fewlocs_and_fewerangles(self):
         folder_name1 = 'double'
@@ -2235,56 +2245,102 @@ class ExperimentalStimuliGenerationManager:
 
         contrast = 2.4
 
-        angle_range = [0.0] * 8
-        angle_range.extend([np.pi * 0.5] * 8)
+        # y_min = -4
+        # y_range = [-3, 1, 5, 9]
+        # x_range = [0, 7]
+        # locs = [[i, j] for i in y_range for j in x_range]
+        # print(len([(a, l) for a in angle_range for l in locs]))  # remove
 
-        y_min = -4
-        y_range = [-3, 1, 5, 9]
 
-        x_range = [0, 7]
-        locs = [[i, j] for i in y_range for j in x_range]
-        print(len([(a, l) for a in angle_range for l in locs]))  # remove
+        # Define locations and angles
+        static_angles = np.arange(0, 2*np.pi, np.pi/2)
+        static_angles = list(static_angles) * 32
+        static_angles = sorted(static_angles)
+
+
+        static_loc_x = 0
+        static_loc_y = 0
+        mobile_dists = [3,5,7,10]
+        colin_locs_high = [0+x for x in mobile_dists]
+        colin_locs_low  = [0-x for x in mobile_dists]
+        angles_starts = np.arange(0, 2*np.pi, np.pi/2) # the four 90degr angles
+        angles_starts = list(angles_starts)
+
+        angles = []
+        for angst in angles_starts:
+            pair = [angst]*4
+            pair.extend([angst + np.pi/2]*4)
+            pair = pair * 4
+            angles.extend(pair)
+
+
+        # angles = angles_starts * 4
+        # angles = sorted(angles) * 8
+
+        i = 0
+        locs = []
+        new_locs = [[[static_loc_x, l]]*8 for l in colin_locs_high]
+        for nl in new_locs:
+            locs.extend(nl)
+
+        i += 1
+        new_locs = [[[l, static_loc_y]]*8 for l in colin_locs_low]
+        for nl in new_locs:
+            locs.extend(nl)
+
+
+        i += 1
+        new_locs = [[[static_loc_x, l]]*8 for l in colin_locs_low]
+        for nl in new_locs:
+            locs.extend(nl)
+
+        i += 1
+        new_locs = [[[l, static_loc_y]]*8 for l in colin_locs_high]
+        for nl in new_locs:
+            locs.extend(nl)
+
 
         # single_base_im = self.single_gabor_image(angle=0.5*np.pi,
         #                                          save_image=False)
         # centred_base_im = single_base_im - self.base_image
         save_name_idx = 0
-        for loc in locs:
-            for angle in angle_range:
+        for loc, static_angle, mob_angle in zip(locs, static_angles, angles):
 
-                print([angle, loc])
-                # Create second gabor filter
-                new_im = self.double_gabor_image(angle=angle,
-                                                 loc=loc,
-                                                 contrast=contrast,
-                                                 save_image=False)
+            print([loc, static_angle, mob_angle])
+            # Create second gabor filter
+            new_im = self.double_gabor_image(angle1=static_angle,
+                                             angle2=mob_angle,
+                                             loc=loc,
+                                             contrast=contrast,
+                                             save_image=False)
 
-                # # Combine first and second images into one
-                # centred_new_im = new_im - self.base_image
-                # centred_combo = centred_new_im + centred_base_im
-                # new_im = centred_combo + self.base_image
+            # # Combine first and second images into one
+            # centred_new_im = new_im - self.base_image
+            # centred_combo = centred_new_im + centred_base_im
+            # new_im = centred_combo + self.base_image
 
-                # Create name of image based on attributes
-                loc_string = ''
-                for l in loc:
-                    loc_string += str(l) + '-'
-                loc_string = loc_string[:-1]
-                save_string = '%04d_gf_loc%s_th%s' % (save_name_idx,
-                                                      loc_string,
-                                                      '%.5f' % angle)
-                save_string = os.path.join(self.save_path_root,
-                                           folder_name1,
-                                           folder_name2,
-                                           save_string)
-                save_string += '.png'
-                print(save_string)
+            # Create name of image based on attributes
+            loc_string = ''
+            for l in loc:
+                loc_string += str(l) + '-'
+            loc_string = loc_string[:-1]
+            save_string = '%04d_gf_loc%s_thst%s_thmb%s' % (save_name_idx,
+                                                  loc_string,
+                                                  '%.5f' % static_angle,
+                                                  '%.5f' % mob_angle)
+            save_string = os.path.join(self.save_path_root,
+                                       folder_name1,
+                                       folder_name2,
+                                       save_string)
+            save_string += '.png'
+            print(save_string)
 
-                # Save image
-                utils.save_image(new_im,
-                                 save_string,
-                                 nrow=1, normalize=True, range=(0, 1))
+            # Save image
+            utils.save_image(new_im,
+                             save_string,
+                             nrow=1, normalize=True, range=(0, 1))
 
-                save_name_idx += 1
+            save_name_idx += 1
 
 
 
