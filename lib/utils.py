@@ -53,6 +53,7 @@ def combine_all_csvs(directory_str, base_csv_name='params_and_results.csv',
     full_df = None
     for f in files:
         ext_filename = os.path.join(directory_str, f) #extended_filename
+        print(ext_filename)
         if f.endswith('.csv'):
             new_df = pd.read_csv(ext_filename, header=0, index_col=0)
             dfs += [new_df]
@@ -62,7 +63,6 @@ def combine_all_csvs(directory_str, base_csv_name='params_and_results.csv',
                 full_df = new_df
             if remove_old_csvs:
                 os.rename(ext_filename, os.path.join(archive_path, f))
-            print(ext_filename)
 
     # Concatenate all the dfs together, remove any duplicate rows, and save
     if dfs==[]:

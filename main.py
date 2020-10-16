@@ -1848,12 +1848,8 @@ def main():
         #esgm.generate_single_gabor_dataset__just_angle()
         #esgm.generate_single_gabor_dataset__contrast_and_angle()
         # esgm.generate_single_gabor_dataset__just_angle_few_angles()
-
-
-        #esgm.generate_double_gabor_dataset__loc_and_angles() #don't really use this one
-        esgm.generate_single_gabor_dataset__long_just_fewangles()
-        #esgm.generate_double_gabor_dataset__fewlocs_and_angles() #not used
-        # esgm.generate_double_gabor_dataset__fewlocs_and_fewerangles()
+        # esgm.generate_single_gabor_dataset__long_just_fewangles()
+        esgm.generate_double_gabor_dataset__fewlocs_and_fewerangles()
 
 
     if args.experiment:
