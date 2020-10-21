@@ -649,6 +649,8 @@ class VisualizationManager(Manager):
         for i, s in enumerate(self.args.state_sizes):
             vars(self.args)['state_sizes'][i][0] = 128
 
+        self.all_channel_viz_ims = []
+
     def calc_clamp_array_conv(self, state_layer_idx=None, current_ch=None):
         if state_layer_idx is not None:
             size = self.args.state_sizes[state_layer_idx]
@@ -690,6 +692,9 @@ class VisualizationManager(Manager):
                     self.args.state_sizes[start_layer:], start=start_layer):
                 print("Visualizing channels in state layer %s" % \
                       (state_layer_idx))
+
+                self.all_channel_viz_ims = []  # reset for each statelayer
+
                 num_ch = size[1]
                 for ch in range(num_ch):
                     print("Channel %s" % ch)
@@ -703,6 +708,18 @@ class VisualizationManager(Manager):
                     self.visualization_phase(state_layer_idx,
                                              channel_idx=ch,
                                              clamp_array=clamp_array)
+
+                # Save image of sample of each channel viz
+                ## select first 16 from each channel viz
+                summary_states = [state[0:16] for state in self.all_channel_viz_ims]
+                summary_states = torch.cat(summary_states)
+                utils.save_image(summary_states,
+                                 os.path.join(self.sample_log_dir,
+                                              'lyr' + str(state_layer_idx) + '.png'),
+                                 nrow=16,
+                                 normalize=True,
+                                 range=self.image_range)
+
         else:
             raise ValueError("Invalid argument for viz type.")
 
@@ -805,6 +822,9 @@ class VisualizationManager(Manager):
         # Stop calculting grads w.r.t. images
         for state in states:
             state.detach_()
+
+        if self.args.viz_type == 'channels_state' or self.args.viz_type == 'channels_energy':
+            self.all_channel_viz_ims.append(states[0])
 
         return states
 
@@ -962,9 +982,9 @@ class VisualizationManager(Manager):
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
         #if not self.args.state_optimizer == "sghmc":  LEE This was an offending line
-        for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-            noise.normal_(0, self.sigma)
-            state.data.add_(noise.data)
+        # for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
+        #     noise.normal_(0, self.sigma)
+        #     state.data.add_(noise.data)
 
 
         # The gradient step in the Langevin/SGHMC step
