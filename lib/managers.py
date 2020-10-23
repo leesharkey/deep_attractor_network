@@ -25,6 +25,7 @@ class Manager():
         self.parameters = self.model.parameters()
 
 
+
         if self.args.weights_optimizer == 'sgd':
 
             self.optimizer = optim.SGD(self.parameters,
@@ -171,6 +172,9 @@ class TrainingManager(Manager):
         self.latest_neg_enrg = None
         self.num_it_neg_mean = self.args.num_it_neg
         self.num_it_neg = self.args.num_it_neg
+
+        self.sigma = self.args.sigma
+
 
     def train(self):
         self.save_net_and_settings()
@@ -357,7 +361,7 @@ class TrainingManager(Manager):
                     if not self.args.state_optimizer == "sghmc":  #new
                         for layer_idx, (noise, state) in enumerate(
                                 zip(self.noises, states)):
-                            noise.normal_(0, 0.001)
+                            noise.normal_(0, self.sigma)
                             state.data.add_(noise.data)
 
 
