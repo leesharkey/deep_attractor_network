@@ -361,7 +361,7 @@ class TrainingManager(Manager):
                     if not self.args.state_optimizer == "sghmc":  #new
                         for layer_idx, (noise, state) in enumerate(
                                 zip(self.noises, states)):
-                            noise.normal_(0, self.sigma)
+                            noise.normal_(0, self.sigma[layer_idx])
                             state.data.add_(noise.data)
 
 
