@@ -337,9 +337,30 @@ class TrainingManager(Manager):
             energy, outs, full_energies = self.model(states,
                                                      energy_calc=e_calc_bool)
 
+            #dev
+            # (-energy).backward()
+            # print(sum(torch.flatten(torch.isclose(states[0].grad, outs[0]))))
+
             # Set the gradients manually
             for state, update in zip(states, outs):
                 state.grad = -update
+
+            # Adding noise in the Langevin step (only for non conditional
+            # layers in positive phase)
+            for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
+                if positive_phase and layer_idx == 0:
+                    pass
+                else:
+                    # Note: Just set sigma to a very small value if you don't want to
+                    # add noise. It's so inconsequential that it's not worth the
+                    # if-statements to accommodate sigma==0.0
+                    if not self.args.state_optimizer == "sghmc":  #new
+                        for layer_idx, (noise, state) in enumerate(
+                                zip(self.noises, states)):
+                            noise.normal_(0, 0.001)
+                            state.data.add_(noise.data)
+
+
         else:
             # Get total energy and energy outputs for indvdual neurons
             energy, outs, full_energies = self.model(states)

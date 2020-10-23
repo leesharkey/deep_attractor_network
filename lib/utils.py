@@ -276,7 +276,7 @@ def get_state_optimizers(args, params):
                             args=args,
                             state_layer=i) for (i,prm) in enumerate(params)]
     if args.state_optimizer == 'sgd':
-        return [optim.SGD([prm], args.sampling_step_size) for prm in params]
+        return [optim.SGD([prm], lr=args.sampling_step_size[i]) for (i,prm) in enumerate(params)]
     if args.state_optimizer == 'sgd_momentum':
         return [optim.SGD([prm], args.sampling_step_size,
                          momentum=args.momentum_param,

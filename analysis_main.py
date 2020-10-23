@@ -39,6 +39,10 @@ def main():
     session_name = lib.utils.datetimenow()
 
     am = analysismanager.AnalysisManager(args, session_name)
+
+    # TRAINING CURVES
+    #todo make a plot for training curves, taking the data from tblogs
+
     #am.print_stimuli()# you don't really use this
     #am.plot_pixel_vs_activity() # you don't really use this
     #am.print_activity_map() # you don't really use this
@@ -50,69 +54,77 @@ def main():
     # am.find_active_neurons('just_angles_few_angles')
     # am.find_active_neurons('double_stim')
     # am.find_active_neurons('long_just_fewangles')
-    #
-    # am.print_activity_maps_by_batch_ch()
-    # am.make_retinotopy_figure()
 
+    # Print some maps of the activity in each of the channels
+    # am.print_activity_maps_by_batch_ch()
     # am.print_activity_map_GIFs_by_batch_ch()
-    #
     # am.print_activity_maps_by_batch_ch('long_just_fewangles')
+    # am.print_activity_maps_by_batch_ch_double_stim()
     # am.print_activity_map_GIFs_by_batch_ch('long_just_fewangles') #TODO fix the exp_name issue for getting state traces
-    #
+    # am.make_retinotopy_figure('long_just_fewangles')
+
+
+    # Calculate the orientation preferences and assign
     # am.find_orientation_preferences()
     # am.assign_ori_info()
+
+    # CONTRAST DEPENDENT FREQ ANALYSIS
     # am.plot_state_traces_with_spec_and_acorr('patch')
     # am.plot_state_traces_with_spec_and_acorr(None)
-    # am.plot_contrast_specgram_comparison_local('patch')
-    # am.plot_contrast_specgram_comparison_local(None)
+    # # am.plot_contrast_specgram_comparison_local('patch')  # not used
+    # # am.plot_contrast_specgram_comparison_local(None)    # not used
     # am.plot_contrast_specgram_comparison_LFP()
+    # am.plot_contrast_specgram_comparison_LFP('neuron')
     # am.plot_contrast_power_spectra_LFP()
+
+
+    # CONTRAST DEPENDENT TRANSIENTS ANALYSIS
     # am.plot_contrast_dependent_transients_of_active_neurons('patch')
     # am.plot_contrast_dependent_transients_of_active_neurons(None)
     #
     # am.plot_state_traces('patch')
     # am.plot_state_traces()
 
-
-    # am.boop()
-    #
-    # #TODO: am.plot_single_neuron_energy_traces()
-    # # TODO: am.plot_single_neuron_mom_traces()
     # am.find_oscillating_neurons()  #memory error?
     # am.plot_contrast_frequency_plots()
 
 
-    # #am.single_neuron_dynamics_plot_Ham_case()
-    # #am.single_neuron_autocorrelation()
+    # # am.single_neuron_dynamics_plot_Ham_case() # unused
+    # # am.single_neuron_autocorrelation()
     # am.plot_energy_timeseries()
-    # # #am.single_neuron_trial_avg_EI_balance() #unused
-    # am.timeseries_EI_balance()
-    # am.xcorr_EI_lag() #hasn't been used in a long time
-    # am.two_neuron_crosscorrelation() #hasn't been used in a long time
-    # am.explore_oscillations_in_channel() #in a messy state right now but will maybe return to.
+    # # am.single_neuron_trial_avg_EI_balance() #unused
+    # # am.timeseries_EI_balance() #not really used
+    # # am.xcorr_EI_lag() #hasn't been used in a long time
+    # # am.two_neuron_crosscorrelation() #hasn't been used in a long time
+    # # am.explore_oscillations_in_channel() #in a messy state right now but will maybe return to.
 
 
-    am.plot_state_and_mom_trace()
-    am.calculate_EI_lag()
+    # am.plot_state_and_mom_trace() # still needs to be run for all channels
+    # am.calculate_EI_lag()
 
 
-    am.synchrony_experiment1_overlapping_rec_fields('single')
-    am.synchrony_experiment1_overlapping_rec_fields_fit_Gabors() # TODO change name to remove 'overlapping rec fields' part
-    am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_individually() #not really used
-    am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_overlay() # not really used
-    am.synchrony_experiment1_overlapping_rec_fields_Analyze_fitted_Gabors()
-    am.synchrony_experiment1_overlapping_rec_fields_OriPref_vs_OscAmp()
 
-    am.print_activity_maps_by_batch_ch_double_stim()
+    # # SYNCHRONY EXPERIMENT 1
+    # am.synchrony_experiment1_overlapping_rec_fields('single')
+    # am.synchrony_experiment1_overlapping_rec_fields_fit_Gabors() # TODO change name to remove 'overlapping rec fields' part
+    # # # am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_individually() #not really used
+    # # # am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_overlay() # not really used
+    # am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_CI_neighbours()
+    # am.synchrony_experiment1_overlapping_rec_fields_Analyze_fitted_Gabors()
+    # am.synchrony_experiment1_overlapping_rec_fields_OriPref_vs_OscAmp()
+    #
+    #
+    # # # SYNCHRONY EXPERIMENT 2
+    # am.synchrony_experiment2_xcorrs()
+    # am.synchrony_experiment2_fit_Gabors()
+    # am.synchrony_experiment2_Analyze_fitted_Gabors()
+    # am.synchrony_experiment2_OriPref_OR_Distance_vs_OscAmp_OR_vs_Phase()
 
-    am.synchrony_experiment2_xcorrs()
-    am.synchrony_experiment2_fit_Gabors()
-    am.synchrony_experiment2_Analyze_fitted_Gabors()
-    am.synchrony_experiment2_OriPref_OR_Distance_vs_OscAmp_OR_vs_Phase()
 
+    # # SYNCHRONY EXPERIMENT 3
     am.synchrony_experiment3_xcorrs()
-    am.synchrony_experiment3_fit_Gabors()
-    am.synchrony_experiment3_Analyze_fitted_Gabors()
+    # am.synchrony_experiment3_fit_Gabors()
+    # am.synchrony_experiment3_Analyze_fitted_Gabors()
     am.synchrony_experiment3_Distance_vs_OscAmp()
 
 
