@@ -92,21 +92,27 @@ def generate_random_states(args, shapes, device,
     rand_states = []
     for shape in shapes:
         if len(shape)==4:
-            rs = torch.rand(shape[0],
+            rs1 = torch.rand(shape[0],
                             shape[1],
                             shape[2],
                             shape[3],
                             device=device)
-        elif len(shape)==2:
-            rs = torch.rand(shape[0],
+            rs2 = torch.rand(shape[0],
                             shape[1],
+                            shape[2],
+                            shape[3],
                             device=device)
+            rs = [rs1, rs2]
+        # elif len(shape)==2:
+        #     rs = torch.rand(shape[0],
+        #                     shape[1],
+        #                     device=device)
         else:
             raise ValueError("Shape error. " +
                              "Must be either 4 (for conv) or 2 (for FC).")
         rand_states.append(rs)
 
-    if args.states_activation == 'hardtanh':
+    if args.states_activation == 'hardtanh' or args.states_activation=='identity':
         rand_states = [2 * (rs - 0.5) for rs in rand_states]
 
     # Use the initter network to initialize states close to the
@@ -145,7 +151,8 @@ def generate_random_states(args, shapes, device,
 
 
 
-    rand_states = [rsi.clone().detach() for rsi in rand_states]
+    rand_states = [[rsi.clone().detach() for rsi in layer_rand_states]
+                   for layer_rand_states in rand_states]
 
     return rand_states
 
@@ -227,10 +234,15 @@ def extract_possible_values(search_str, arg_helpstr, second_opt=False):
     arg_opts = [opt for opt in arg_opts if 'Opt2' not in opt] #REMOVE WHEN PUBLISHING
     return arg_opts
 
-def requires_grad(parameters, flag=True):
+def requires_grad(parameters, flag=True, flat_list=False):
     """Sets parameters to require grad"""
-    for p in parameters:
-        p.requires_grad = flag
+    if not flat_list:
+        for layer_params in parameters:
+            for p in layer_params:
+                p.requires_grad = flag
+    else:
+        for p in parameters:
+            p.requires_grad = flag
 
 
 def get_activation_function(args, states_activation=False, inplace=False):
@@ -253,8 +265,10 @@ def get_activation_function(args, states_activation=False, inplace=False):
         act = torch.nn.Hardtanh(min_val=0.0)
     elif activation == "hardtanh":
         act = torch.nn.Hardtanh()
-    elif activation == "relu":
-        act = torch.nn.ReLU(inplace=inplace)
+    # elif activation == "relu":
+    #     act = torch.nn.ReLU(inplace=inplace)
+    elif activation == "supralinear":
+        act = lambda x: args.supra_k * torch.nn.ReLU()(x)**args.supra_n
     return act
 
 def get_state_optimizers(args, params):
@@ -276,7 +290,7 @@ def get_state_optimizers(args, params):
                             args=args,
                             state_layer=i) for (i,prm) in enumerate(params)]
     if args.state_optimizer == 'sgd':
-        return [optim.SGD([prm], lr=args.sampling_step_size[i]) for (i,prm) in enumerate(params)]
+        return [[optim.SGD([prm], lr=args.sampling_step_size[i]) for prm in layer_params] for (i, layer_params) in enumerate(params)]
     if args.state_optimizer == 'sgd_momentum':
         return [optim.SGD([prm], args.sampling_step_size,
                          momentum=args.momentum_param,

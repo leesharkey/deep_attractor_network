@@ -45,7 +45,7 @@ class SampleBuffer: #TODO init that uses biases
 
     def push(self, states, pos=False):
 
-        states = listtodevice(listdetach(states), 'cpu')
+        states = [listtodevice(listdetach(s), 'cpu') for s in states]
         #class_ids = class_ids.detach().to('cpu')
 
         #neg_and_rand_class_ids = class_ids

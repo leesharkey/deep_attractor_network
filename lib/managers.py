@@ -131,7 +131,7 @@ class Manager():
                               prev_states=None):
         """Initializes states for the positive phase (or for viz)"""
 
-        pos_states = [pos_img]
+        pos_states = [[pos_img, torch.zeros_like(pos_img)]]
 
         if self.args.initializer == 'ff_init':
             # Later consider implementing a ff_init that is trained as normal
@@ -194,7 +194,7 @@ class TrainingManager(Manager):
                 self.param_update_phase(neg_states,
                                         pos_states)
 
-                prev_states = [ps.clone().detach() for ps in pos_states] # In case pos init uses prev states
+                prev_states = [[ps.clone().detach() for ps in layer_pos_states] for layer_pos_states in pos_states] # In case pos init uses prev states
 
                 if self.batch_num % self.args.img_logging_interval == 0:
                     self.log_images(pos_img, pos_states, neg_states)
@@ -239,11 +239,11 @@ class TrainingManager(Manager):
         # with the image state_layer clamped
         pos_states_init = self.initialize_pos_states(pos_img=pos_img,
                                                      prev_states=prev_states)
-        pos_states = [psi.clone().detach() for psi in pos_states_init]
+        pos_states = [[psi.clone().detach() for psi in layer_pos_states_init] for layer_pos_states_init in pos_states_init] #todo clone states function (if list, clone each, else clone)
 
         # Freeze network parameters and take grads w.r.t only the inputs
-        lib.utils.requires_grad(pos_states, True)
-        lib.utils.requires_grad(self.parameters, False)
+        lib.utils.requires_grad(pos_states, True) #todo function that can accommodate list of lists
+        lib.utils.requires_grad(self.parameters, False, flat_list=True)
         if self.args.initializer == 'ff_init':
             lib.utils.requires_grad(self.initter.parameters(), False)
         self.model.eval()
@@ -264,8 +264,9 @@ class TrainingManager(Manager):
             self.global_step += 1
 
         # Stop calculting grads w.r.t. images
-        for pos_state in pos_states:
-            pos_state.detach_()
+        for layer_pos_states in pos_states:
+            for pos_state in layer_pos_states:
+                pos_state.detach_()
 
         # Update initializer network if present
         if self.args.initializer == 'ff_init':
@@ -284,7 +285,7 @@ class TrainingManager(Manager):
 
         # Freeze network parameters and take grads w.r.t only the inputs
         lib.utils.requires_grad(neg_states, True)
-        lib.utils.requires_grad(self.parameters, False)
+        lib.utils.requires_grad(self.parameters, False, flat_list=True)
         self.model.eval()
 
         # Set up state optimizer
@@ -305,7 +306,7 @@ class TrainingManager(Manager):
                 neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
                 if not os.path.isdir(neg_save_dir):
                     os.mkdir(neg_save_dir)
-                neg_imgs_save = neg_states[0].detach().to('cpu')
+                neg_imgs_save = neg_states[0][0].detach().to('cpu')
                 utils.save_image(neg_imgs_save,
                                  os.path.join(neg_save_dir,
                                       str(self.global_step)+'neg' + '.png'),
@@ -321,11 +322,12 @@ class TrainingManager(Manager):
             #                  nrow=16, normalize=True, range=self.image_range)
 
         # Stop calculting grads w.r.t. images
-        for neg_state in neg_states:
-            neg_state.detach_()
+        for layer_neg_states in neg_states:
+            for neg_state in layer_neg_states:
+                neg_state.detach_()
 
         # Send negative samples to the negative buffer
-        self.buffer.push(neg_states)
+        # self.buffer.push(neg_states)
 
         return neg_states
 
@@ -333,21 +335,24 @@ class TrainingManager(Manager):
                      step=None):
 
         if self.args.ff_dynamics:
-            if self.batch_num < 200 or self.batch_num % 100:
-                e_calc_bool = True
-            else:
-                e_calc_bool = False
+            # if self.batch_num < 200 or self.batch_num % 100:
+            #     e_calc_bool = True
+            # else:
+            #     e_calc_bool = False
 
-            energy, outs, full_energies = self.model(states,
-                                                     energy_calc=e_calc_bool)
-
+            energy, outs, full_energies = self.model(states, # energy_calc=e_calc_bool)
+                                                     energy_calc=True)
             #dev
             # (-energy).backward()
             # print(sum(torch.flatten(torch.isclose(states[0].grad, outs[0]))))
 
             # Set the gradients manually
-            for state, update in zip(states, outs):
-                state.grad = -update
+            for state_layer_idx, (layer_states, layer_outs) in enumerate(zip(states, outs)):
+                for ei_idx, (state, update) in enumerate(zip(layer_states, layer_outs)):
+                    # if state_layer_idx == 0 and ei_idx>0:
+                    #     break
+                    print(state.data.shape, update.shape)
+                    state.grad = -update
 
             # Adding noise in the Langevin step (only for non conditional
             # layers in positive phase)
@@ -359,10 +364,11 @@ class TrainingManager(Manager):
                     # add noise. It's so inconsequential that it's not worth the
                     # if-statements to accommodate sigma==0.0
                     if not self.args.state_optimizer == "sghmc":  #new
-                        for layer_idx, (noise, state) in enumerate(
+                        for layer_idx, (layer_noises, layer_states) in enumerate(
                                 zip(self.noises, states)):
-                            noise.normal_(0, self.sigma[layer_idx])
-                            state.data.add_(noise.data)
+                            for noise, state in zip(layer_noises, layer_states):
+                                noise.normal_(0, self.sigma[layer_idx])
+                                state.data.add_(noise.data)
 
 
         else:
@@ -409,29 +415,32 @@ class TrainingManager(Manager):
         # The gradient step in the Langevin/SGHMC step
         # It goes through each statelayer and steps back using its associated
         # optimizer.
-        for layer_idx, optimizer in enumerate(self.state_optimizers):
-            if positive_phase and layer_idx == 0:
-                pass
-            else:
-                optimizer.step()
+        for layer_idx, layer_optimizers in enumerate(self.state_optimizers):
+            for optimizer in layer_optimizers:
+                if positive_phase and layer_idx == 0:
+                    pass
+                else:
+                    optimizer.step()
 
         # Log data to tensorboard
         # Energies for layers (mean scalar and all histogram)
         if step % self.args.scalar_logging_interval == 0 and step is not None:
-            for i, (nrgy, out) in enumerate(zip(full_energies, outs)):
-                mean_layer_string = 'layers/mean_bnry_%s' % i
-                mean_full_enrg_string = 'layers/mean_energies_%s' % i
-                self.writer.add_scalar(mean_layer_string, out.mean(), step)
-                self.writer.add_scalar(mean_full_enrg_string, nrgy.mean(), step)
+            for i, (layer_energies, layer_outs) in enumerate(zip(full_energies, outs)):
+                for ei_idx, (ei_labl, nrgy, out) in enumerate(zip(['E', 'I'], layer_energies, layer_outs)):
 
-                if self.args.log_histograms  and \
-                        step % self.args.histogram_logging_interval == 0:
-                    hist_layer_string = 'layers/hist_bnrys_%s' % i
-                    hist_full_enrg_string = 'layers/hist_energies_%s' % i
+                    mean_layer_string = 'layers/mean_quad_%s_%s' % (ei_labl, i)
+                    mean_full_enrg_string = 'layers/mean_energies_%s_%s' % (ei_labl, i)
+                    self.writer.add_scalar(mean_layer_string, out.mean(), step)
+                    self.writer.add_scalar(mean_full_enrg_string, nrgy.mean(), step)
 
-                    #print("Logging energy histograms")
-                    self.writer.add_histogram(hist_layer_string, out, step)
-                    self.writer.add_histogram(hist_full_enrg_string, nrgy, step)
+                    if self.args.log_histograms  and \
+                            step % self.args.histogram_logging_interval == 0:
+                        hist_layer_string = 'layers/hist_quad_%s_%s' % (ei_labl, i)
+                        hist_full_enrg_string = 'layers/hist_energies_%s_%s' % (ei_labl, i)
+
+                        #print("Logging energy histograms")
+                        self.writer.add_histogram(hist_layer_string, out, step)
+                        self.writer.add_histogram(hist_full_enrg_string, nrgy, step)
 
 
         ## Pos or Neg total energies
@@ -446,27 +455,40 @@ class TrainingManager(Manager):
 
         ## States and momenta (mean and histograms)
         if step % self.args.scalar_logging_interval == 0:
-            for i, state in enumerate(states):
-                mean_layer_string = 'layers/mean_states_%s' % i
-                #print("Logging mean energies")
-                self.writer.add_scalar(mean_layer_string, state.mean(), step)
-                if self.args.log_histograms  and \
-                        step % self.args.histogram_logging_interval == 0:
-                    hist_layer_string = 'layers/hist_states_%s' % i
-                    #print("Logging energy histograms")
-                    self.writer.add_histogram(hist_layer_string, state, step)
+            for i, layer_states in enumerate(states):
+                for ei_str, state in zip(['exc','inh'], layer_states):
+                    mean_layer_string = 'layers/mean_states_%s_%s' % (ei_str, i)
+                    #print("Logging mean energies")
+                    self.writer.add_scalar(mean_layer_string, state.mean(), step)
+                    if self.args.log_histograms  and \
+                            step % self.args.histogram_logging_interval == 0:
+                        hist_layer_string = 'layers/hist_states_%s_%s' % (ei_str, i)
+                        #print("Logging energy histograms")
+                        self.writer.add_histogram(hist_layer_string, state, step)
         # End of data logging
 
         # Prepare gradients and sample for next sampling step
-        for i, state in enumerate(states):
-            state.grad.detach_()
-            state.grad.zero_()
-            if self.args.states_activation == 'relu' and i>0:
-                state.data.clamp_(0.)
-            elif self.args.states_activation == 'hardtanh':
-                state.data.clamp_(-1., 1.)
-            else:
-                state.data.clamp_(0., 1.)
+        for i, layer_states in enumerate(states):
+            for j, state in enumerate(layer_states):
+                if i==0 and j>0:
+                    break
+                else:
+                    state.grad.detach_()
+                    state.grad.zero_()
+
+                    if i==0:
+                        low = self.image_range[0]
+                        high = self.image_range[1]
+                        state.data.clamp_(low, high)
+
+                    if self.args.states_activation == 'relu' and i>0:
+                        state.data.clamp_(0.)
+                    if self.args.states_activation == 'identity':
+                        pass
+                    elif self.args.states_activation == 'hardtanh':
+                        state.data.clamp_(-1., 1.)
+                    else:
+                        state.data.clamp_(0., 1.)
 
     def log_mean_energy_histories(self):
         mean_pos = sum(self.pos_history) / len(self.pos_history)
@@ -478,14 +500,14 @@ class TrainingManager(Manager):
 
     def log_images(self, pos_img, pos_states, neg_states):
         shape = pos_img.shape
-        neg_imgs_save = neg_states[0].reshape(shape).detach().to('cpu')
+        neg_imgs_save = neg_states[0][0].reshape(shape).detach().to('cpu')
         utils.save_image(neg_imgs_save,
                          os.path.join(self.sample_log_dir,
                                       str(self.batch_num).zfill(
                                           6) + '.png'),
                          nrow=16, normalize=True, range=self.image_range)
         if self.args.save_pos_images:
-            pos_imgs_save = pos_states[0].reshape(shape).detach().to('cpu')
+            pos_imgs_save = pos_states[0][0].reshape(shape).detach().to('cpu')
             utils.save_image(pos_imgs_save,
                              os.path.join(self.sample_log_dir,
                                           'p0_' + str(
@@ -571,7 +593,7 @@ class TrainingManager(Manager):
     def param_update_phase(self, neg_states, pos_states):
 
         # Put model in training mode and prepare network parameters for updates
-        lib.utils.requires_grad(self.parameters, True)
+        lib.utils.requires_grad(self.parameters, True, flat_list=True)
         self.model.train()  # Not to be confused with self.TrainingManager.train
         self.model.zero_grad()
 
