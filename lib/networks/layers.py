@@ -88,14 +88,20 @@ class SSNBlock(nn.Module):
                                   padding=e_pad,
                                   padding_mode='zeros')
                 ## init exc with gamma distrib
-                gamma_alpha = torch.ones_like(
-                    e_conv.weight.data) * args.weights_gamma_alpha
-                gamma_beta = torch.ones_like(
-                    e_conv.weight.data) * args.weights_gamma_beta
-                gamma_init = torch.distributions.gamma.Gamma(gamma_alpha,
-                                                             gamma_beta)
-                e_conv.weight.data = torch.nn.Parameter(gamma_init.sample().to(self.args.device)) * torch.tensor(args.weights_mag_scale, device=self.args.device)
-                e_conv.weight.data = e_conv.weight.data / torch.sqrt(torch.prod(torch.tensor(e_conv.weight.data.shape)).float())
+                #
+                # #LEE removed the gamma distribution and Dale's law constraint
+                # on the nets feeding back to the image. It doesn't really
+                # matter since bio doesn't have these nets, they're just for
+                # learning. Having flexibility and stability is more important.
+                #
+                # gamma_alpha = torch.ones_like(
+                #     e_conv.weight.data) * args.weights_gamma_alpha
+                # gamma_beta = torch.ones_like(
+                #     e_conv.weight.data) * args.weights_gamma_beta
+                # gamma_init = torch.distributions.gamma.Gamma(gamma_alpha,
+                #                                              gamma_beta)
+                # e_conv.weight.data = torch.nn.Parameter(gamma_init.sample().to(self.args.device)) * torch.tensor(args.weights_mag_scale, device=self.args.device)
+                # e_conv.weight.data = e_conv.weight.data / torch.sqrt(torch.prod(torch.tensor(e_conv.weight.data.shape)).float())
 
                 # Make inhibitory conv net
                 i_kern, i_pad = inh_kern_pads[i]
@@ -106,14 +112,14 @@ class SSNBlock(nn.Module):
                                   padding=i_pad,
                                   padding_mode='zeros')
                 ## init inh with gamma distrib
-                gamma_alpha = torch.ones_like(
-                    i_conv.weight.data) * args.weights_gamma_alpha
-                gamma_beta = torch.ones_like(
-                    i_conv.weight.data) * args.weights_gamma_beta
-                gamma_init = torch.distributions.gamma.Gamma(gamma_alpha,
-                                                             gamma_beta)
-                i_conv.weight.data = torch.nn.Parameter(-gamma_init.sample().to(self.args.device)) * torch.tensor(args.weights_mag_scale, device=self.args.device)
-                i_conv.weight.data = i_conv.weight.data / torch.sqrt(torch.prod(torch.tensor(i_conv.weight.data.shape)).float())
+                # gamma_alpha = torch.ones_like(
+                #     i_conv.weight.data) * args.weights_gamma_alpha
+                # gamma_beta = torch.ones_like(
+                #     i_conv.weight.data) * args.weights_gamma_beta
+                # gamma_init = torch.distributions.gamma.Gamma(gamma_alpha,
+                #                                              gamma_beta)
+                # i_conv.weight.data = torch.nn.Parameter(-gamma_init.sample().to(self.args.device)) * torch.tensor(args.weights_mag_scale, device=self.args.device)
+                # i_conv.weight.data = i_conv.weight.data / torch.sqrt(torch.prod(torch.tensor(i_conv.weight.data.shape)).float())
 
 
                 # Make labels for nets
@@ -276,8 +282,12 @@ class SSNBlock(nn.Module):
             for j, (e_inp, i_inp) in enumerate(inps):
                 i_label = 'I_%i_%i' % (self.inp_idxs[j], self.state_layer_idx)
                 e_label = 'E_%i_%i' % (self.inp_idxs[j], self.state_layer_idx)
-                e_out = self.convs[e_label](self.supralinear_act(e_inp))
-                i_out = self.convs[i_label](self.supralinear_act(i_inp)) #LEE used to not have supralinear act here. Added so that the weights feeding onto image would be adequate
+                # e_out = self.convs[e_label](self.supralinear_act(e_inp))
+                # i_out = self.convs[i_label](self.supralinear_act(i_inp)) #LEE used to not have supralinear act here. Added so that the weights feeding onto image would be adequate
+
+                e_out = self.convs[e_label](e_inp)
+                i_out = self.convs[i_label](i_inp)
+
                 full_pre_quad_outs.append(e_out)
                 full_pre_quad_outs.append(i_out)
 
