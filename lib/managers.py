@@ -646,7 +646,7 @@ class TrainingManager(Manager):
 
             # Update weights
             ## Stabilize weight updates
-            # self.clip_grad(self.model.parameters(), self.optimizer)
+            self.clip_grad(self.model.parameters(), self.optimizer_stab)
 
             ## Update the network params
             self.optimizer_stab.step()
