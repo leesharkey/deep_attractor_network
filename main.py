@@ -182,7 +182,7 @@ def main():
     tgroup.add_argument('--lr_stab', type=float, default=1e-4,
                         help='Learning rate of stabilising optimizer. Default: ' +
                              '%(default)s.' +
-                             'When randomizing, the following options define'+
+                             'When randomizing, the following optdions define'+
                              'a range of indices and the random value assigned'+
                              'to the argument will be 10 to the power of the'+
                              'float selected from the range. Options: [-3, 0.2].')

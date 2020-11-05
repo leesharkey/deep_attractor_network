@@ -31,8 +31,10 @@ class BaseModel(nn.Module):
             torch.nn.ModuleList([nn.Linear(torch.prod(torch.tensor(l[1:])), 1, bias=False)]*2)
                        for l in args.state_sizes])
         for bias1, bias2 in self.biases:
-            torch.nn.init.zeros_(bias1.weight)
-            torch.nn.init.zeros_(bias2.weight)
+            torch.nn.init.ones_(bias1.weight) * 0.5
+            torch.nn.init.ones_(bias2.weight) * 0.5
+            # torch.nn.init.zeros_(bias1.weight)
+            # torch.nn.init.zeros_(bias2.weight)
             # bias1.weight.data = -bias1.weight.data # LEE not that these are now negative, motivated by the fact that the mean firing rate of neurons is supposed to be driven by fluctuations and the mean input is subthreshold
             # bias2.weight.data = -bias2.weight.data
 

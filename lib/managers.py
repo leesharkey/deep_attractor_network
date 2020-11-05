@@ -216,24 +216,17 @@ class TrainingManager(Manager):
                 print("Batch num:    %i" % self.batch_num)
                 print("Global step:  %i" % self.global_step)
 
-                lib.utils.show_cuda_mem()
+                # Do positive and negative phase but only continue with
+                # weight updates if there hasn't been an explosion of
+                # activity.
                 pos_states = self.positive_phase(pos_img, prev_states)
-                lib.utils.show_cuda_mem()
+                if self.stop_sampling_phase:
+                    self.batch_num += 1
+                    break
                 neg_states = self.negative_phase()
-                lib.utils.show_cuda_mem()
-                #TODO if either pos or neg has been stopped due to epilepsy, then pass
-
-                # if not self.stop_sampling_phase:
-                #     pos_states = self.positive_phase(pos_img, prev_states)
-                # else:
-                #     self.train_stability()
-                #     break
-                #
-                # if not self.stop_sampling_phase:
-                #     neg_states = self.negative_phase()
-                # else:
-                #     self.train_stability()
-                #     break
+                if self.stop_sampling_phase:
+                    self.batch_num += 1
+                    break
 
                 self.param_update_phase(neg_states,
                                         pos_states)
@@ -362,15 +355,15 @@ class TrainingManager(Manager):
                                  os.path.join(neg_save_dir,
                                       str(self.global_step)+'neg' + '.png'),
                                  nrow=16, normalize=True, range=self.image_range)
-            # neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
-            # if not os.path.isdir(neg_save_dir):
-            #     os.mkdir(neg_save_dir)
-            # neg_imgs_save = neg_states[0].detach().to('cpu')
-            # utils.save_image(neg_imgs_save,
-            #                  os.path.join(neg_save_dir,
-            #                               str(
-            #                                   self.global_step) + 'neg' + '.png'),
-            #                  nrow=16, normalize=True, range=self.image_range)
+            neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
+            if not os.path.isdir(neg_save_dir):
+                os.mkdir(neg_save_dir)
+            neg_imgs_save = neg_states[0][0].detach().to('cpu')
+            utils.save_image(neg_imgs_save,
+                             os.path.join(neg_save_dir,
+                                          str(
+                                              self.global_step) + 'neg' + '.png'),
+                             nrow=16, normalize=True, range=self.image_range)
 
         # Stop calculting grads w.r.t. images
         for layer_neg_states in neg_states:
@@ -382,92 +375,6 @@ class TrainingManager(Manager):
 
         return neg_states
 
-
-    # def train_stability(self):
-    #     prev_states = None
-    #
-    #     # Main training loop for stability training
-    #     for e in range(1):
-    #         print("Epoch:        %i" % e)
-    #         print("Batch num:    %i" % self.batch_num)
-    #         print("Global step:  %i" % self.global_step)
-    #
-    #         stab_states = self.stability_sampling_phase()
-    #
-    #         # Print loss
-    #         # print(f'Loss: {loss.item():.5g}')
-    #
-    #     self.stop_sampling_phase = False
-    #
-    #
-    # def stability_sampling_phase(self):
-    #     print('\nStarting stability training phase...')
-    #     # Initialize the chain (either as noise or from buffer)
-    #     stab_states = lib.utils.generate_random_states(self.args,
-    #                                                        self.args.state_sizes,
-    #                                                        self.device)
-    #
-    #     # Freeze network parameters and take grads w.r.t only the inputs
-    #     lib.utils.requires_grad(stab_states, True)
-    #     lib.utils.requires_grad(self.model.parameters(), False, flat_list=True)
-    #     self.model.eval()
-    #
-    #     # Set up state optimizer
-    #     self.state_optimizers = lib.utils.get_state_optimizers(self.args,
-    #                                                            stab_states)
-    #
-    #     if self.args.randomize_neg_its:
-    #         self.num_it_neg = max(1, np.random.poisson(self.num_it_neg_mean))
-    #     else:
-    #         self.num_it_neg = self.num_it_neg_mean
-    #
-    #     # Stabilisation phase sampling
-    #     for _ in tqdm(range(15)):
-    #         stab_energy = self.sampler_step(stab_states, step=self.global_step)
-    #
-    #         self.global_step += 1
-    #
-    #         # Continuously update weights
-    #         ## Update flags for weight update
-    #         ### Stop calculting grads w.r.t. images #LEE used to be out of loop
-    #         for layer_stab_states in stab_states:
-    #             for stab_state in layer_stab_states:
-    #                 stab_state.detach_()
-    #
-    #         ### Start calculating grads w.r.t model params
-    #         lib.utils.requires_grad(self.model.parameters(), True, flat_list=True)
-    #         self.model.train()  # Not to be confused with self.TrainingManager.train
-    #         self.model.zero_grad()
-    #
-    #         ## Calculate gradients for the network params
-    #         stab_energy, _, _ = self.model(stab_states, energy_calc=True)
-    #         loss = (stab_energy**2)
-    #         loss.backward()
-    #         print(f'Loss: {loss.item():.5g}')
-    #
-    #         # Update weights
-    #         ## Stabilize weight updates
-    #         self.clip_grad(self.model.parameters(), self.optimizer)
-    #
-    #         ## Update the network params
-    #         self.optimizer.step()
-    #
-    #         # Reset flags for next sampler step
-    #         lib.utils.requires_grad(self.model.parameters(), False, flat_list=True)
-    #         lib.utils.requires_grad(stab_states, True, flat_list=False)
-    #
-    #         # Check if max state exceeds limit
-    #         max_state = max([max([float(s.max()) for s in layer_states])
-    #                          for layer_states in stab_states])
-    #         print("Maxstate: " + str(max_state))
-    #         if max_state > 250:
-    #             break
-    #
-    #
-    #     # Send negative samples to the negative buffer
-    #     # self.buffer.push(neg_states)
-    #
-    #     return stab_states
 
     def sampler_step(self, states, positive_phase=False, pos_it=None,
                      step=None):
@@ -657,42 +564,46 @@ class TrainingManager(Manager):
             lib.utils.requires_grad(states, True, flat_list=False)
             self.model.eval()
             print("gradsums" + str([x.grad.data.sum() for x in self.model.parameters() if x.grad is not None]))
+
             # Ensure each E or I network conserves its sign after the param update
             e_weight_sums = []
             i_weight_sums = []
 
-            for ssn_block in self.model.quadratic_nets.named_children():
-                ssn_block = ssn_block[1]
-                block_keys = list(ssn_block.convs.keys())
-                for key in block_keys:
-                    net = ssn_block.convs[key]
-                    if type(net) == torch.nn.modules.conv.Conv2d:
-                        conv = net
-                        if key[0] == 'E':
-                            conv.weight.data.clamp_(min=0)
-                            e_weight_sums.append(
-                                float(conv.weight.data.mean()))
-                        elif key[0] == 'I':
-                            conv.weight.data.clamp_(max=0)
-                            i_weight_sums.append(
-                                float(conv.weight.data.mean()))
+            for layer_idx, ssn_block in enumerate(self.model.quadratic_nets.named_children()):
+                if layer_idx == 0:
+                    pass # Layer 0 inputs don't abide by Dale's Law.
+                else:
+                    ssn_block = ssn_block[1]
+                    block_keys = list(ssn_block.convs.keys())
+                    for key in block_keys:
+                        net = ssn_block.convs[key]
+                        if type(net) == torch.nn.modules.conv.Conv2d:
+                            conv = net
+                            if key[0] == 'E':
+                                conv.weight.data.clamp_(min=0)
+                                e_weight_sums.append(
+                                    float(conv.weight.data.mean()))
+                            elif key[0] == 'I':
+                                conv.weight.data.clamp_(max=0)
+                                i_weight_sums.append(
+                                    float(conv.weight.data.mean()))
 
-                    elif type(net) == torch.nn.modules.container.Sequential:
-                        for layer in net:
-                            if type(layer) == torch.nn.modules.conv.Conv2d:
-                                conv = layer
-                                if key[0] == 'E':
-                                    conv.weight.data.clamp_(min=0)
-                                    e_weight_sums.append(
-                                        float(conv.weight.data.mean()))
+                        elif type(net) == torch.nn.modules.container.Sequential:
+                            for layer in net:
+                                if type(layer) == torch.nn.modules.conv.Conv2d:
+                                    conv = layer
+                                    if key[0] == 'E':
+                                        conv.weight.data.clamp_(min=0)
+                                        e_weight_sums.append(
+                                            float(conv.weight.data.mean()))
 
-                                elif key[0] == 'I':
-                                    conv.weight.data.clamp_(max=0)
-                                    i_weight_sums.append(
-                                        float(conv.weight.data.mean()))
+                                    elif key[0] == 'I':
+                                        conv.weight.data.clamp_(max=0)
+                                        i_weight_sums.append(
+                                            float(conv.weight.data.mean()))
 
-                    else:
-                        raise ValueError("Network not a valid type")
+                        else:
+                            raise ValueError("Network not a valid type")
 
             # TODO ensure no autapses
             print("E weights mean: %f" % np.mean(e_weight_sums))
