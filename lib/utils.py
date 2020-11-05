@@ -9,10 +9,13 @@ import lib.custom_components.custom_swish_activation as cust_actv
 import lib.custom_components.sghmc as sghmc
 
 
-def save_configs_to_csv(args, model_name, session_name=None, loading=False, results_dict=None):
+def save_configs_to_csv(args, session_name=None, model_name=None,
+                        unique_id=None, loading=False, results_dict=None):
     """"""
     arg_dict = vars(args).copy()
-    arg_dict = {**arg_dict, **{'unique_id': model_name}}
+    arg_dict = {**arg_dict, **{'unique_id': unique_id,
+                               'model_name': model_name,
+                               'session_name': session_name}}
 
     # Combine dicts
     if results_dict is not None:
@@ -22,18 +25,16 @@ def save_configs_to_csv(args, model_name, session_name=None, loading=False, resu
     for k, v in arg_dict.items():
         arg_dict[k] = str(v) if type(v) ==list or type(v) ==dict else v
 
-    # Check there isn't already a df for this model(session); adjust model name if so
-    if os.path.isfile("exps/params_and_results_%s.csv" % model_name) and loading:
-        model_name = model_name + 'loaded_' + session_name
+    # Check there isn't already a df for this unique_id; adjust model name if so
+    # if os.path.isfile("exps/params_and_results_%s.csv" % unique_id) and loading:
+    #     model_name = model_name + 'loaded_' + session_name
 
     # Create a df with a single row with new info
-    full_df = pd.DataFrame(arg_dict, index=[model_name])
+    full_df = pd.DataFrame(arg_dict, index=[unique_id])
 
     # Create a new csv if one doesn't already exist and save the new data
-    full_df.to_csv("exps/params_and_results_%s.csv" % model_name)
-    print("Created new params_and_results csv for %s." % model_name)
-
-    print("Saved params and results csv.")
+    full_df.to_csv("exps/params_and_results_%s.csv" % unique_id)
+    print("Saved params and results csv for %s." % unique_id)
 
 def combine_all_csvs(directory_str, base_csv_name='params_and_results.csv',
                      remove_old_csvs=True):
@@ -90,18 +91,29 @@ def generate_random_states(args, shapes, device,
 
 
     rand_states = []
-    for shape in shapes:
+    for i, shape in enumerate(shapes):
         if len(shape)==4:
             rs1 = torch.rand(shape[0],
                             shape[1],
                             shape[2],
                             shape[3],
                             device=device)
+            rs1 = torch.ones_like(rs1) + rs1
             rs2 = torch.rand(shape[0],
                             shape[1],
                             shape[2],
                             shape[3],
                             device=device)
+            rs2 = torch.ones_like(rs2) + rs2
+
+            if i == 0:
+                rs1 = torch.rand(shape[0],
+                                 shape[1],
+                                 shape[2],
+                                 shape[3],
+                                 device=device)
+                rs2 = torch.zeros_like(rs2)
+
             rs = [rs1, rs2]
         # elif len(shape)==2:
         #     rs = torch.rand(shape[0],
@@ -302,10 +314,45 @@ def get_state_optimizers(args, params):
         return [optim.Adam([prm], args.sampling_step_size, betas=(0.9,0.999)) for prm in params]
 
 
-def datetimenow():
-    now = datetime.now()
-    return now.strftime("%Y%m%d-%H%M%S")
+def datetimenow(subseconds=False):
+    if not subseconds:
+        now = datetime.now()
+        return now.strftime("%Y%m%d-%H%M%S")
+    else:
+        return datetime.utcnow().strftime('%Y%m%d-%H%M%S-%f')
 
+def show_cuda_mem():
+    t = torch.cuda.get_device_properties(0).total_memory
+    c = torch.cuda.memory_cached(0)
+    a = torch.cuda.memory_allocated(0)
+    f = c - a
+    print("Free CUDA memory: %f" % f)
+
+def remove_autapse_params(args, weight_data):
+    """Takes a tensor of conv net weights, checks first if the output and input
+    sizes are the same and sets to zero the weight
+    that connects input_i to output_i and leaves all others identical"""
+
+    if weight_data.shape[0] == weight_data.shape[1]:
+
+        # If the same, then set self connecting params to 0.
+        mid_kern = weight_data.shape[-1] //2
+
+        ranges = [torch.arange(l) for l in weight_data.shape]
+        meshes = torch.meshgrid(ranges)
+
+        # First cond gets self channel-channel connection, latter two get
+        # centre neuron
+        cond = (meshes[0] == meshes[1]) & \
+               (meshes[2] == mid_kern) & \
+               (meshes[3] == mid_kern)
+        cond = cond.to(args.device)
+        new_weight_data = torch.where(cond, torch.zeros_like(weight_data), weight_data)
+
+        return new_weight_data
+    else:
+        raise ValueError("Conv net can't be a self connection because there" +
+                         "are different numbers of channels in the weights.")
 
 
 shapes = lambda x : [y.shape for y in x]
