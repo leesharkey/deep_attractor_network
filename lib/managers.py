@@ -355,15 +355,15 @@ class TrainingManager(Manager):
                                  os.path.join(neg_save_dir,
                                       str(self.global_step)+'neg' + '.png'),
                                  nrow=16, normalize=True, range=self.image_range)
-            neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
-            if not os.path.isdir(neg_save_dir):
-                os.mkdir(neg_save_dir)
-            neg_imgs_save = neg_states[0][0].detach().to('cpu')
-            utils.save_image(neg_imgs_save,
-                             os.path.join(neg_save_dir,
-                                          str(
-                                              self.global_step) + 'neg' + '.png'),
-                             nrow=16, normalize=True, range=self.image_range)
+            # neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
+            # if not os.path.isdir(neg_save_dir):
+            #     os.mkdir(neg_save_dir)
+            # neg_imgs_save = neg_states[0][0].detach().to('cpu')
+            # utils.save_image(neg_imgs_save,
+            #                  os.path.join(neg_save_dir,
+            #                               str(
+            #                                   self.global_step) + 'neg' + '.png'),
+            #                  nrow=16, normalize=True, range=self.image_range)
 
         # Stop calculting grads w.r.t. images
         for layer_neg_states in neg_states:
