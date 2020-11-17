@@ -1,5 +1,4 @@
 import argparse
-import random, string
 import os
 import numpy as np
 import torch
@@ -15,16 +14,17 @@ def dict_len_check(args):
     num_layers = len(args.state_sizes)
     for l in range(num_layers):
         inps           = args.arch_dict['mod_connect_dict'][l]
-        # base_kern_pads = args.arch_dict['base_kern_pad_dict'][l]
-        #
-        # if not \
-        #     len(inps)==len(base_kern_pads):
-        #     str1 = "Layer %i architecture dictionaries invalid. " % l
-        #     raise ValueError(str1 +
-        #                      "inp_state_shapes, and " +
-        #                      "base_kern_pads must be the same length. Check " +
-        #                      "that the architecture dictionary defines these "+
-        #                      "correctly.")
+        cct_statuses   = args.arch_dict['mod_cct_status_dict'][l]
+        base_kern_pads = args.arch_dict['base_kern_pad_dict'][l]
+
+        if not len(cct_statuses)==len(inps) or not \
+            len(inps)==len(base_kern_pads):
+            str1 = "Layer %i architecture dictionaries invalid. " % l
+            raise ValueError(str1 +
+                             "cct_statuses, inp_state_shapes, and " +
+                             "base_kern_pads must be the same length. Check " +
+                             "that the architecture dictionary defines these "+
+                             "correctly.")
 
 
 def finalize_args(parser):
@@ -43,69 +43,1457 @@ def finalize_args(parser):
         vars(args)['special_name'] = input("Special name: ") or "None"
 
     # Set architecture-specific hyperparams
-    elif args.architecture == 'SSN_development1':
-        vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
-                                     [args.batch_size, 32, 32, 32],
-                                     [args.batch_size, 16, 8, 8]]
-        mod_connect_dict = {0: [1, 2],
-                            1: [0, 1, 2],
-                            2: [1, 2]} # all must have self connections
-        exc_kern_pad_dict = {0: [[7, 3], [7, 3]],
-                              1: [[7, 3], [11, 5], [7, 3]],
-                              2: [[3, 1], [3, 1]]}
-        inh_kern_pad_dict = {0: [[7, 3], [7, 3]],
-                              1: [[7, 3], [7, 3], [7, 3]],
-                              2: [[3, 1], [3, 1]]}
-        vars(args)['arch_dict'] = {# Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
-                                   'num_ch_initter': 32,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'exc_kern_pad_dict': exc_kern_pad_dict,
-                                   'inh_kern_pad_dict': inh_kern_pad_dict,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'spec_norm_reg': False}
-        dict_len_check(args)
-    elif args.architecture == 'SSN_development2':
-        vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
-                                     [args.batch_size, 32, 28, 28],
-                                     [args.batch_size, 32, 8, 8]]
-        mod_connect_dict = {0: [1, 2],
-                            1: [0, 1, 2],
-                            2: [1, 2]} # all must have self connections
-        exc_kern_pad_dict = {0: [[7, 3], [7, 3]],
-                              1: [[7, 3], [11, 5], [7, 3]],
-                              2: [[3, 1], [3, 1]]}
-        inh_kern_pad_dict = {0: [[7, 3], [7, 3]],
-                              1: [[7, 3], [7, 3], [7, 3]],
-                              2: [[3, 1], [3, 1]]}
-        vars(args)['arch_dict'] = {# Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
-                                   'num_ch_initter': 32,
-                                   'num_sl': len(args.state_sizes) - 1,
-                                   'exc_kern_pad_dict': exc_kern_pad_dict,
-                                   'inh_kern_pad_dict': inh_kern_pad_dict,
-                                   'mod_connect_dict': mod_connect_dict,
-                                   'spec_norm_reg': False}
-        dict_len_check(args)
+    if args.network_type == 'DAN2':
+        if args.architecture == 'DAN2_very_small_1SL_self':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28]]
+
+            mod_connect_dict = {0: [0]}
+            mod_cct_status_dict = {0: [0] # 0 for cct, 1 for oc, 2 for oct
+                                   }
+            mod_num_lyr_dict =    {0: 2, # 0 to have no dense block
+                                   }
+            base_kern_pad_dict = {0: [[7,3]]}
+            main_kern_dict = {0: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 8,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict}
+        if args.architecture == 'DAN2_small_4SL_allself':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 28, 28]]
+
+            mod_connect_dict = {0: [0,1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3]}
+            mod_cct_status_dict = {0: [0,1], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [2,0,0],
+                                   2: [0,0,0],
+                                   3: [0,0]}
+            mod_num_lyr_dict =    {0: 0, # 0 to have no dense block
+                                   1: 2,
+                                   2: 2,
+                                   3: 2}
+            base_kern_pad_dict = {0: [[3,1],[7,3]],
+                                  1: [[7,3],[3,1],[3,1]],
+                                  2: [[3,1],[3,1],[3,1]],
+                                  3: [[3,1],[3,1]]}
+            main_kern_dict = {0: 3,
+                              1: 3,
+                              2: 3,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 16,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict}
+        if args.architecture == 'DAN2_small_4SL_allself_nocompress':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 28, 28]]
+
+            mod_connect_dict = {0: [0,1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3]}
+            mod_cct_status_dict = {0: [0,1], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [2,0,0],
+                                   2: [0,0,0],
+                                   3: [0,0]}
+            mod_num_lyr_dict =    {0: 0, # 0 to have no dense block
+                                   1: 2,
+                                   2: 2,
+                                   3: 2}
+            base_kern_pad_dict = {0: [[3,1],[7,3]],
+                                  1: [[7,3],[3,1],[3,1]],
+                                  2: [[3,1],[3,1],[3,1]],
+                                  3: [[3,1],[3,1]]}
+            main_kern_dict = {0: 3,
+                              1: 3,
+                              2: 3,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 16,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict}
+        if args.architecture == 'DAN2_small_4SL_topself_cleanbottom_bigkerns':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 28, 28]]
+
+            mod_connect_dict = {0: [1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3]}
+            mod_cct_status_dict = {0: [2], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1,0,0],
+                                   2: [0,0,0],
+                                   3: [0,0]}
+            mod_num_lyr_dict =    {0: 0, # 0 to have no dense block
+                                   1: 2,
+                                   2: 2,
+                                   3: 2}
+            base_kern_pad_dict = {0: [[3,1],[7,3]],
+                                  1: [[7,3],[3,1],[3,1]],
+                                  2: [[3,1],[3,1],[3,1]],
+                                  3: [[3,1],[3,1]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': True}
+        elif args.architecture == 'DAN2_small_6SL_allself_compress':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 22, 22],
+                                         [args.batch_size,  32, 16, 16],
+                                         [args.batch_size,  16, 10, 10],
+                                         [args.batch_size,  16, 1, 1]]
+
+            mod_connect_dict = {0: [0,1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3,4],
+                                4: [3,4,5],
+                                5: [4,5]}
+            mod_cct_status_dict = {0: [0,1], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [2,0,2],
+                                   2: [1,0,2],
+                                   3: [1,0,2],
+                                   4: [1,0,2],
+                                   5: [1,1]}
+            mod_num_lyr_dict =    {0: 0, # 0 to have no dense block
+                                   1: 2,
+                                   2: 2,
+                                   3: 2,
+                                   4: 2,
+                                   5: 0}
+            base_kern_pad_dict = {0: [[3,1],[7,3]],
+                                  1: [[7,3],[3,1],[7,0]],
+                                  2: [[7,0],[3,1],[7,0]],
+                                  3: [[7,0],[3,1],[7,0]],
+                                  4: [[7,0],[3,1],[10,0]],
+                                  5: [[10,0],[1,0]]}
+            main_kern_dict = {0: 3,
+                              1: 3,
+                              2: 3,
+                              3: 3,
+                              4: 3,
+                              5: 1}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 16,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict}
+        elif args.architecture == 'DAN2_small_4SL_compress_bigkern':
+            vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
+                                         [args.batch_size,  32, 28, 28],
+                                         [args.batch_size,  32, 22, 22],
+                                         [args.batch_size,  32, 16, 16]]
+            mod_connect_dict = {0: [1],
+                                1: [0,1,2],
+                                2: [1,2,3],
+                                3: [2,3]}
+            mod_cct_status_dict = {0: [2], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1,0,2],
+                                   2: [1,0,2],
+                                   3: [1,0,2]}
+            mod_num_lyr_dict =    {0: 0, # 0 to have no dense block
+                                   1: 2,
+                                   2: 2,
+                                   3: 2}
+            base_kern_pad_dict = {0: [[7,3]],
+                                  1: [[7,3],[7,3],[7,0]],
+                                  2: [[7,0],[7,3],[7,0]],
+                                  3: [[7,0],[7,3]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': True}
+        elif args.architecture == 'DAN2_small_light_4SL_compress_noself_bigkern_cct':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 22, 22],
+                                         [args.batch_size, 16, 14, 14]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2]}
+            mod_cct_status_dict = {0: [0], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1,2],
+                                   2: [1,2],
+                                   3: [1]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7,3]],
+                                  1: [[7,3],[7,0]],
+                                  2: [[7,0],[9,0]],
+                                  3: [[9,0]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': True}
+        elif args.architecture == 'DAN2_small_light_4SL_nospecnormreg_compress_noself_bigkern_cct':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 22, 22],
+                                         [args.batch_size, 16, 14, 14]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2]}
+            mod_cct_status_dict = {0: [0], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1,2],
+                                   2: [1,2],
+                                   3: [1]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7,3]],
+                                  1: [[7,3],[7,0]],
+                                  2: [[7,0],[9,0]],
+                                  3: [[9,0]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_4SL_lotofcompress':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 16, 7, 7]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,3],
+                                3: [2]}
+            mod_cct_status_dict = {0: [1], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1,1],
+                                   2: [1,1],
+                                   3: [1]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7,3]],
+                                  1: [[7,3],[7,3]],
+                                  2: [[7,0],[7,3]],
+                                  3: [[7,0]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_4SL_top2self_lotofcompress':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 16, 7, 7]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,2,3],
+                                3: [2,3]}
+            mod_cct_status_dict = {0: [1], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1,1],
+                                   2: [1,1,1],
+                                   3: [1,1]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7,3]],
+                                  1: [[7,3],[7,3]],
+                                  2: [[7,0],[7,3],[7,3]],
+                                  3: [[7,0], [7,3]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_5SL_top3self_lotofcompress':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 16, 7, 7],
+                                         [args.batch_size, 16, 1, 1]]
+            mod_connect_dict = {0: [1],
+                                1: [0,2],
+                                2: [1,2,3],
+                                3: [2,3,4],
+                                4: [3,4]}
+            mod_cct_status_dict = {0: [1], # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1,1],
+                                   2: [1,1,1],
+                                   3: [1,1,1],
+                                   4: [1,1]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7,3]],
+                                  1: [[7,3],[7,3]],
+                                  2: [[7,0],[7,3],[7,3]],
+                                  3: [[7,0],[7,3],[1,0]],
+                                  4: [[1,0],[1,0]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7,
+                              4: 1}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_4SL_top3self_compress':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 16, 10, 10],
+                                         [args.batch_size, 16, 3, 3]]
+            mod_connect_dict = {0: [1],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3]}
+            mod_cct_status_dict = {0: [1],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 0, 1],
+                                   2: [1, 0, 1],
+                                   3: [1, 0]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3]],
+                                  1: [[7, 3], [7, 3], [7, 3]],
+                                  2: [[7, 0], [7, 3], [7, 3]],
+                                  3: [[7, 0], [3, 1]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+
+        elif args.architecture == 'DAN2_small_light_4SL_top3self_compress_dense':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 16, 10, 10],
+                                         [args.batch_size, 16, 3, 3]]
+            mod_connect_dict = {0: [1],
+                                1: [0, 1, 2, 3],
+                                2: [1, 2, 3],
+                                3: [1, 2, 3]}
+            mod_cct_status_dict = {0: [1],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 0, 1, 1],
+                                   2: [1, 0, 1],
+                                   3: [1, 1, 0]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3]],
+                                  1: [[7, 3], [7, 3], [7, 3], [3,1]],
+                                  2: [[7, 0], [7, 3], [7, 3]],
+                                  3: [[10, 0], [7, 0], [3, 1]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_3SL_seriouscompress':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 16, 16, 16],
+                                         [args.batch_size, 16, 5, 5]]
+            mod_connect_dict = {0: [1],
+                                1: [0, 1, 2],
+                                2: [1, 2]}
+            mod_cct_status_dict = {0: [1],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 0, 1],
+                                   2: [1, 0]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3]],
+                                  1: [[7, 3], [7, 3], [5, 3]],
+                                  2: [[7, 0], [7, 3]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_3SL_seriouscompress_heavybottom':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 16, 5, 5]]
+            mod_connect_dict = {0: [1],
+                                1: [0, 1, 2],
+                                2: [1, 2]}
+            mod_cct_status_dict = {0: [1],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 0, 1],
+                                   2: [1, 0]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3]],
+                                  1: [[7, 3], [7, 3], [5, 3]],
+                                  2: [[7, 0], [7, 3]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_4SL_seriouscompress':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 16, 16, 16],
+                                         [args.batch_size, 16, 10, 10],
+                                         [args.batch_size, 16, 5, 5]]
+            mod_connect_dict = {0: [1],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3]}
+            mod_cct_status_dict = {0: [1],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 0, 1],
+                                   2: [1, 0, 1],
+                                   3: [1, 0]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3]],
+                                  1: [[7, 0], [7, 3], [7, 3]],
+                                  2: [[7, 0], [7, 3], [5, 3]],
+                                  3: [[7, 0], [7, 3]]} #Note, no 7,3 from layer below, which isn't recommended anymore (for slightly speculative reasons, but little difference between 7,3 and 7,0 so just go with 7,3 since it worked well in the lowest layer)
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_4SL_seriouscompress_heavybottom':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 16, 10, 10],
+                                         [args.batch_size, 16, 5, 5]]
+            mod_connect_dict = {0: [1],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3]}
+            mod_cct_status_dict = {0: [1],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 0, 1],
+                                   2: [1, 0, 1],
+                                   3: [1, 0]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3]],
+                                  1: [[7, 3], [7, 3], [7, 3]],
+                                  2: [[7, 3], [7, 3], [5, 3]],
+                                  3: [[7, 3], [7, 3]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+
+        elif args.architecture == 'DAN2_small_4SL_seriouscompress':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 10, 10],
+                                         [args.batch_size, 32, 5, 5]]
+            mod_connect_dict = {0: [1],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3]}
+            mod_cct_status_dict = {0: [1],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 0, 1],
+                                   2: [1, 0, 1],
+                                   3: [1, 0]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3]],
+                                  1: [[7, 3], [7, 3], [7, 3]],
+                                  2: [[7, 3], [7, 3], [5, 3]],
+                                  3: [[7, 3], [7, 3]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
+
+        elif args.architecture == 'DAN2_small_light_4SL_FC_top1.5':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 16, 10, 10],
+                                         [args.batch_size, 16, 5, 5]]
+            mod_connect_dict = {0: [1],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3]}
+            mod_cct_status_dict = {0: [1],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 0, 1],
+                                   2: [1, 0, 3],
+                                   3: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3]],
+                                  1: [[7, 3], [7, 3], [7, 3]],
+                                  2: [[7, 3], [7, 3], [5, 3]],
+                                  3: [[7, 3], [7, 3]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_small_light_3SL_all_FC_no_self':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 5, 5, 5],
+                                         [args.batch_size, 3, 3, 3]]
+            mod_connect_dict = {0: [1],
+                                1: [0, 2],
+                                2: [1]}
+            mod_cct_status_dict = {0: [3],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [3, 3],
+                                   2: [3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3]],
+                                  1: [[7, 3], [7, 3], [7, 3]],
+                                  2: [[7, 3], [7, 3], [5, 3]],
+                                  3: [[7, 3], [7, 3]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 16, 10, 10],
+                                         [args.batch_size, 16, 5, 5],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 4],
+                                1: [0, 2],
+                                2: [1, 3],
+                                3: [2, 4],
+                                4: [3]}
+            mod_cct_status_dict = {0: [1, 3],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1],
+                                   2: [1, 1],
+                                   3: [1, 3],
+                                   4: [3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7, 3],[]],
+                                  1: [[7, 3],[7, 3]],
+                                  2: [[7, 3],[5, 3]],
+                                  3: [[7, 3],[]],
+                                  4: []}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3,
+                              4: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_combo_convfc_5SL_symm':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 16, 10, 10],
+                                         [args.batch_size, 16, 5, 5],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 4],
+                                1: [0, 2],
+                                2: [1, 3],
+                                3: [2, 4],
+                                4: [3,0]}
+            mod_cct_status_dict = {0: [1, 3],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1],
+                                   2: [1, 1],
+                                   3: [1, 3],
+                                   4: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7, 3],[]],
+                                  1: [[7, 3],[7, 3]],
+                                  2: [[7, 3],[5, 3]],
+                                  3: [[7, 3],[]],
+                                  4: [[],[]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3,
+                              4: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_densebackw':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 10, 10],
+                                         [args.batch_size, 32, 5, 5],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2,3,4],
+                                1: [0, 1, 2],
+                                2: [1, 2],
+                                3: [2, 3],
+                                4: [3]}
+            mod_cct_status_dict = {0: [1, 1,1,3],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1],
+                                   2: [1, 1],
+                                   3: [1, 3], #TODO wtf why is this a diff len from connect dict?
+                                   4: [3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7, 3],[7, 3],[7, 3],[]],
+                                  1: [[7, 3],[7, 3],[7, 3]],
+                                  2: [[7, 3],[5, 3]],
+                                  3: [[7, 3],[]],
+                                  4: []}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3,
+                              4: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            #dict_len_check(args)
+        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_densebackw_corrected':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 10, 10],
+                                         [args.batch_size, 32, 5, 5],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2, 3, 4],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3, 4],
+                                4: [3,4]}
+            mod_cct_status_dict = {0: [1, 1, 1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 1],
+                                   2: [1, 1, 1],
+                                   3: [1, 1, 3],
+                                   4: [3,3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3], [7, 3], []],
+                                  1: [[7, 3], [7, 3], [7, 3]],
+                                  2: [[7, 3], [7, 3], [5, 3]],
+                                  3: [[7, 3], [7, 3], []],
+                                  4: [[],[]]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3,
+                              4: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_densebackw_with_convt':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 10, 10],
+                                         [args.batch_size, 32, 5, 5],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2,3,4],
+                                1: [0, 1, 2],
+                                2: [1, 2],
+                                3: [2, 3],
+                                4: [3]}
+            mod_cct_status_dict = {0: [1, 1,1,3],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 2],
+                                   2: [1, 1],
+                                   3: [1, 3], #TODO wtf why is this a diff len from connect dict?
+                                   4: [3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7, 3],[7, 3],[7, 3],[]],
+                                  1: [[7, 3],[7, 3],[7, 3]],
+                                  2: [[7, 3],[5, 3]],
+                                  3: [[7, 3],[]],
+                                  4: []}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3,
+                              4: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            #dict_len_check(args)
+        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_bigkern':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 10, 10],
+                                         [args.batch_size, 32, 5, 5],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 4],
+                                1: [0, 2],
+                                2: [1, 3],
+                                3: [2, 4],
+                                4: [3]}
+            mod_cct_status_dict = {0: [1, 3],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1],
+                                   2: [1, 1],
+                                   3: [1, 3],
+                                   4: [3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[11, 5], []],
+                                  1: [[11, 5], [11, 5]],
+                                  2: [[11, 5], [11, 5]],
+                                  3: [[11, 5], []],
+                                  4: []}
+            main_kern_dict = {0: 11,
+                              1: 11,
+                              2: 11,
+                              3: 3,
+                              4: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_above2all':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 10, 10],
+                                         [args.batch_size, 32, 5, 5],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2,3,4],
+                                1: [0, 1, 2, 3, 4],
+                                2: [1, 2, 3, 4],
+                                3: [2, 3, 4],
+                                4: [3, 4]}
+            mod_cct_status_dict = {0: [1, 1,1,3],  # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 1, 1, 1],
+                                   2: [1, 1, 1, 1],
+                                   3: [1, 3, 3],
+                                   4: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7, 3],[7, 3],[7, 3],[]],
+                                  1: [[7, 3],[7, 3],[7, 3],[5, 3],[5, 3]],
+                                  2: [[7, 3],[7, 3],[5, 3],[5, 3]],
+                                  3: [[7, 3],[]],
+                                  4: []}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3,
+                              4: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_combo_convfc_4SL_asymm_incorrected_loop':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 7, 7],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2, 3],
+                                1: [0, 1],
+                                2: [1, 2],
+                                3: [2, 3]}
+            mod_cct_status_dict = {0: [1, 1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1],
+                                   2: [1, 3],
+                                   3: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3], []],
+                                  1: [[7, 3], [7, 3]],
+                                  2: [[7, 3],  []],
+                                  3: [[7, 3],  []]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            #dict_len_check(args)
+        elif args.architecture == 'DAN2_combo_convfc_4SL_all2all':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 32, 28, 28],
+                                         [args.batch_size, 32, 7, 7],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2, 3],
+                                1: [0, 1, 2, 3],
+                                2: [0, 1, 2, 3],
+                                3: [0, 1, 2, 3]}
+            mod_cct_status_dict = {0: [1, 1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 1, 1],
+                                   2: [1, 1, 1, 3],
+                                   3: [1, 1, 3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3], []],
+                                  1: [[7, 3], [7, 3], [7, 3], [7, 3]],
+                                  2: [[7, 3], [7, 3], [7, 3], []],
+                                  3: [[7, 3], [7, 3], [],     []]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 3}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_combo_convfc_3SL_small':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2],
+                                1: [0, 1, 2],
+                                2: [1, 2]}
+            mod_cct_status_dict = {0: [1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 3],
+                                   2: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0}
+            base_kern_pad_dict = {0: [[7, 3], []],
+                                  1: [[7, 3], [11, 5], []],
+                                  2: [[], []]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'ffexplore_DAN2_combo_convfc_3SL_small':
+            vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
+                                         [args.batch_size, 16, 28, 28],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1],
+                                1: [0, 1, 2],
+                                2: [1, 2]}
+            mod_cct_status_dict = {0: [1],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 3],
+                                   2: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0}
+            base_kern_pad_dict = {0: [[7, 3]],
+                                  1: [[7, 3], [11, 5], []],
+                                  2: [[], []]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_CIFAR_6SL_vanilla_densebackw_skip1_4':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
+                                         [args.batch_size, 32, 32, 32],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 32, 8, 8],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2, 3, 4, 5],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3, 4],
+                                4: [1, 3, 4, 5],#Conider a later archi that inputs 5 to all layers(DAN2_CIFAR_6SL_vanilla_densebackw)
+                                5: [4, 5]}
+            mod_cct_status_dict = {0: [1, 1, 1, 1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 1],
+                                   2: [1, 1, 1],
+                                   3: [1, 1, 1],
+                                   4: [1, 1, 1, 3],
+                                   5: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0,
+                                5: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3], [7, 3], [7, 3], []],
+                                  1: [[7, 3], [7, 3], [7, 3]],
+                                  2: [[7, 3], [7, 3], [7, 3]],
+                                  3: [[7, 3], [7, 3], [7, 3]],
+                                  4: [[7, 3], [7, 3], [7, 3], []],
+                                  5: [[], []],}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7,
+                              4: 7,
+                              5: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_CIFAR_6SL_vanilla_densebackw_skip1_4_withwideSL1base':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
+                                         [args.batch_size, 32, 32, 32],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 32, 8, 8],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2, 3, 4, 5],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3, 4],
+                                4: [1, 3, 4, 5],#Conider a later archi that inputs 5 to all layers(DAN2_CIFAR_6SL_vanilla_densebackw)
+                                5: [4, 5]}
+            mod_cct_status_dict = {0: [1, 1, 1, 1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 1],
+                                   2: [1, 1, 1],
+                                   3: [1, 1, 1],
+                                   4: [1, 1, 1, 3],
+                                   5: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0,
+                                4: 0,
+                                5: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3], [7, 3], [7, 3], []],
+                                  1: [[7, 3], [11, 5], [7, 3]],
+                                  2: [[7, 3], [7, 3], [7, 3]],
+                                  3: [[7, 3], [7, 3], [7, 3]],
+                                  4: [[7, 3], [7, 3], [7, 3], []],
+                                  5: [[], []],}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 7,
+                              4: 7,
+                              5: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_CIFAR_4SL_vanilla_densebackw_skip1_4_truncated_with_wideSL1base':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
+                                         [args.batch_size, 32, 32, 32],
+                                         [args.batch_size, 32, 16, 16],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2, 3],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3]}
+            mod_cct_status_dict = {0: [1, 1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 1],
+                                   2: [1, 1, 3],
+                                   3: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3], []],
+                                  1: [[7, 3], [11, 5], [7, 3]],
+                                  2: [[7, 3], [7, 3], []],
+                                  3: [[], []]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_CIFAR_3SL_densebackw_verysmall_with_wideSL1base':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
+                                         [args.batch_size, 16, 32, 32],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2],
+                                1: [0, 1, 2],
+                                2: [1, 2]}
+            mod_cct_status_dict = {0: [1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 3],
+                                   2: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3]],
+                                  1: [[7, 3], [11, 5], []],
+                                  2: [[], []]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 16,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 16,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_CIFAR_3SL_densebackw_small_with_wideSL1base':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
+                                         [args.batch_size, 32, 32, 32],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2],
+                                1: [0, 1, 2],
+                                2: [1, 2]}
+            mod_cct_status_dict = {0: [1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 3],
+                                   2: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3]],
+                                  1: [[7, 3], [11, 5], []],
+                                  2: [[], []]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_CIFAR_4SL_small_densebackw_wideSL1base':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
+                                         [args.batch_size, 32, 32, 32],
+                                         [args.batch_size, 32, 8, 8],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2, 3],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3]}
+            mod_cct_status_dict = {0: [1, 1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 1],
+                                   2: [1, 1, 3],
+                                   3: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3], []],
+                                  1: [[7, 3], [11, 5], [7, 3]],
+                                  2: [[7, 3], [7, 3], []],
+                                  3: [[], []]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 7,
+                              3: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
+        elif args.architecture == 'DAN2_CIFAR_4SL_smaller_densebackw_wideSL1base':
+            vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
+                                         [args.batch_size, 32, 32, 32],
+                                         [args.batch_size, 16, 8, 8],
+                                         [args.batch_size, 5, 5, 5]]
+            mod_connect_dict = {0: [1, 2, 3],
+                                1: [0, 1, 2],
+                                2: [1, 2, 3],
+                                3: [2, 3]}
+            mod_cct_status_dict = {0: [1, 1, 3],
+                                   # 0 for cct, 1 for oc, 2 for oct
+                                   1: [1, 1, 1],
+                                   2: [1, 1, 3],
+                                   3: [3, 3]}
+            mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
+                                1: 0,
+                                2: 0,
+                                3: 0}
+            base_kern_pad_dict = {0: [[7, 3], [7, 3], []],
+                                  1: [[7, 3], [11, 5], [7, 3]],
+                                  2: [[3, 1], [3, 1], []],
+                                  3: [[], []]}
+            main_kern_dict = {0: 7,
+                              1: 7,
+                              2: 3,
+                              3: 0}
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
+                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+                                       'growth_rate': 8,
+                                       'num_ch_initter': 32,
+                                       'num_sl': len(args.state_sizes) - 1,
+                                       'base_kern_pad_dict': base_kern_pad_dict,
+                                       'main_kern_dict': main_kern_dict,
+                                       'mod_connect_dict': mod_connect_dict,
+                                       'mod_cct_status_dict': mod_cct_status_dict,
+                                       'mod_num_lyr_dict': mod_num_lyr_dict,
+                                       'spec_norm_reg': False}
+            dict_len_check(args)
 
 
     if len(args.sampling_step_size) == 1:
         vars(args)['sampling_step_size'] = args.sampling_step_size * len(args.state_sizes)
     if len(args.sigma) == 1:
         vars(args)['sigma'] = args.sigma * len(args.state_sizes)
+    if len(args.max_sq_sigma) == 1:
+        vars(args)['max_sq_sigma'] = args.max_sq_sigma * len(args.state_sizes)
+    if len(args.momentum_param) == 1:
+        vars(args)['momentum_param'] = args.momentum_param * len(args.state_sizes)
+
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
         print(str(k) + '\t' * 2 + str(v))
 
-    if args.use_cuda:
-        args.device = 'cuda'
-    else:
-        args.device = 'cpu'
-
     return args
+
 
 def main():
     ### Parse CLI arguments.
-    parser = argparse.ArgumentParser(description='Stabilised Supralinear network in the style of an EBM.')
+    parser = argparse.ArgumentParser(description='Deep Attractor Network.')
     #TODO before github publication, put options in here for directory strings
     # so that it's obvious where people need to put in local-dependent input.
     # Note that you should already have instructed them to make a directory
@@ -123,7 +1511,7 @@ def main():
                              'Options: [-3, 0.5].')
     sgroup.add_argument('--num_it_neg', type=int, metavar='N', default=30,
                         help='The default number of iterations the networks' +
-                             'runs in the ntorch.sqrt(egative (sampling) phase when ' +
+                             'runs in the negative (sampling) phase when ' +
                              'no adaptive iteration length is used. ' +
                              'Default: %(default)s.'+
                              'When randomizing, the following options define'+
@@ -162,7 +1550,7 @@ def main():
                              'Default: %(default)s.')
     tgroup.add_argument('--batch_size', type=int, metavar='N', default=128,
                         help='Training batch size. Default: %(default)s.')
-    tgroup.add_argument('--lr', type=float, default=1e-3,
+    tgroup.add_argument('--lr', type=float, default=1e-3, nargs='+',
                         help='Learning rate of optimizer. Default: ' +
                              '%(default)s.' +
                              'When randomizing, the following options define'+
@@ -177,21 +1565,6 @@ def main():
                         help='The optimizer used to train the weights and ' +
                              'biases (as opposed to the one used during ' +
                              'sampling. Default: %(default)s.')
-
-
-    tgroup.add_argument('--lr_stab', type=float, default=1e-4,
-                        help='Learning rate of stabilising optimizer. Default: ' +
-                             '%(default)s.' +
-                             'When randomizing, the following optdions define'+
-                             'a range of indices and the random value assigned'+
-                             'to the argument will be 10 to the power of the'+
-                             'float selected from the range. Options: [-3, 0.2].')
-    tgroup.add_argument('--weights_optimizer_stab', type=str, default="sgd",
-                        help='The optimizer used to train the stability ' +
-                             'biases (as opposed to the one used during ' +
-                             'the weights using MaxLik loss. Default: %(default)s.')
-
-
     tgroup.add_argument('--dataset', type=str, default="CIFAR10",
                         help='The dataset the network will be trained on.' +
                              ' Default: %(default)s.')
@@ -249,11 +1622,6 @@ def main():
                         help='The length of the history that is used to ' +
                              'determine whether the positive iterations  ' +
                              'will be truncated. Default: %(default)s.')
-    tgroup.add_argument('--contin_syn_stabil', action='store_true',
-                        help='If true, then the weights of the SSN are ' +
-                             'continuously stabilised so that EI balance'+
-                             'doesn\'t become too imbalanced.')
-    parser.set_defaults(contin_syn_stabil=False)
 
 
     ngroup = parser.add_argument_group('Network and states options')
@@ -281,21 +1649,6 @@ def main():
                              'to the argument will be 10 to the power of the' +
                              'float selected from the range. '+
                              'Options: [-3, 0].')
-    ngroup.add_argument('--supra_k', type=float, default=0.005, nargs='+',
-                        help='Sets the scale of the activation function'
-                             'in the network.')
-    ngroup.add_argument('--supra_n', type=float, default=3, nargs='+',
-                        help='Sets the scale of the supralinearity of the ' +
-                             'activation function in the network.')
-    ngroup.add_argument('--weights_gamma_alpha', type=float, default=2, nargs='+',
-                        help='Sets the shape parameter of the gamma ' +
-                             'distribution used to initalise conv nets.')
-    ngroup.add_argument('--weights_gamma_beta', type=float, default=0.5, nargs='+',
-                        help='Sets the rate parameter of the gamma ' +
-                             'distribution used to initalise conv nets.')
-    ngroup.add_argument('--weights_mag_scale', type=float, default=0.04, nargs='+',
-                        help='Sets the scale of the initialised weights of ' +
-                             'the EI conv nets.')
     ngroup.add_argument('--state_optimizer', type=str, default='sgd',
                         help='The kind of optimizer to use to descend the '+
                         'energy landscape. You can implement Langevin '+
@@ -303,6 +1656,30 @@ def main():
                         'noise and step size. Note that in the IGEBM paper, '+
                         'I don\'t think they used true Langevin dynamics due'+
                         ' to their choice of noise and step size.')
+
+    ngroup.add_argument('--printing_grad_mom_info', action='store_true',
+                        help='Whether or not to print gradient and mom info.')
+    parser.set_defaults(printing_grad_mom_info=False)
+    ngroup.add_argument('--momentum_param', type=float, default=1.0, nargs='+',
+                        help='')
+    ngroup.add_argument('--dampening_param', type=float, default=0.0,
+                        help='')
+    ngroup.add_argument('--mom_clip', action='store_true',
+                        help='Whether or not clip the sghmc norm.')
+    parser.set_defaults(mom_clip=False)
+    ngroup.add_argument('--mom_clip_vals', type=float, default=[2.0,
+                            10., 14.676934, 3.0, 5., 2.], nargs='+',
+                        help='The maximum norm of the momentum permitted.')
+    ngroup.add_argument('--non_diag_inv_mass', action='store_true',
+                        help='Whether or not to use a non diagonal mass ' +
+                        'matrix. The analogy is imposing lateral inhibition' +
+                        'on the dynamics of the network.')
+    parser.set_defaults(non_diag_inv_mass=False)
+    ngroup.add_argument('--mean_batch_minv_t', action='store_true',
+                        help='Whether or not to use the mean minv_t' +
+                        'value for all batches. This should make it more' +
+                        'consistent.')
+    parser.set_defaults(mean_batch_minv_t=False)
 
 
     ngroup.add_argument('--model_weight_norm', action='store_true',
@@ -316,7 +1693,12 @@ def main():
     ngroup.add_argument('--num_burn_in_steps', type=float, default=0.0,
                         help='The number of burnin steps for the adaptive ' +
                              'sghmc optimizer')
-
+    ngroup.add_argument('--max_sq_sigma', type=float, default=[100.], nargs='+',
+                        help='The maximum variance of the noise added in ' +
+                             'every step of the sghmc optimizer')
+    ngroup.add_argument('--min_sq_sigma', type=float, default=1e-16,
+                        help='The minimum variance of the noise added in ' +
+                             'every step of the sghmc optimizer')
 
     vgroup = parser.add_argument_group('Visualization options')
     vgroup.add_argument('--viz', action='store_true',
@@ -417,8 +1799,8 @@ def main():
     mgroup.add_argument('--model_save_interval', type=int, default=100,
                         help='The size of the intervals between the model '+
                              'saves.')
-    mgroup.add_argument('--load_id', type=str,
-                        help='The name of the unique_id that you want to load.'+
+    mgroup.add_argument('--load_model', type=str,
+                        help='The name of the model that you want to load.'+
                         'The file extension should not be included.')
     ngroup.add_argument('--no_train_model', action='store_true',
                         help='Whether or not to train the model ')
@@ -437,8 +1819,6 @@ def main():
                                        'post hoc')
     xgroup.add_argument('--use_cuda', action='store_true',
                         help='Flag to enable GPU usage.')
-    xgroup.add_argument('--device', type=str, metavar='N',
-                        default="None")
     xgroup.add_argument('--special_name', type=str, metavar='N',
                         default="None",
                         help='A description of what is special about the ' +
@@ -447,18 +1827,7 @@ def main():
                         help='Number of units in each hidden layer of the ' +
                              'network. Default: %(default)s.')
     xgroup.add_argument('--arch_dict', type=dict, default={})
-    xgroup.add_argument('--session_name', type=str, metavar='N',
-                        help='The session name, unique for every time you ' +
-                             'run the script.')
-    xgroup.add_argument('--model_name', type=str, metavar='N',
-                        help='The model name. The name of the first session ' +
-                             'in which the model was instantiated.')
-    xgroup.add_argument('--unique_id', type=str, metavar='N',
-                        help='The model name. The name of the first session ' +
-                             'in which the model was instantiated.')
-    xgroup.add_argument('--id_history', type=str, metavar='N',
-                        help='The id history. Every time a model is loaded' +
-                             'in a session, the model-session unique id is added to the id history.')
+
     args = finalize_args(parser)
 
     if args.use_cuda:
@@ -467,27 +1836,19 @@ def main():
         device = 'cpu'
 
     # Set up the tensorboard summary writer and log dir
-
-    session_name = lib.utils.datetimenow(subseconds=True)
-    if args.load_id:
-        loading_id = args.load_id
-        cutoff_idx = loading_id.find('_s')
-        model_name = loading_id[1:cutoff_idx]
-    else:
-        model_name = session_name
-
-    # model_name = lib.utils.datetimenow() + '__rndidx_' + str(np.random.randint(0,99999))
-    unique_id = 'm'+ model_name + '_s' + session_name
-
+    model_name = lib.utils.datetimenow() + '__rndidx_' + str(np.random.randint(0,99999))
     print(model_name)
-    writer = SummaryWriter(args.tensorboard_log_dir + '/' + unique_id)
-    sample_log_dir = os.path.join('exps', 'samples', unique_id)
+    writer = SummaryWriter(args.tensorboard_log_dir + '/' + model_name)
+    sample_log_dir = os.path.join('exps', 'samples', model_name)
     if not os.path.isdir(sample_log_dir):
         os.mkdir(sample_log_dir)
 
     # Set up model
-    model = models.SSNEBM(args, device, session_name, model_name, unique_id,
-                          writer).to(device)
+    if args.network_type == 'DAN2':
+        model = models.DeepAttractorNetworkTakeTwo(args, device, model_name, writer).to(
+            device)
+    else:
+        raise ValueError("Invalid CLI argument for argument 'network_type'. ")
 
     # Set up dataset
     data = Dataset(args)
@@ -495,8 +1856,7 @@ def main():
 
     if not args.no_train_model:
         # Train the model
-        tm = managers.TrainingManager(args, model, data, buffer, session_name,
-                                      model_name, unique_id, writer, device,
+        tm = managers.TrainingManager(args, model, data, buffer, writer, device,
                              sample_log_dir)
         tm.train()
     if args.viz:
@@ -556,7 +1916,7 @@ def main():
         # # previous experiment isn't overwritten
         # vars(args)['state_optimizer'] = 'sgd'
         # vars(args)['momentum_param']  = 0.0
-        # model_name = lib.utils.datetimenow() + '__rndidx_' + str(3
+        # model_name = lib.utils.datetimenow() + '__rndidx_' + str(
         #     np.random.randint(0, 99999))
         #
         # model = models.DeepAttractorNetworkTakeTwo(args, device, model_name,

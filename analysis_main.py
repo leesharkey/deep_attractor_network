@@ -73,9 +73,9 @@ def main():
     # am.plot_state_traces_with_spec_and_acorr(None)
     # # am.plot_contrast_specgram_comparison_local('patch')  # not used
     # # am.plot_contrast_specgram_comparison_local(None)    # not used
-    # am.plot_contrast_specgram_comparison_LFP()
+    # am.plot_contrast_specgram_comparison_LFP()  # In thesis
     # am.plot_contrast_specgram_comparison_LFP('neuron')
-    # am.plot_contrast_power_spectra_LFP()
+    am.plot_contrast_power_spectra_LFP()  # In thesis
 
 
     # CONTRAST DEPENDENT TRANSIENTS ANALYSIS
@@ -99,7 +99,7 @@ def main():
     # # am.explore_oscillations_in_channel() #in a messy state right now but will maybe return to.
 
 
-    # am.plot_state_and_mom_trace() # still needs to be run for all channels
+    # am.plot_state_and_mom_trace() # In thesis # still needs to be run for all channels
     # am.calculate_EI_lag()
 
 
@@ -122,10 +122,10 @@ def main():
 
 
     # # SYNCHRONY EXPERIMENT 3
-    am.synchrony_experiment3_xcorrs()
+    # am.synchrony_experiment3_xcorrs()
     # am.synchrony_experiment3_fit_Gabors()
     # am.synchrony_experiment3_Analyze_fitted_Gabors()
-    am.synchrony_experiment3_Distance_vs_OscAmp()
+    # am.synchrony_experiment3_Distance_vs_OscAmp()
 
 
 

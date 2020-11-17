@@ -312,6 +312,15 @@ class AnalysisManager:
         self.acorr_x = np.arange(start=-self.acorr_mid_len,
                                  stop=self.acorr_mid_len) # x values
 
+    def timesteps_to_ms(self, ts, round=100):
+        ms = ts * (70. / 17.)
+        ms = np.round(ms, round)
+        return ms
+
+    def ms_to_timesteps(self, ms, round=100):
+        ts = ms * (17. / 70.)
+        ts = np.round(ts, round)
+        return ts
 
 
     def get_contrasts_from_images(self):
@@ -1532,7 +1541,7 @@ class AnalysisManager:
         model_exp_name = self.primary_model_exp_name
 
         # Get the subset of contrasts that I want to plot
-        contrast_inds = [0, 2, 5, 7]
+        contrast_inds = [0, 3, 5, 7]
         contrasts = [self.contrast_and_angle_contrasts[i]
                      for i in contrast_inds]
         per_contr_series = [None] * len(contrasts)
@@ -1665,14 +1674,14 @@ class AnalysisManager:
         model_exp_name = self.primary_model_exp_name
 
         # Get the subset of contrasts that I want to plot
-        contrast_inds = [0, 2, 5, 7]
+        contrast_inds = [0, 3, 5, 7]
         contrasts = [self.contrast_and_angle_contrasts[i]
                      for i in contrast_inds]
         per_contr_series = [None] * len(contrasts)
         per_contr_powerspecs = [[]] * len(contrasts)
         per_contr_powerfreqs = [[]] * len(contrasts)
 
-        for ch in range(3):#range(self.num_ch):
+        for ch in range(self.num_ch):
             print("Channel %s" % str(ch))
 
             # Get data
@@ -1738,16 +1747,22 @@ class AnalysisManager:
         # Plot per-contrast power spectra of the series
         #Now do unnormalized plot
         fig, ax = plt.subplots()
+        ax.set_frame_on(False)
         cmap = plt.cm.Greys
+
+        timesteps_per_second = self.ms_to_timesteps(1000)
 
         for contrast, series in zip(contrasts,per_contr_series):
             freqs, psd = welch(
-                series[100:],
-                scaling='spectrum',
-                nperseg=self.exp_stim_phase_lens[1])
+                # series[100:],
+                series[self.primary_stim_start:self.primary_stim_stop],
+                fs=timesteps_per_second,
+                scaling='density')
+
             plt.plot(psd*freqs, c=cmap(0.2*contrast + 0.3))
+
         plt.yscale("log")
-        ax.set_xlabel('Frequency [a.u]')
+        ax.set_xlabel('Frequency [Hz]')
         ax.set_ylabel('Power X Frequency [a.u]')
         ax.legend(['Low contrast','         -', '         -', 'High contrast'])
         plt.tight_layout()  # Stops y label being cut off
@@ -1770,7 +1785,9 @@ class AnalysisManager:
         if not os.path.isdir(exp_dir):
             os.mkdir(exp_dir)
 
-        if patch_or_idx == 'patch':
+        mean_thresholding = True
+
+        if patch_or_idx == 'patch': #TODO lee consider increasing these to an even bigger patch to even out the noise. Do overnight. by hardcoding
             centre1 = self.central_patch_min
             centre2 = self.central_patch_max
             save_name = 'patch'
@@ -1788,7 +1805,7 @@ class AnalysisManager:
         model_exp_name = self.primary_model_exp_name
 
         # Get the subset of contrasts that I want to plot
-        contrast_inds = [0, 2, 5, 7]
+        contrast_inds = [0, 3, 5, 7]
         contrasts = [self.contrast_and_angle_contrasts[i]
                      for i in contrast_inds]
         per_contr_series = [None] * len(contrasts)
@@ -1819,7 +1836,7 @@ class AnalysisManager:
             # nrnact_ch = pd.merge(nrnact_ch.transpose(), activities_df)
             # nrnact_ch = nrnact_ch.transpose()
             # cond1 = nrnact_ch['matched_stim_ori_pref']
-            # cond2 = nrnact_ch['active'] # TODO get the same set of neurons in each of the traces, not just those that are active in one and not another. Select them if they've been active at any contrast.  Otherwise I think
+            # cond2 = nrnact_ch['active']
             cond3 = nrnact_ch['height'] >= centre1
             cond4 = nrnact_ch['height'] <= centre2
             cond5 = nrnact_ch['width'] >= centre1
@@ -1851,15 +1868,27 @@ class AnalysisManager:
                 drop_cols = list(
                     contrast_df.columns[:-self.full_trace_len])
                 contrast_df = contrast_df.drop(columns=drop_cols)
+                num_points = (len(contrast_df.columns) - self.primary_stim_stop) + (
+                            self.primary_stim_start - self.burn_in_len)
+                if mean_thresholding:
+                    # contrast_df = np.array(contrast_df)
+                    nrn_means = contrast_df.iloc[:,self.burn_in_len:self.primary_stim_start].sum(axis=1)
+                    nrn_means += contrast_df.iloc[:,self.primary_stim_stop:len(contrast_df.columns)].sum(axis=1)
+                    nrn_means = nrn_means / num_points
+                    nrn_means = np.column_stack([nrn_means] * \
+                                         len(contrast_df.columns))
+                    contrast_df = np.where(contrast_df > nrn_means, contrast_df, nrn_means)
+
                 # contrast_df = contrast_df.iloc[p]
                 contrast_df = contrast_df.sum(axis=0)
 
-                num_points = (len(contrast_df) - self.primary_stim_stop) + (
-                            self.primary_stim_start - self.burn_in_len)
+
                 mean = sum(
                     contrast_df[self.burn_in_len:self.primary_stim_start])
                 mean += sum(
                     contrast_df[self.primary_stim_stop:len(contrast_df)])
+                    # contrast_df[self.primary_stim_stop:len(contrast_df.columns)])
+
                 mean = mean / num_points
 
                 if per_contr_series[n] is None:
@@ -1882,39 +1911,56 @@ class AnalysisManager:
                             contrast_df.var()
                     per_contr_series[n] += contrast_df
 
-        # Plot per-contrast traces
         #cmap = plt.cm.YlGn
         cmap = plt.cm.Greys
-        fig, ax = plt.subplots()
-        for contrast, series in zip(contrasts,per_contr_series):
-            trunc_series = \
-                series[self.primary_stim_start-100:self.primary_stim_start+100]
-            plt.plot(trunc_series, c=cmap(0.2*contrast + 0.3))
-        plt.axvline(x=self.primary_stim_start, c='black',
-                         linewidth=1, linestyle='dashed')
-        ax.legend(['Low contrast',' ', ' ', 'High contrast'])
-        ax.set_xticks(ticks=[1000, 1100, 1200])  # ,labels=['0'])
-        ax.set_xticklabels([-100, 0, 100])
-        ax.set_yticklabels([])
-        plt.tight_layout()  # Stops y label being cut off
-        plt.savefig(
-            os.path.join(exp_dir,
-                         'Transients for active neurons in central ' +
-                         ' %s for all channels .png' % (save_name)))
-        plt.close()
+
+        # Plot per-contrast traces
+        # Normalised traces
+
+        # fig, ax = plt.subplots()
+        # for contrast, series in zip(contrasts,per_contr_series):
+        #     trunc_series = \
+        #         series[self.primary_stim_start-100:self.primary_stim_start+100]
+        #     plt.plot(trunc_series, c=cmap(0.2*contrast + 0.3))
+        # plt.axvline(x=self.primary_stim_start, c='black',
+        #                  linewidth=1, linestyle='dashed')
+        # ax.legend(['Low contrast',' ', ' ', 'High contrast'])
+        # ax.set_xticks(ticks=[1000, 1100, 1200])  # ,labels=['0'])
+        # ax.set_xticklabels([-100, 0, 100])
+        # ax.set_yticklabels([])
+        # plt.tight_layout()  # Stops y label being cut off
+        # plt.savefig(
+        #     os.path.join(exp_dir,
+        #                  'Transients for active neurons in central ' +
+        #                  ' %s for all channels .png' % (save_name)))
+        # plt.close()
 
 
         #Now do unnormalized plot
         fig, ax = plt.subplots()
+        ax.set_frame_on(False)
+        ax.axes.get_yaxis().set_visible(False)
+        ax.set_xlabel('Time after stimulation (ms)')
         for contrast, series in zip(contrasts,unnorm_per_contr_series):
             trunc_series = series[self.primary_stim_start-100:self.primary_stim_start+150]
             plt.plot(trunc_series, c=cmap(0.2*contrast + 0.3))
-        plt.axvline(x=self.primary_stim_start, c='black',
+        plt.axvline(x=100, c='black',
                          linewidth=1, linestyle='dashed')
         ax.legend(['Low contrast','         -', '         -', 'High contrast'], loc='upper left')
+        # leg = plt.legend()
+        ax.legend_.get_frame().set_linewidth(0.0)
+        ts_per_100ms = self.ms_to_timesteps(100,8)
+        diff = 100 - 4 * ts_per_100ms
+        # ticks_locs_ts = np.round(np.arange(-100, 150, (150+100)/10))
+        ticks_locs_ts = sorted(-np.arange(0, 4*ts_per_100ms, ts_per_100ms))[:-1]
+        ticks_locs_ts.extend(list(np.arange(0, 8*ts_per_100ms, ts_per_100ms)))
+        ticks_locs_ts = np.array(ticks_locs_ts)
+        ticks_locs_ts = ticks_locs_ts - np.min(ticks_locs_ts) + diff
 
-        ax.set_xticks(ticks=[1000, 1100, 1200])  # ,labels=['0'])
-        ax.set_xticklabels([-100, 0, 100])
+        labels_ms = np.round(np.arange(-400, 700, 100))
+        # labels_ms = labels_ms - labels_ms[len(labels_ms) // 2]
+        ax.set_xticks(ticks=ticks_locs_ts)  # ,labels=['0'])
+        ax.set_xticklabels(labels_ms)
         ax.set_yticklabels([])
         plt.tight_layout()  # Stops y label being cut off
         plt.savefig(
@@ -1928,11 +1974,9 @@ class AnalysisManager:
         for contrast, series in zip(contrasts,unnorm_per_contr_series):
             trunc_series = series[self.primary_stim_stop-100:self.primary_stim_stop+150]
             plt.plot(trunc_series, c=cmap(0.2*contrast + 0.3))
-        plt.axvline(x=self.primary_stim_stop, c='black',
+        plt.axvline(x=100, c='black',
                          linewidth=1, linestyle='dashed')
-        ax.set_xticks(ticks=[self.primary_stim_stop-100,
-                             self.primary_stim_stop,
-                             self.primary_stim_stop+100])  # ,labels=['0'])
+        ax.set_xticks(ticks=[0, 100, 200])  # ,labels=['0'])
         ax.set_xticklabels([-100, 0, 100])
         ax.set_yticklabels([])
         ax.legend(['Low contrast',' ', ' ', 'High contrast'], loc='upper right')
@@ -5344,28 +5388,50 @@ class AnalysisManager:
             fig, ax = plt.subplots(2, sharex=True)
             fig.set_size_inches(8.5, 8.5)
             # fig.set_size_inches(4.5, 8.5)
-            ## During
-            stattr = ax[0].plot(np.array(list(range(len(state_trace_during_trunc)))),
-                       state_trace_during_trunc)
-            momtr = ax[0].plot(np.array(list(range(len(momentum_trace_during_trunc)))),
-                       -momentum_trace_during_trunc, c='r')
-            ax[0].set_ylabel('State or negative momentum [a.u.]')
-            ax[0].set_yticks([-0.15,0.0, 0.15])
-            ax[0].set_yticklabels([-0.15,0.0,0.15])
-            ax[0].legend(['State', 'Negative Momentum'])
+            # Remove borders etc
+            ax[0].set_frame_on(False)
+            ax[0].axes.get_yaxis().set_visible(False)
+            ax[0].axes.get_xaxis().set_visible(False)
+            ax[1].set_frame_on(False)
+            ax[1].axes.get_yaxis().set_visible(False)
 
+            ## During
+            stattr = ax[0].plot(
+                np.array(list(range(len(state_trace_during_trunc)))),
+                state_trace_during_trunc)
+            momtr = ax[0].plot(
+                np.array(list(range(len(momentum_trace_during_trunc)))),
+                -momentum_trace_during_trunc, c='r')
+            ax[0].set_ylabel('State or negative momentum [a.u.]')
+            ax[0].set_yticks([-0.15, 0.0, 0.15])
+            ax[0].set_yticklabels([-0.15, 0.0, 0.15])
+            ax[0].set_xticks([])
+            # ax[0].legend(['State', 'Negative Momentum'])
             ##Before
-            stattr = ax[1].plot(np.array(list(range(len(state_trace_before_trunc)))),
-                       state_trace_before_trunc)
-            momtr = ax[1].plot(np.array(list(range(len(momentum_trace_before_trunc)))),
-                       -momentum_trace_before_trunc, c='r')
+            stattr = ax[1].plot(
+                np.array(list(range(len(state_trace_before_trunc)))),
+                state_trace_before_trunc)
+            momtr = ax[1].plot(
+                np.array(list(range(len(momentum_trace_before_trunc)))),
+                -momentum_trace_before_trunc, c='r')
             ax[1].set_ylabel('State or negative momentum [a.u.]')
-            ax[1].set_xlabel('Timesteps')
-            ax[1].set_yticks([-0.15,0.0, 0.15])
-            ax[1].set_yticklabels([-0.15,0.0,0.15])
-            ax[1].set_xticks(list(range(0, 301, 50)))
-            ax[1].set_xticklabels(["t+%i"%int(k) for k in range(0,301,50)])
+            ax[1].set_xlabel('Timesteps (ms)')
+            ax[1].set_yticks([-0.15, 0.0, 0.15])
+            ax[1].set_yticklabels([-0.15, 0.0, 0.15])
+
+            # Calculate labels in milliseconds
+            ts_per = self.ms_to_timesteps(200, 8)
+            # diff = 100 - 4 * ts_per_100ms
+            # ticks_locs_ts = np.round(np.arange(-100, 150, (150+100)/10))
+            ticks_locs_ts = np.arange(0, 7 * ts_per, ts_per)
+            # ticks_locs_ts = np.array(ticks_locs_ts)
+            # ticks_locs_ts = ticks_locs_ts - np.min(ticks_locs_ts) #+ diff
+
+            labels_ms = np.round(np.arange(0, 1300, 200))
+            ax[1].set_xticks(ticks_locs_ts)
+            ax[1].set_xticklabels(["t+%i" % int(k) for k in labels_ms])
             ax[1].legend(['State', 'Negative Momentum'])
+            ax[1].legend_.get_frame().set_linewidth(0.0)
 
             ## Set titles
             ax[0].title.set_text(
@@ -5409,8 +5475,10 @@ class AnalysisManager:
                 st_mom_xcorr_result[centre_full_trace_plots-trc_mid_len:centre_full_trace_plots+trc_mid_len]
 
             ## finally make the plots
-            fig, ax = plt.subplots(3, sharex=True)
+            fig, ax = plt.subplots(3, sharex=True, sharey=True)
             fig.set_size_inches(8.5, 8.5)
+
+            ax[i].set_frame_on(False)
 
             ax[0].plot(range(-trc_mid_len,trc_mid_len),
                        state_trace_acorr_result_dur)
@@ -5419,15 +5487,28 @@ class AnalysisManager:
             ax[2].plot(range(-trc_mid_len,trc_mid_len),
                        st_mom_xcorr_result)
 
+            # Calculate labels in milliseconds
+            ts_chunk = 100
+            min_range = -4
+            max_range = 5
+            ts_per = self.ms_to_timesteps(ts_chunk, 8)
+            ticks_locs_ts = np.arange(min_range * ts_per, max_range*ts_per, ts_per)
+            labels_ms = np.round(np.arange(min_range*ts_chunk, max_range*ts_chunk, ts_chunk))
             for i in range(3):
+                ax[i].set_frame_on(False)
                 ax[i].axvline(x=0, c='black', linewidth=1, linestyle='dashed')
                 ax[i].set_ylabel('Correlation')
+
+                ax[i].set_xticks(ticks_locs_ts)
+                ax[i].set_xticklabels(["%i" % int(k) for k in labels_ms])
 
             ax[0].title.set_text('State autocorrelation during stimulation period')
             ax[1].title.set_text('State autocorrelation before stimulation period')
             ax[2].title.set_text('Cross correlation between state and negative momentum')
 
-            ax[2].set_xlabel('Timestep lag')
+
+
+            ax[2].set_xlabel('Lag (ms)')
             plt.tight_layout()
             plt.savefig(
                 os.path.join(exp_dir,
