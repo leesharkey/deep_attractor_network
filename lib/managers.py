@@ -300,7 +300,7 @@ class TrainingManager(Manager):
         for _ in tqdm(range(self.num_it_neg)):
             self.sampler_step(neg_states, step=self.global_step)
             self.global_step += 1
-            if (self.batch_num - 2) % 50  == 0 and (self.global_step % 5 ==0):
+            if (self.batch_num - 2) % 50  == 0 and (self.global_step % 20 ==0):
                 #bookmark: debugging
                 neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
                 if not os.path.isdir(neg_save_dir):
