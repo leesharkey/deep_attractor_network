@@ -276,16 +276,20 @@ def get_state_optimizers(args, params):
                             args=args,
                             state_layer=i) for (i,prm) in enumerate(params)]
     if args.state_optimizer == 'sgd':
-        return [optim.SGD([prm], lr=args.sampling_step_size[i]) for (i,prm) in enumerate(params)]
+        return [optim.SGD([prm], lr=args.sampling_step_size[i])
+                for (i,prm) in enumerate(params)]
     if args.state_optimizer == 'sgd_momentum':
         return [optim.SGD([prm], args.sampling_step_size,
                          momentum=args.momentum_param,
-                         dampening=args.dampening_param) for prm in params]
+                         dampening=args.dampening_param)
+                for prm in params]
     if args.state_optimizer == 'nesterov':
         return [optim.SGD([prm], args.sampling_step_size,
-                         momentum=args.momentum_param, nesterov=True) for prm in params]
+                         momentum=args.momentum_param, nesterov=True)
+                for prm in params]
     if args.state_optimizer == 'adam':
-        return [optim.Adam([prm], args.sampling_step_size, betas=(0.9,0.999)) for prm in params]
+        return [optim.Adam([prm], args.sampling_step_size, betas=(0.9,0.999))
+                for prm in params]
 
 
 def datetimenow():

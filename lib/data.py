@@ -28,10 +28,8 @@ class Dataset():
                                  shuffle=shuffle,
                                  drop_last=True
                                  )
-                            #num_workers=4) #this makes debugging very very slow
-        #self.loader = tqdm(enumerate(sample_data(self.loader)))
 
-class SampleBuffer: #TODO init that uses biases
+class SampleBuffer:
     def __init__(self, args, device, max_samples=10000):
         self.args = args
         self.max_samples = max_samples
@@ -46,14 +44,11 @@ class SampleBuffer: #TODO init that uses biases
     def push(self, states, pos=False):
 
         states = listtodevice(listdetach(states), 'cpu')
-        #class_ids = class_ids.detach().to('cpu')
-
-        #neg_and_rand_class_ids = class_ids
         neg_and_rand_states = [state for state in states]
-        zippee_neg_and_rand = neg_and_rand_states #+ [neg_and_rand_class_ids]
+        zippee_neg_and_rand = neg_and_rand_states
         zippee_neg_and_rand = listsplit(zippee_neg_and_rand, size=1, dim=0)
         for sample_and_class_id in zip(*zippee_neg_and_rand):
-            sample = sample_and_class_id#[:-1]#,#sample_and_class_id[-1]
+            sample = sample_and_class_id
             self.neg_buffer.append((listdetach(sample)))
             if len(self.neg_buffer) > self.max_samples:
                 self.neg_buffer.pop(0)
@@ -64,14 +59,9 @@ class SampleBuffer: #TODO init that uses biases
         neg_samples  = zip(*neg_items)  # Unzips
         # Combines each of N lists of 1 state layers (of len=k) into k lists
         # of len=N
-        #neg_samples = zip(*neg_samples)
         neg_samples = listcat(neg_samples, dim=0)
-        #neg_class_ids = torch.tensor(neg_class_ids)
         neg_samples = listtodevice(neg_samples, self.device)
-        #neg_class_ids = neg_class_ids.to(self.device)
-
-
-        samples = neg_samples#, neg_class_ids
+        samples = neg_samples
 
         return samples
 
@@ -93,5 +83,4 @@ class SampleBuffer: #TODO init that uses biases
                                                           new_rand_state_sizes,
                                                           self.device,
                                                           initter_network)
-        #random_id = torch.randint(0, 10, (self.num_rand_samples,), device=self.device)
         return listcat(zip(replay_sample, random_sample), 0)

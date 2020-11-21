@@ -1,3 +1,24 @@
+"""
+Recommended settings for getting started:
+
+Run command
+
+python main.py --use_cuda --batch_size 128 --network_type NRFLV
+--dataset CIFAR10 --architecture NRFLV_CIFAR_4SL_small_densebackw_wideSL1base
+--initter_network_weight_norm --model_weight_norm --initializer ff_init
+--initter_network_lr 5e-4 --l2_reg_energy_param 1.0 --num_it_neg 500
+--num_it_pos 500 --img_logging_interval 10 --scalar_logging_interval 200
+--log_histograms --histogram_logging_interval 3000 --sample_buffer_prob 0.95
+--lr 5e-4 --lr_decay_gamma 0.95 --sampling_step_size 0.1
+--states_activation hardtanh --activation swish --model_save_interval 50
+--sigma 0.00 --state_optimizer sghmc --momentum_param 0.1 --non_diag_inv_mass
+--num_burn_in_steps 100 --scale_grad 1.0 --max_sq_sigma 1e-4 1e-4 1e-4 1e-4
+--min_sq_sigma 9e-5 --viz --viz_type standard --num_it_viz 5000
+--viz_img_logging_step_interval 25 --viz_start_layer 1 --weights_optimizer adam
+
+"""
+
+
 import argparse
 import os
 import numpy as np
@@ -8,9 +29,8 @@ from lib.data import SampleBuffer, Dataset
 import lib.utils
 import lib.managers as managers
 
-
 def dict_len_check(args):
-    # check the dicts are the right len
+    """Check the dicts are the right length."""
     num_layers = len(args.state_sizes)
     for l in range(num_layers):
         inps           = args.arch_dict['mod_connect_dict'][l]
@@ -26,9 +46,10 @@ def dict_len_check(args):
                              "that the architecture dictionary defines these "+
                              "correctly.")
 
-
 def finalize_args(parser):
-
+    """Sets and finalizes args
+    Recommend using architecture "NRFLV_CIFAR_4SL_small_densebackw_wideSL1base"
+    """
     args = parser.parse_args()
 
     # Generate random args, if any
@@ -43,8 +64,8 @@ def finalize_args(parser):
         vars(args)['special_name'] = input("Special name: ") or "None"
 
     # Set architecture-specific hyperparams
-    if args.network_type == 'DAN2':
-        if args.architecture == 'DAN2_very_small_1SL_self':
+    if args.network_type == 'NRFLV':
+        if args.architecture == 'NRFLV_very_small_1SL_self':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28]]
 
             mod_connect_dict = {0: [0]}
@@ -54,7 +75,7 @@ def finalize_args(parser):
                                    }
             base_kern_pad_dict = {0: [[7,3]]}
             main_kern_dict = {0: 3}
-            vars(args)['arch_dict'] = {'num_ch_base': 8,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+            vars(args)['arch_dict'] = {'num_ch_base': 8,
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -63,7 +84,7 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict,
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict}
-        if args.architecture == 'DAN2_small_4SL_allself':
+        if args.architecture == 'NRFLV_small_4SL_allself':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size,  32, 28, 28],
                                          [args.batch_size,  32, 28, 28],
@@ -89,7 +110,7 @@ def finalize_args(parser):
                               1: 3,
                               2: 3,
                               3: 3}
-            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
                                        'growth_rate': 16,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -98,7 +119,7 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict,
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict}
-        if args.architecture == 'DAN2_small_4SL_allself_nocompress':
+        if args.architecture == 'NRFLV_small_4SL_allself_nocompress':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size,  32, 28, 28],
                                          [args.batch_size,  32, 28, 28],
@@ -124,7 +145,7 @@ def finalize_args(parser):
                               1: 3,
                               2: 3,
                               3: 3}
-            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
                                        'growth_rate': 16,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -133,7 +154,7 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict,
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict}
-        if args.architecture == 'DAN2_small_4SL_topself_cleanbottom_bigkerns':
+        if args.architecture == 'NRFLV_small_4SL_topself_cleanbottom_bigkerns':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size,  32, 28, 28],
                                          [args.batch_size,  32, 28, 28],
@@ -159,7 +180,7 @@ def finalize_args(parser):
                               1: 7,
                               2: 7,
                               3: 7}
-            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -169,7 +190,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': True}
-        elif args.architecture == 'DAN2_small_6SL_allself_compress':
+        elif args.architecture == 'NRFLV_small_6SL_allself_compress':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size,  32, 28, 28],
                                          [args.batch_size,  32, 22, 22],
@@ -207,7 +228,7 @@ def finalize_args(parser):
                               3: 3,
                               4: 3,
                               5: 1}
-            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
                                        'growth_rate': 16,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -216,7 +237,7 @@ def finalize_args(parser):
                                        'mod_connect_dict': mod_connect_dict,
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict}
-        elif args.architecture == 'DAN2_small_4SL_compress_bigkern':
+        elif args.architecture == 'NRFLV_small_4SL_compress_bigkern':
             vars(args)['state_sizes'] = [[args.batch_size,  1, 28, 28],
                                          [args.batch_size,  32, 28, 28],
                                          [args.batch_size,  32, 22, 22],
@@ -241,7 +262,7 @@ def finalize_args(parser):
                               1: 7,
                               2: 7,
                               3: 7}
-            vars(args)['arch_dict'] = {'num_ch_base': 32,#Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
+            vars(args)['arch_dict'] = {'num_ch_base': 32,
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -251,7 +272,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': True}
-        elif args.architecture == 'DAN2_small_light_4SL_compress_noself_bigkern_cct':
+        elif args.architecture == 'NRFLV_small_light_4SL_compress_noself_bigkern_cct':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 22, 22],
@@ -277,7 +298,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 7}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -287,7 +307,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': True}
-        elif args.architecture == 'DAN2_small_light_4SL_nospecnormreg_compress_noself_bigkern_cct':
+        elif args.architecture == 'NRFLV_small_light_4SL_nospecnormreg_compress_noself_bigkern_cct':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 22, 22],
@@ -313,7 +333,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 7}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -323,7 +342,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_small_light_4SL_lotofcompress':
+        elif args.architecture == 'NRFLV_small_light_4SL_lotofcompress':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 16, 16],
@@ -349,7 +368,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 7}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -359,7 +377,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_small_light_4SL_top2self_lotofcompress':
+        elif args.architecture == 'NRFLV_small_light_4SL_top2self_lotofcompress':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 16, 16],
@@ -385,7 +403,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 7}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -395,7 +412,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_small_light_5SL_top3self_lotofcompress':
+        elif args.architecture == 'NRFLV_small_light_5SL_top3self_lotofcompress':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 16, 16],
@@ -427,7 +444,6 @@ def finalize_args(parser):
                               3: 7,
                               4: 1}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -437,7 +453,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_small_light_4SL_top3self_compress':
+        elif args.architecture == 'NRFLV_small_light_4SL_top3self_compress':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 16, 28, 28],
                                          [args.batch_size, 16, 10, 10],
@@ -463,7 +479,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -474,7 +489,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
 
-        elif args.architecture == 'DAN2_small_light_4SL_top3self_compress_dense':
+        elif args.architecture == 'NRFLV_small_light_4SL_top3self_compress_dense':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 16, 28, 28],
                                          [args.batch_size, 16, 10, 10],
@@ -500,7 +515,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -510,7 +524,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_small_light_3SL_seriouscompress':
+        elif args.architecture == 'NRFLV_small_light_3SL_seriouscompress':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 16, 16, 16],
                                          [args.batch_size, 16, 5, 5]]
@@ -531,7 +545,6 @@ def finalize_args(parser):
                               1: 7,
                               2: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -541,7 +554,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_small_light_3SL_seriouscompress_heavybottom':
+        elif args.architecture == 'NRFLV_small_light_3SL_seriouscompress_heavybottom':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 16, 5, 5]]
@@ -562,7 +575,6 @@ def finalize_args(parser):
                               1: 7,
                               2: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -572,7 +584,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_small_light_4SL_seriouscompress':
+        elif args.architecture == 'NRFLV_small_light_4SL_seriouscompress':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 16, 16, 16],
                                          [args.batch_size, 16, 10, 10],
@@ -592,13 +604,12 @@ def finalize_args(parser):
             base_kern_pad_dict = {0: [[7, 3]],
                                   1: [[7, 0], [7, 3], [7, 3]],
                                   2: [[7, 0], [7, 3], [5, 3]],
-                                  3: [[7, 0], [7, 3]]} #Note, no 7,3 from layer below, which isn't recommended anymore (for slightly speculative reasons, but little difference between 7,3 and 7,0 so just go with 7,3 since it worked well in the lowest layer)
+                                  3: [[7, 0], [7, 3]]}
             main_kern_dict = {0: 7,
                               1: 7,
                               2: 7,
                               3: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -608,7 +619,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_small_light_4SL_seriouscompress_heavybottom':
+        elif args.architecture == 'NRFLV_small_light_4SL_seriouscompress_heavybottom':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 16, 10, 10],
@@ -634,7 +645,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -645,7 +655,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
 
-        elif args.architecture == 'DAN2_small_4SL_seriouscompress':
+        elif args.architecture == 'NRFLV_small_4SL_seriouscompress':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 10, 10],
@@ -671,8 +681,7 @@ def finalize_args(parser):
                               2: 7,
                               3: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
-                                       'growth_rate': 8,
+'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
                                        'base_kern_pad_dict': base_kern_pad_dict,
@@ -681,9 +690,8 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-            vars(args)['energy_weight_mask'] = calc_enrg_masks(args)
 
-        elif args.architecture == 'DAN2_small_light_4SL_FC_top1.5':
+        elif args.architecture == 'NRFLV_small_light_4SL_FC_top1.5':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 16, 10, 10],
@@ -709,7 +717,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -719,7 +726,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_small_light_3SL_all_FC_no_self':
+        elif args.architecture == 'NRFLV_small_light_3SL_all_FC_no_self':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 5, 5, 5],
                                          [args.batch_size, 3, 3, 3]]
@@ -742,7 +749,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -752,7 +758,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm':
+        elif args.architecture == 'NRFLV_combo_convfc_5SL_asymm':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 16, 10, 10],
@@ -784,7 +790,6 @@ def finalize_args(parser):
                               3: 3,
                               4: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -794,7 +799,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_combo_convfc_5SL_symm':
+        elif args.architecture == 'NRFLV_combo_convfc_5SL_symm':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 16, 10, 10],
@@ -826,7 +831,6 @@ def finalize_args(parser):
                               3: 3,
                               4: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -836,7 +840,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_densebackw':
+        elif args.architecture == 'NRFLV_combo_convfc_5SL_asymm_densebackw':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 10, 10],
@@ -850,7 +854,7 @@ def finalize_args(parser):
             mod_cct_status_dict = {0: [1, 1,1,3],  # 0 for cct, 1 for oc, 2 for oct
                                    1: [1, 1],
                                    2: [1, 1],
-                                   3: [1, 3], #TODO wtf why is this a diff len from connect dict?
+                                   3: [1, 3],
                                    4: [3]}
             mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
                                 1: 0,
@@ -868,7 +872,6 @@ def finalize_args(parser):
                               3: 3,
                               4: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -879,7 +882,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             #dict_len_check(args)
-        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_densebackw_corrected':
+        elif args.architecture == 'NRFLV_combo_convfc_5SL_asymm_densebackw_corrected':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 10, 10],
@@ -912,7 +915,6 @@ def finalize_args(parser):
                               3: 3,
                               4: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -923,7 +925,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_densebackw_with_convt':
+        elif args.architecture == 'NRFLV_combo_convfc_5SL_asymm_densebackw_with_convt':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 10, 10],
@@ -937,7 +939,7 @@ def finalize_args(parser):
             mod_cct_status_dict = {0: [1, 1,1,3],  # 0 for cct, 1 for oc, 2 for oct
                                    1: [1, 1, 2],
                                    2: [1, 1],
-                                   3: [1, 3], #TODO wtf why is this a diff len from connect dict?
+                                   3: [1, 3], #This a diff len from connect dct
                                    4: [3]}
             mod_num_lyr_dict = {0: 0,  # 0 to have no dense block
                                 1: 0,
@@ -955,7 +957,6 @@ def finalize_args(parser):
                               3: 3,
                               4: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -966,7 +967,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             #dict_len_check(args)
-        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_bigkern':
+        elif args.architecture == 'NRFLV_combo_convfc_5SL_asymm_bigkern':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 10, 10],
@@ -998,7 +999,6 @@ def finalize_args(parser):
                               3: 3,
                               4: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1009,7 +1009,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_combo_convfc_5SL_asymm_above2all':
+        elif args.architecture == 'NRFLV_combo_convfc_5SL_asymm_above2all':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 10, 10],
@@ -1041,7 +1041,6 @@ def finalize_args(parser):
                               3: 3,
                               4: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1052,7 +1051,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_combo_convfc_4SL_asymm_incorrected_loop':
+        elif args.architecture == 'NRFLV_combo_convfc_4SL_asymm_incorrected_loop':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 7, 7],
@@ -1080,7 +1079,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1090,8 +1088,7 @@ def finalize_args(parser):
                                        'mod_cct_status_dict': mod_cct_status_dict,
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
-            #dict_len_check(args)
-        elif args.architecture == 'DAN2_combo_convfc_4SL_all2all':
+        elif args.architecture == 'NRFLV_combo_convfc_4SL_all2all':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 32, 28, 28],
                                          [args.batch_size, 32, 7, 7],
@@ -1119,7 +1116,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 3}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1130,7 +1126,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_combo_convfc_3SL_small':
+        elif args.architecture == 'NRFLV_combo_convfc_3SL_small':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 16, 28, 28],
                                          [args.batch_size, 5, 5, 5]]
@@ -1151,7 +1147,6 @@ def finalize_args(parser):
                               1: 7,
                               2: 7}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1162,7 +1157,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'ffexplore_DAN2_combo_convfc_3SL_small':
+        elif args.architecture == 'ffexplore_NRFLV_combo_convfc_3SL_small':
             vars(args)['state_sizes'] = [[args.batch_size, 1, 28, 28],
                                          [args.batch_size, 16, 28, 28],
                                          [args.batch_size, 5, 5, 5]]
@@ -1183,7 +1178,6 @@ def finalize_args(parser):
                               1: 7,
                               2: 7}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1194,7 +1188,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_CIFAR_6SL_vanilla_densebackw_skip1_4':
+        elif args.architecture == 'NRFLV_CIFAR_6SL_vanilla_densebackw_skip1_4':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
                                          [args.batch_size, 32, 32, 32],
                                          [args.batch_size, 32, 16, 16],
@@ -1205,7 +1199,7 @@ def finalize_args(parser):
                                 1: [0, 1, 2],
                                 2: [1, 2, 3],
                                 3: [2, 3, 4],
-                                4: [1, 3, 4, 5],#Conider a later archi that inputs 5 to all layers(DAN2_CIFAR_6SL_vanilla_densebackw)
+                                4: [1, 3, 4, 5],
                                 5: [4, 5]}
             mod_cct_status_dict = {0: [1, 1, 1, 1, 3],
                                    # 0 for cct, 1 for oc, 2 for oct
@@ -1233,7 +1227,6 @@ def finalize_args(parser):
                               4: 7,
                               5: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 32,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1244,7 +1237,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_CIFAR_6SL_vanilla_densebackw_skip1_4_withwideSL1base':
+        elif args.architecture == 'NRFLV_CIFAR_6SL_vanilla_densebackw_skip1_4_withwideSL1base':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
                                          [args.batch_size, 32, 32, 32],
                                          [args.batch_size, 32, 16, 16],
@@ -1255,7 +1248,7 @@ def finalize_args(parser):
                                 1: [0, 1, 2],
                                 2: [1, 2, 3],
                                 3: [2, 3, 4],
-                                4: [1, 3, 4, 5],#Conider a later archi that inputs 5 to all layers(DAN2_CIFAR_6SL_vanilla_densebackw)
+                                4: [1, 3, 4, 5],
                                 5: [4, 5]}
             mod_cct_status_dict = {0: [1, 1, 1, 1, 3],
                                    # 0 for cct, 1 for oc, 2 for oct
@@ -1283,7 +1276,6 @@ def finalize_args(parser):
                               4: 7,
                               5: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 32,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1294,7 +1286,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_CIFAR_4SL_vanilla_densebackw_skip1_4_truncated_with_wideSL1base':
+        elif args.architecture == 'NRFLV_CIFAR_4SL_vanilla_densebackw_skip1_4_truncated_with_wideSL1base':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
                                          [args.batch_size, 32, 32, 32],
                                          [args.batch_size, 32, 16, 16],
@@ -1321,7 +1313,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 32,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1332,7 +1323,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_CIFAR_3SL_densebackw_verysmall_with_wideSL1base':
+        elif args.architecture == 'NRFLV_CIFAR_3SL_densebackw_verysmall_with_wideSL1base':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
                                          [args.batch_size, 16, 32, 32],
                                          [args.batch_size, 5, 5, 5]]
@@ -1353,7 +1344,6 @@ def finalize_args(parser):
                               1: 7,
                               2: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 16,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 16,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1364,7 +1354,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_CIFAR_3SL_densebackw_small_with_wideSL1base':
+        elif args.architecture == 'NRFLV_CIFAR_3SL_densebackw_small_with_wideSL1base':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
                                          [args.batch_size, 32, 32, 32],
                                          [args.batch_size, 5, 5, 5]]
@@ -1385,7 +1375,6 @@ def finalize_args(parser):
                               1: 7,
                               2: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 32,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1396,7 +1385,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_CIFAR_4SL_small_densebackw_wideSL1base':
+        elif args.architecture == 'NRFLV_CIFAR_4SL_small_densebackw_wideSL1base':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
                                          [args.batch_size, 32, 32, 32],
                                          [args.batch_size, 32, 8, 8],
@@ -1423,7 +1412,6 @@ def finalize_args(parser):
                               2: 7,
                               3: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 32,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1434,7 +1422,7 @@ def finalize_args(parser):
                                        'mod_num_lyr_dict': mod_num_lyr_dict,
                                        'spec_norm_reg': False}
             dict_len_check(args)
-        elif args.architecture == 'DAN2_CIFAR_4SL_smaller_densebackw_wideSL1base':
+        elif args.architecture == 'NRFLV_CIFAR_4SL_smaller_densebackw_wideSL1base':
             vars(args)['state_sizes'] = [[args.batch_size, 3, 32, 32],
                                          [args.batch_size, 32, 32, 32],
                                          [args.batch_size, 16, 8, 8],
@@ -1461,7 +1449,6 @@ def finalize_args(parser):
                               2: 3,
                               3: 0}
             vars(args)['arch_dict'] = {'num_ch_base': 32,
-                                       # Feeling a bit restricted by not being able to specify that the base of the bottom layer should be different (since I predict that it will only have dense block rarely so needs more in the base).
                                        'growth_rate': 8,
                                        'num_ch_initter': 32,
                                        'num_sl': len(args.state_sizes) - 1,
@@ -1473,7 +1460,6 @@ def finalize_args(parser):
                                        'spec_norm_reg': False}
             dict_len_check(args)
 
-
     if len(args.sampling_step_size) == 1:
         vars(args)['sampling_step_size'] = args.sampling_step_size * len(args.state_sizes)
     if len(args.sigma) == 1:
@@ -1482,7 +1468,6 @@ def finalize_args(parser):
         vars(args)['max_sq_sigma'] = args.max_sq_sigma * len(args.state_sizes)
     if len(args.momentum_param) == 1:
         vars(args)['momentum_param'] = args.momentum_param * len(args.state_sizes)
-
 
     # Print final values for args
     for k, v in zip(vars(args).keys(), vars(args).values()):
@@ -1494,10 +1479,6 @@ def finalize_args(parser):
 def main():
     ### Parse CLI arguments.
     parser = argparse.ArgumentParser(description='Deep Attractor Network.')
-    #TODO before github publication, put options in here for directory strings
-    # so that it's obvious where people need to put in local-dependent input.
-    # Note that you should already have instructed them to make a directory
-    # structure, so may be able to use the same strings as in your system.
     sgroup = parser.add_argument_group('Sampling options')
     sgroup.add_argument('--sampling_step_size', type=float, default=10, nargs='+',
                         help='The amount that the network is moves forward ' +
@@ -1560,7 +1541,6 @@ def main():
     tgroup.add_argument('--lr_decay_gamma', type=float, default=0.97,
                         help='The rate fo decay for the learning rate. Default: ' +
                              '%(default)s.')
-
     tgroup.add_argument('--weights_optimizer', type=str, default="adam",
                         help='The optimizer used to train the weights and ' +
                              'biases (as opposed to the one used during ' +
@@ -1598,7 +1578,7 @@ def main():
                              '%(default)s.')
     tgroup.add_argument('--initter_network_layer_norm', action='store_true',
                         help='Puts layer normalization on the layers of the initter network'+
-                             'Default: %(default)s.') #TODO consider removing
+                             'Default: %(default)s.')
     parser.set_defaults(initter_network_layer_norm=False)
     tgroup.add_argument('--initter_network_weight_norm', action='store_true',
                         help='Puts weight normalization on the layers of the inittier network'+
@@ -1627,7 +1607,7 @@ def main():
     ngroup = parser.add_argument_group('Network and states options')
     ngroup.add_argument('--network_type', type=str, default="BengioFischer",
                         help='The type of network that will be used. Options: ' +
-                             '[BengioFischer, VectorField, DAN]'
+                             '[BengioFischer, VectorField, NRFLV]'
                              'Default: %(default)s.')
     ngroup.add_argument('--architecture', type=str, default="cifar10_2_layers",
                         help='The type of architecture that will be built. Options: ' +
@@ -1684,7 +1664,7 @@ def main():
 
     ngroup.add_argument('--model_weight_norm', action='store_true',
                         help='If true, weight normalization is placed on ' +
-                             'the quadratic networks of the DAN. ' +
+                             'the quadratic networks of the NRFLV. ' +
                              'Default: %(default)s.')
     parser.set_defaults(model_weight_norm=False)
     ngroup.add_argument('--scale_grad', type=float, default=1.0,
@@ -1743,14 +1723,12 @@ def main():
                         help='The state layer on which to start visualization. ' +
                              'Default: %(default)s.')
 
-
     vgroup = parser.add_argument_group('Weight Visualization options')
     vgroup.add_argument('--weight_viz', action='store_true',
                         help='Whether or not to do visualizations of the '
                              'weight matrices of the network.'
                              'Default: %(default)s.')
     parser.set_defaults(weight_viz=False)
-
 
     mgroup = parser.add_argument_group('Miscellaneous options')
     mgroup.add_argument('--randomize_args', type=str, nargs='+', default=[],
@@ -1761,7 +1739,7 @@ def main():
                         help='List of CLI args to that will take the current'+
                              'values and not the values of the loaded '+
                              'argument dictionary. Default: %(default)s.',
-                        required=False) # when viz, must use: num_it_viz viz_img_logging_step_interval viz_type
+                        required=False)
     ngroup.add_argument('--sample_buffer_prob', type=float, default=0.95,
                         help='The probability that the network will be ' +
                              'initialised from the buffer instead of from '+
@@ -1773,12 +1751,11 @@ def main():
                              ' %(default)s.',
                         required=False)
     mgroup.add_argument('--exp_data_root_path', type=str,
-                        default='/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data',
+                        default='/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data', # TODO edit this path as appropriate
                         help='The path of the directory into which '+
                              'experimental data are saved, e.g. traces. Default:'+
                              ' %(default)s.',
                         required=False)
-
     mgroup.add_argument('--log_histograms', action='store_true',
                         help='Whether or not to log histograms of weights ' +
                              'and other variables. Warning: Storage intensive.')
@@ -1814,7 +1791,6 @@ def main():
     parser.set_defaults(experiment=False)
 
 
-
     xgroup = parser.add_argument_group('Options that will be determined ' +
                                        'post hoc')
     xgroup.add_argument('--use_cuda', action='store_true',
@@ -1823,7 +1799,7 @@ def main():
                         default="None",
                         help='A description of what is special about the ' +
                              'experiment, if anything. Default: %(default)s.')
-    xgroup.add_argument('--state_sizes', type=list, nargs='+', default=[[]],#This will be filled by default. it's here for saving
+    xgroup.add_argument('--state_sizes', type=list, nargs='+', default=[[]],
                         help='Number of units in each hidden layer of the ' +
                              'network. Default: %(default)s.')
     xgroup.add_argument('--arch_dict', type=dict, default={})
@@ -1836,7 +1812,8 @@ def main():
         device = 'cpu'
 
     # Set up the tensorboard summary writer and log dir
-    model_name = lib.utils.datetimenow() + '__rndidx_' + str(np.random.randint(0,99999))
+    model_name = lib.utils.datetimenow() + '__rndidx_' + \
+                 str(np.random.randint(0,99999))
     print(model_name)
     writer = SummaryWriter(args.tensorboard_log_dir + '/' + model_name)
     sample_log_dir = os.path.join('exps', 'samples', model_name)
@@ -1844,9 +1821,8 @@ def main():
         os.mkdir(sample_log_dir)
 
     # Set up model
-    if args.network_type == 'DAN2':
-        model = models.DeepAttractorNetworkTakeTwo(args, device, model_name, writer).to(
-            device)
+    if args.network_type == 'NRFLV':
+        model = models.NRFLV(args, device, model_name, writer).to(device)
     else:
         raise ValueError("Invalid CLI argument for argument 'network_type'. ")
 
@@ -1855,90 +1831,35 @@ def main():
     buffer = SampleBuffer(args, device=device)
 
     if not args.no_train_model:
-        # Train the model
-        tm = managers.TrainingManager(args, model, data, buffer, writer, device,
-                             sample_log_dir)
+        tm = managers.TrainingManager(args, model, data, buffer, writer,
+                                      device, sample_log_dir)
         tm.train()
-    if args.viz:
-        vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
-                                  sample_log_dir)
-        vm.visualize()
 
-    if args.weight_viz:
-        args = finalize_args(parser)
-        wvm = managers.WeightVisualizationManager(args, model, data, buffer,
-                                                  writer,
-                                                  device,
-                                                  sample_log_dir)
-        wvm.visualize_base_weights()
-        #wvm.visualize_weight_pretrained()
+    if args.viz:
+        vm = managers.VisualizationManager(args, model, data, buffer,
+                                           writer, device, sample_log_dir)
+        vm.visualize()
 
     if args.gen_exp_stim:
         esgm = managers.ExperimentalStimuliGenerationManager()
-        #TODO remove hashtags for final version
 
         esgm.generate_single_gabor_dataset__just_angle()
-        #esgm.generate_single_gabor_dataset__contrast_and_angle()
-        # esgm.generate_single_gabor_dataset__just_angle_few_angles()
-        # esgm.generate_single_gabor_dataset__long_just_fewangles()
-        # esgm.generate_double_gabor_dataset__fewlocs_and_fewerangles()
-
+        esgm.generate_single_gabor_dataset__contrast_and_angle()
+        esgm.generate_single_gabor_dataset__just_angle_few_angles()
+        esgm.generate_single_gabor_dataset__long_just_fewangles()
+        esgm.generate_double_gabor_dataset__fewlocs_and_fewerangles()
 
     if args.experiment:
-        # Re-instantiate dataset now using no randomness so that the same batch
-        # is used for all experiments
         expm = managers.ExperimentsManager(args, model, data, buffer,
                                                   writer,
                                                   device,
                                                   sample_log_dir)
-        # expm.orientations_present("single", "just_angle")
-        # expm.orientations_present("single", "contrast_and_angle")
+        expm.orientations_present("single", "just_angle")
+        expm.orientations_present("single", "contrast_and_angle")
         expm.orientations_present("single", "just_angle_few_angles")
         expm.orientations_present("double", "fewlocs_and_fewerangles")
         expm.orientations_present("single", "long_just_fewangles")
 
-        ##Just putting this here so I can leave running ovenight. todo remove
-        # vars(args)['viz_type'] = 'standard'
-        # vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
-        #                           sample_log_dir)
-        # vm.visualize()
-        # vars(args)['viz_type'] = 'channels_energy'
-        # vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
-        #                           sample_log_dir)
-        # vm.visualize()
-        # vars(args)['viz_type'] = 'channels_state'
-        # vm = managers.VisualizationManager(args, model, data, buffer, writer, device,
-        #                           sample_log_dir)
-        # vm.visualize()
-        #expm.observe_cifar_pos_phase()
-
-        # # Reset parameters and create new model so that
-        # # previous experiment isn't overwritten
-        # vars(args)['state_optimizer'] = 'sgd'
-        # vars(args)['momentum_param']  = 0.0
-        # model_name = lib.utils.datetimenow() + '__rndidx_' + str(
-        #     np.random.randint(0, 99999))
-        #
-        # model = models.DeepAttractorNetworkTakeTwo(args, device, model_name,
-        #                                            writer).to(device)
-        # expm = managers.ExperimentsManager(args, model, data, buffer,
-        #                                           writer,
-        #                                           device,
-        #                                           sample_log_dir)
-        # expm.observe_cifar_pos_phase()
 
 if __name__ == '__main__':
     main()
-    #TODO go through all the code and fix the comments and docstrings. Some
-    # of the comments are inaccurate.
-
-
-
-# When doing similar experiments in future, use the following infrastructure
-# For keeping track of experiments, you should have these variables:
-# Session name (unique for every time you press 'run')
-# Model name (If a brand new model, it is the session name; if it is reloading for training purposes, it is the session name; if reloading for analysis or viz purposes, it is the original model name)
-# Model history (keeps track of the history of models/session used in training this model)
-
-# Also use config files rather than having to go into the pycharm configs every time. It's not very user friendly. And it'll be easier to save config files. Have a master config file that gets copied and saved to the experimental session.
-# Plus when you make new configs during development, make them default to some value that nullifies them

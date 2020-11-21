@@ -2,12 +2,11 @@ import os
 import numpy as np
 import pandas as pd
 import scipy.stats as spst
-from scipy.signal import butter, filtfilt, detrend, welch, find_peaks
+from scipy.signal import detrend, welch, find_peaks
 from scipy.stats import shapiro
 import math
 import matplotlib.pyplot as plt
-from torchvision import transforms, utils
-import tensorboard as tb
+from torchvision import transforms
 from PIL import Image
 import torch
 from scipy import optimize
@@ -17,28 +16,15 @@ import bootstrapped.bootstrap as bs
 import bootstrapped.stats_functions as bs_stats
 
 
-
 class AnalysisManager:
     def __init__(self, args, session_name):
         self.args = args
-        # self.large_storage_loc = "/media/lee/DATA/DDocs/AI_neuro_work/DAN"
 
         # Define model name paths
+        # TODO: Replace the path below with the path to whatever experimental
+        #  data you wish to analyze.
         self.primary_model = "20200929-025034__rndidx_55061_loaded20200922-152859__rndidx_22892_at_47500_its"
-        #self.primary_model = "20200731-040415__rndidx_60805_loaded20200722-144054__rndidx_25624_experiment_at_8490its" #main one that preliminary analysis was before moving to final
-        #self.primary_model = "20200812-223329__rndidx_31944_loaded20200808-163842__rndidx_90277"
-        #self.primary_model = "20200808-114216__rndidx_11284_loaded20200723-124229__rndidx_32787"
-        #self.primary_model = "20200731-040415__rndidx_60805_loaded20200722-144054__rndidx_25624_experiment_at_8490its"
-        #self.primary_model = "20200728-040415__rndidx_76711_loaded20200722-144054__rndidx_25624"
-        #self.primary_model  = '20200701-202929__rndidx_57703_loaded20200629-143321__rndidx_89181'
-        #self.primary_model = '20200602-194603__rndidx_61473_loaded20200508-141652__rndidx_82930'
-        #self.primary_model = '20200508-115243__rndidx_37562_loaded20200423-154227__rndidx_15605'
-
         self.just_angles_model = self.primary_model
-        #self.just_angles_model = "20200728-040415__rndidx_76711_loaded20200722-144054__rndidx_25624"
-        #self.just_angles_model = '20200701-225551__rndidx_84485_loaded20200629-143321__rndidx_89181'
-        #self.just_angles_exp_name = "/media/lee/DATA/DDocs/AI_neuro_work/DAN/exp_data/20200701-225551__rndidx_84485_loaded20200629-143321__rndidx_89181/orientations_present_single_gabor_just_angle"
-
         self.double_stim_synchr_model = self.primary_model
         self.long_just_angles_model = self.primary_model
         self.just_angles_few_angles_model = self.primary_model
@@ -134,22 +120,6 @@ class AnalysisManager:
                 self.just_angle_angle_contrast_pairs.append((a, c))
 
         ## Just angles Few angles exp
-        # Old settings
-        ## self.just_angles_few_angles_batchgroupangles = [0.0, 0.5*np.pi]
-        ## self.just_angles_few_angles_batchgroupstarts = \
-        ##     [i for i in range(128) if (i % 64)==0]
-        ## self.just_angles_few_angles_batchgroups = \
-        ##     [list(range(bg_start,bg_start+64)) for bg_start in \
-        ##      self.just_angles_few_angles_batchgroupstarts]
-        ##
-        ## self.just_angles_few_angles_angles = sorted([0.0, np.pi * 0.5] * 64)
-        ## self.just_angles_few_angles_contrasts = [2.4]
-        ## self.just_angle_few_angles_angle_contrast_pairs = []
-        ## for a in self.just_angles_few_angles_angles:
-        ##     for c in self.just_angles_few_angles_contrasts:
-        ##         self.just_angle_few_angles_angle_contrast_pairs.append((a, c))
-
-        # New settings
         angles = np.arange(0, 2*np.pi, (np.pi * 2) / 8)
         angles = list(angles)
         self.just_angles_few_angles_batchgroupangles = angles.copy()
@@ -181,12 +151,11 @@ class AnalysisManager:
             for c in self.long_just_angle_contrasts:
                 self.long_just_angle_angle_contrast_pairs.append((a, c))
 
-        # self.rclocs = [15, 16, 17, 21, 23, 28] # Much faster but less informative
         locs = list(range(1, 32, 2))
         locs.extend(list(range(16-7, 16 + 7)))
         locs = list(set(sorted(locs)))
         self.rclocs = {}
-        rclocs_x = [[16, x] for x in locs]  #locs used in exp3 # TODO update for new stim sets
+        rclocs_x = [[16, x] for x in locs]
         rclocs_y = [[y, 16] for y in locs]
         angles = self.long_just_angles_few_angles_batchgroupangles #for brevity
         rclocs_keys = [angle for angle in angles]
@@ -208,42 +177,6 @@ class AnalysisManager:
         # managers.ExperimentalStimuliGenerationManager.\
         # generate_double_gabor_dataset__fewlocs_and_fewerangles
 
-        # Old settings
-        # self.double_stim_contrasts = [2.4]
-        # self.double_stim_static_y = 13
-        # self.double_stim_static_x = 16
-        # self.double_stim_static_angle = np.pi * 0.5
-        #
-        # self.double_stim_static_y_0centre = self.double_stim_static_y - \
-        #                                     self.extracted_im_size//2
-        # self.double_stim_static_x_0centre = self.double_stim_static_x - \
-        #                                     self.extracted_im_size//2
-        #
-        # angle_range = [0.0] * 8
-        # angle_range.extend([np.pi * 0.5] * 8)
-        # self.double_stim_angles = angle_range * 8
-        #
-        # self.double_stim_batchgroupangles = [0.0, 0.5*np.pi] * 8
-        #
-        # y_range = [-3, 1, 5, 9]
-        # x_range = [0, 7]
-        #
-        # self.double_stim_locs_x_range = x_range
-        # self.double_stim_locs_y_range = y_range
-        # self.double_stim_locs = [[j, i] for i in y_range for j in x_range]
-        #
-        # self.double_stim_batchgroup_locs = []
-        # for loc in self.double_stim_locs:
-        #     self.double_stim_batchgroup_locs.append(loc)
-        #     self.double_stim_batchgroup_locs.append(loc)
-        #
-        # self.double_stim_batchgroupstarts = \
-        #     [i for i in range(128) if (i % 8)==0]
-        # self.double_stim_batchgroups = \
-        #     [list(range(bg_start,bg_start+8)) for bg_start in \
-        #      self.double_stim_batchgroupstarts]
-
-        # New settings
         static_angles = np.arange(0, 2*np.pi, np.pi/2)
         static_angles = list(static_angles) * 32
         static_angles = sorted(static_angles)
@@ -304,8 +237,6 @@ class AnalysisManager:
         self.double_stim_batchgroup_locs = [self.double_stim_locs[i] for i in self.double_stim_batchgroupstarts]
 
 
-
-        #use enumerate to select every nth
         # General
         self.get_contrasts_from_images()
         self.specgram_nfft = 256
@@ -359,42 +290,6 @@ class AnalysisManager:
         self.true_contrast_and_angle_contrasts = \
             list(np.array(true_contrasts[1][:8]))
 
-    def training_curves_plots_from_tblogs(self):
-
-        # Name all the experiments that went into training (and their tblog paths)
-
-
-        #
-
-        pass
-
-    def print_stimuli(self):
-        model_exp_name = self.primary_model_exp_name
-
-        # Note: Unless you've saved the bottom layer ([0]), which you might
-        # not have due to storage constraints, this function won't work
-        dm = datamanager.DataManager(root_path=self.args.root_path,
-                                     model_exp_name=model_exp_name,
-                                     var_names=self.st_var_name,
-                                     state_layers=[0],
-                                     batches=None,
-                                     channels=None,
-                                     hw=None,
-                                     timesteps=[0,
-                                                self.burn_in_len+1,
-                                                self.primary_stim_start,
-                                                self.primary_stim_start+1,
-                                                self.primary_stim_stop,
-                                                self.primary_stim_stop+1])
-        num_imgs = dm.data['state_0'].shape[0]
-        for i in range(num_imgs):
-            im = dm.data['state_0'][i]
-            im = torch.tensor(im)
-
-            utils.save_image(im,
-                           self.session_dir + \
-                           'stimuli_during_%s_at_ts%i.png' % (dm.data_name, i),
-                           nrow=16, normalize=True, range=(0, 1))
 
     def find_active_neurons(self, exp_type='primary'):
         print("Finding active neurons")
@@ -493,7 +388,7 @@ class AnalysisManager:
             mean_act_outside = outside_stim.mean(axis=0)
             mean_diffs = mean_act_during - mean_act_outside
             mean_higher = mean_diffs > 0
-            t_results = ttest_result.pvalue < 0.05 #0.005 #0.0005
+            t_results = ttest_result.pvalue < 0.05
             comb_results = t_results & mean_higher
             comb_results = pd.DataFrame(comb_results).T
             comb_results.columns = colnames
@@ -511,13 +406,6 @@ class AnalysisManager:
             results_df_2['shapiro_W_outside'] = shap_W_outside
             results_df_2['shapiro_p_during']  = shap_p_during
             results_df_2['shapiro_p_outside'] = shap_p_outside
-
-            # contrast_assign_idx = list(inds[0] % len(contrasts))
-            # angle_assign_idx = list(inds[0] % len(angles))
-            # contrasts_assigned = [contrasts[i] for i in contrast_assign_idx]
-            # angles_assigned = [angles[i] for i in angle_assign_idx]
-            # results_df_2['angle'] = angles_assigned
-            # results_df_2['contrast'] = contrasts_assigned
 
             # Save the results of activity tests
             if not activity_df_created:
@@ -543,7 +431,6 @@ class AnalysisManager:
             os.path.join(self.session_dir,
             'neuron_activity_results_%s.pkl') % exp_type)
 
-
         full_results_df.to_pickle(
             os.path.join(self.session_dir,
             'neuron_activity_results_alternativeformat_%s.pkl') % exp_type)
@@ -557,14 +444,13 @@ class AnalysisManager:
                                                'activity maps',
                                                exp_name)
 
-
         # Load data and prepare variables
         pixel_inds = [(i, j) for i in list(range(self.extracted_im_size))
                       for j in range(self.extracted_im_size)]
         full_data = pd.read_pickle(os.path.join(self.session_dir,
             'neuron_activity_results_alternativeformat_%s.pkl' % exp_name))
 
-        for b in range(self.num_batches): #TODO comment the below code
+        for b in range(self.num_batches):
             for ch in range(self.num_ch):
                 print("Batch %s  ; Channel %s" % (b, ch))
                 im = np.zeros([self.extracted_im_size, self.extracted_im_size])
@@ -585,7 +471,6 @@ class AnalysisManager:
                         avg_activity = \
                             full_data.loc[cond]['mean_act_during'] - \
                             full_data.loc[cond]['mean_act_outside']
-                        #avg_activity = avg_activity / 2
                         im[i][j] = np.array(avg_activity)
 
                 if exp_name=='primary':
@@ -603,24 +488,15 @@ class AnalysisManager:
 
                 plt.imshow(im, vmax=max_mean, vmin=min_mean)
                 plt.colorbar()
-                # plt.savefig(
-                #     os.path.join(self.session_dir,
-                #                  "raw b_ch neuron actv locs b%i_ch%i.png" % (
-                #                  b, ch)))
                 plt.savefig(
                     os.path.join(exp_dir,
                                  "raw ch_b neuron actv locs ch%i_b%i.png" % (
                                  ch, b)))
                 plt.close()
 
-    def print_activity_maps_by_batch_ch_double_stim(self): #TODO can i merge this with above func?
+    def print_activity_maps_by_batch_ch_double_stim(self):
 
         # Make dir to save plots for this experiment
-        # exp_dir = os.path.join(self.session_dir,
-        #                        'activity maps doublestim')
-        # if not os.path.isdir(exp_dir):
-        #     os.mkdir(exp_dir)
-
         maps_dir, exp_dir = self.prepare_dirs(self.session_dir,
                                                'activity maps',
                                                'double_stim')
@@ -652,9 +528,7 @@ class AnalysisManager:
                         avg_activity = \
                             full_data.loc[cond]['mean_act_during'] - \
                             full_data.loc[cond]['mean_act_outside']
-                        #avg_activity = avg_activity / 2
                         im[i][j] = np.array(avg_activity)
-
 
                 means = np.array(
                     [full_data.loc[pch]['mean_act_during'],
@@ -662,13 +536,8 @@ class AnalysisManager:
                 max_mean = np.max(means)
                 min_mean = np.min(means)
 
-
                 plt.imshow(im, vmax=max_mean, vmin=min_mean)
                 plt.colorbar()
-                # plt.savefig(
-                #     os.path.join(self.session_dir,
-                #                  "raw b_ch neuron actv locs b%i_ch%i.png" % (
-                #                  b, ch)))
                 plt.savefig(
                     os.path.join(exp_dir,
                                  "raw ch_b neuron actv locs ch%i_b%i.png" % (
@@ -676,81 +545,20 @@ class AnalysisManager:
                 plt.close()
 
 
-
-    def print_activity_map(self): #not really used
-        print("Making activity maps for channels and batches")
-        nrnact = pd.read_pickle(
-            os.path.join(self.session_dir,
-                         'neuron_activity_results_primary.pkl'))
-
-        # Reorganises activity dataframe so we can sum over pixels
-        map_act = pd.melt(nrnact, id_vars=['batch_idx', 'height', 'width'],
-                          value_vars=list(range(32))) # todo is this 32 for num_ch or num_pixels?
-        map_act = map_act.rename(
-            columns={'variable': 'channel', 'value': 'active'})
-        pixel_inds = [(i, j) for i in list(range(self.extracted_im_size)) for j in
-                      range(self.extracted_im_size)]
-
-        # Plot for each channel over all batches
-        for ch in range(self.num_ch):
-            print("Plotting activity map for channel %i" % ch)
-            im = np.zeros([self.extracted_im_size, self.extracted_im_size])
-            pch = map_act['channel'] == ch
-            # TODO comment the below code
-            for (i, j) in pixel_inds:
-                pi = map_act['height'] == i + self.top_left_pnt[0]
-                pj = map_act['width'] == j + self.top_left_pnt[1]
-                cond = pi & pj & pch
-                sum_b_ch = map_act.loc[cond]['active'].sum()
-                im[i][j] = sum_b_ch
-            im = im / im.max()
-            plt.imshow(im)
-            plt.savefig(
-                os.path.join(self.session_dir,
-                             "neuron activity locations ch%i.png" % ch))
-
-        # Plot for each batch
-        for b in range(self.num_batches):
-            print("Plotting activity map for batch %i" % b)
-            im = np.zeros([self.extracted_im_size, self.extracted_im_size])
-            #im_raw = np.zeros([im_dim, im_dim])
-
-            pb = map_act['batch_idx'] == b
-            for (i, j) in pixel_inds:
-                pi = map_act['height'] == i + self.top_left_pnt[0]
-                pj = map_act['width'] == j + self.top_left_pnt[1]
-                cond = pi & pj & pb
-
-                # im is 'active' booleans
-                sum_b_ch = map_act.loc[cond]['active'].sum()
-                im[i][j] = sum_b_ch
-
-                # im_raw is just the mean activities
-            im = im / im.max()
-            plt.imshow(im)
-            plt.savefig(
-                os.path.join(self.session_dir,
-                             "neuron activity locations b%i.png" % b))
-
     def print_activity_map_GIFs_by_batch_ch(self, exp_name='just_angle'):
-
 
         # Make dir to save plots for this experiment
         maps_dir, exp_dir = self.prepare_dirs(self.session_dir,
                                                'activity maps gifs',
                                                exp_name)
 
-
         # Set general variables
         model_exp_name = self.exp_names_dct[exp_name]
         pixel_inds = [(i, j) for i in list(range(self.extracted_im_size))
                       for j in range(self.extracted_im_size)]
-
         norm = plt.Normalize()
-
         batch_eles = {'just_angle': [0, 32],
                       'long_just_fewangles': [0,65]}
-
 
         for ch in range(self.num_ch):
             print("Channel %s" % ch)
@@ -769,11 +577,6 @@ class AnalysisManager:
             # Process data
             dm.data['state_1'] = dm.data[
                 'state_1'].squeeze()  # get rid of ch dim
-            # reshaped_activities = [np.arange(len(dm.timesteps)).reshape(
-            #     len(dm.timesteps), 1)]  # make TS data
-            # reshaped_activities.extend([
-            #     dm.data['state_1'].reshape(len(dm.timesteps),
-            #                                -1)])  # extend TS data with actual data
             arr_sh = dm.data['state_1'].shape[1:]
             dm.data['state_1'] = dm.data['state_1'].transpose()
 
@@ -787,7 +590,6 @@ class AnalysisManager:
                 traces = (traces * 255).astype(int)
 
                 # Add the three color channels and the signifier frames
-                # TODO consider adding a whole row for each of these so that you don't occlude pixels. (and maybe do it horizontally as time is an indep variable.)
                 signlen = 10
                 ones = 1
                 traces[0:11,1, 0:signlen*2] = ones
@@ -810,7 +612,6 @@ class AnalysisManager:
                                  "movie %s locs ch%i_b%i.gif" % (
                                  self.st_var_name[0], ch, b))
 
-                #colors = plt.cm.jet(norm(traces),bytes=True)
                 a2g.write_gif(traces, title, fps=75)
 
     def find_orientation_preferences(self):
@@ -832,8 +633,7 @@ class AnalysisManager:
         print(activity_df.columns)
         activity_df = activity_df.drop(columns=['ttest_p_value',
            'shapiro_W_during', 'shapiro_W_outside', 'shapiro_p_during',
-           'shapiro_p_outside'])#,'angle', 'contrast'])
-        # print(full_data.head().columns)
+           'shapiro_p_outside'])
 
         # Create a new dataframe that sums over h and w (so we only have batch
         # info per channel)
@@ -857,7 +657,8 @@ class AnalysisManager:
                                                          ignore_index=True)
 
         # Get sum for each channel for each angle
-        sum_angles_df = patch_activity_df.groupby(['channel', 'angle'], as_index=False).sum()
+        sum_angles_df = patch_activity_df.groupby(['channel', 'angle'],
+                                                  as_index=False).sum()
 
         # Plot the orientation preference plots
         fig, ax = plt.subplots(8,4, sharey=True, sharex=True)
@@ -865,7 +666,6 @@ class AnalysisManager:
         k = 0
         angle_axis = [round((180/np.pi) * angle, 1) for angle in angles]
         orient_prefs = pd.DataFrame(columns=est_param_names)
-        # TODO comment the below code
         for i in range(8):
             for j in range(4):
                 print("%i, %i" % (i,j))
@@ -901,10 +701,6 @@ class AnalysisManager:
                 dir_or_ori = np.argmin(costs)
                 est_params = est_params[dir_or_ori]
 
-
-                # if dir_or_ori == 1:  # only rotate angle if orientation (not direction)
-                #     est_params = self.rotate_est_params(est_params)
-
                 # Get the right curve function to fit the lowest cost params
                 fitted_curve_func1 = lambda ep: ep[0] * np.cos(
                     angles + ep[1]) + ep[2]
@@ -921,8 +717,6 @@ class AnalysisManager:
                 elongated_nd = np.append(elongated_nd, np.array([0])) #in order to find edge peaks
 
                 trace_peaks = find_peaks(elongated_nd,
-                                         # width=2,
-                                         # rel_height=2.,
                                          prominence=np.max(normed_data)/9,
                                          distance=int(128/4))[0]
                 trace_peaks = trace_peaks - 1
@@ -930,7 +724,6 @@ class AnalysisManager:
                 # Calc dist from trace peaks to sine peak
                 dist_to_sn_pk0 = np.abs(trace_peaks - sine_peak)
                 dist_to_sn_pk2pi = np.abs(dist_to_sn_pk0 - len(normed_data))
-                # dist_to_sn_pk2pi = np.abs(sine_peak - len(normed_data) + trace_peaks)
                 dist_to_sn_pk = np.array([dist_to_sn_pk0, dist_to_sn_pk2pi])
                 dist_to_sn_pk = np.min(dist_to_sn_pk, axis=0)
                 min_dist_peak_ind = np.argmin(dist_to_sn_pk)
@@ -939,8 +732,6 @@ class AnalysisManager:
 
                 # Plot
                 ax[i,j].plot(angle_axis, normed_data)
-                # ax[i,j].scatter(np.array(angle_axis)[trace_peaks],
-                #                 np.array(normed_data)[trace_peaks])
                 ax[i,j].scatter(np.array(angle_axis)[chosen_peaks],
                                 np.array(normed_data)[chosen_peaks], c='red')
                 ax[i,j].text(0.08, 0.19, 'Channel %s' % k)
@@ -969,11 +760,6 @@ class AnalysisManager:
         print(orient_prefs)
 
 
-
-        ####################################################
-
-
-
         # Plot a grid of circular plots with a circle for each channel
         # Plot the orientation preference plots
         fig, ax = plt.subplots(8, 4, sharey=True, sharex=True,
@@ -983,7 +769,6 @@ class AnalysisManager:
         angle_axis = [round((180 / np.pi) * angle, 1) for angle in angles]
         for i in range(8):
             for j in range(4):
-                # TODO comment the below code
                 print("%i, %i" % (i, j))
                 normed_data = sum_angles_df.loc[
                     sum_angles_df['channel']==k]['mean_act_during']
@@ -1010,10 +795,6 @@ class AnalysisManager:
                 dir_or_ori = np.argmin(costs)
                 est_params = est_params[dir_or_ori]
 
-
-                # if dir_or_ori == 1: # only rotate angle if orientation (not direction)
-                #     est_params = self.rotate_est_params(est_params)
-
                 # Get the right curve function to fit the lowest cost params
                 fitted_curve_func1 = lambda ep: ep[0] * np.cos(
                     angles + ep[1]) + ep[2]
@@ -1024,19 +805,11 @@ class AnalysisManager:
                 fitted_curve = fitted_curve_func(est_params)
 
                 ax[i, j].plot(angles, normed_data)
-                # ax[i,j].plot(angles, np.ones_like(angles) * 0.04,
-                #          linewidth=1,
-                #          color='r')
                 ax[i, j].text(np.pi * 0.73, 0.39, 'Channel %s' % k)
 
 
                 if not all(normed_data.isna()):  # because nans
                     ax[i, j].plot(angles, fitted_curve, c='red')
-                # if i==3: # Put labels on the edge plots only
-                #     ax[i, j].set_xlabel('Angles (degree)')
-                #     ax[i, j].set_xticks([0,90,180,270])
-                # if j==0:
-                #     ax[i,j].set_ylabel('Normed activity [a.u.]')
                 ax[i, j].set_xticklabels([])
                 ax[i, j].set_yticklabels([])
 
@@ -1054,16 +827,7 @@ class AnalysisManager:
         ax = plt.subplot(projection='polar')
         ax.set_yticklabels([])
         degree_symb = u"\u00b0"
-
-        # ax.set_xticklabels([str(i/(2*np.pi)) for i in range(self.num_ch)])
-        # ax.set_thetamin(0)
-        # ax.set_thetamax(180)
-        # ax.set_yticks([list(sorted(orient_prefs['phaseshift']))])
         plt.tight_layout()
-
-        # plt.plot(t, np.ones_like(t) * np.max(orient_prefs['amplitude']),
-        #          linewidth=1,
-        #          color='b')
         plt.plot(t, np.ones_like(t) * threshold, linewidth=1,
                  color='r')
 
@@ -1092,7 +856,7 @@ class AnalysisManager:
                          np.array(lengths), 'r-')
                 plt.plot(main_angle, np.abs(amp), 'ro')
             ax.annotate(str(i),
-                        xy=(main_angle, 1.05 * np.abs(ampls[i])),  # theta, radius
+                        xy=(main_angle, 1.05 * np.abs(ampls[i])), # theta, radius
                         xytext=(main_angle, 0.),  # fraction, fraction
                         textcoords='offset pixels',
                         horizontalalignment='center',
@@ -1107,7 +871,6 @@ class AnalysisManager:
         plt.savefig(os.path.join(self.session_dir,
                                  'orient_prefs_circle2.png'))
         plt.close()
-
 
 
         # Save the results
@@ -1134,7 +897,6 @@ class AnalysisManager:
         # Prepare general variables
         angle_contrast_pairs = self.contrast_and_angle_angle_contrast_pairs
 
-
         # Load info on which neurons are active
         print("Loading priorly processed data...")
         nrnact = pd.read_pickle(
@@ -1155,7 +917,7 @@ class AnalysisManager:
                                         'value': 'active'})
 
         # Decide which channels qualify as having an orientation preference
-        ori_amp_threshold = 0.04  # TODO (nested F-test?) I can't think of a principled way to choose this. I've just done it by visual inspection of the orientation preference plots but I think better would be to demonstrate that some sine fits are significantly better than a linear fit
+        ori_amp_threshold = 0.04
         ori_dict = ori_pref['phaseshift'].loc[
             np.abs(ori_pref['amplitude']) > ori_amp_threshold]  # not yet a dict
         ori_dict_filt = ori_pref['phaseshift'].loc[
@@ -1195,7 +957,6 @@ class AnalysisManager:
         #                      orientation_diffs_min]
 
         # New code for when using direction selectivity
-        #
         orientation_diffs = \
             [np.pi - np.abs(np.abs(stim_angle-ori_pref) - np.pi) for
             (stim_angle, ori_pref) in zip(stim_angles, ori_prefs)]
@@ -1207,7 +968,6 @@ class AnalysisManager:
         # Add columns to the df for new data
         nrnact['ori_pref'] = ori_prefs
         nrnact['stim_ori'] = stim_angles
-        # nrnact['ori_diff_(stimandpref)'] = orientation_diffs_min
         nrnact['stim_contrast'] = stim_contrasts
         nrnact['matched_stim_ori_pref'] = orientation_match
 
@@ -1223,7 +983,6 @@ class AnalysisManager:
                                                 'active', 'channel']) #TODO Lee do this manually so you're sure it's correct. Find the columns that fd doesn't have that nrnact does and transfer them. But make sure to compare the other columns to ensure they're in the same order. Do this for other merges.
         full_data.to_pickle(os.path.join(self.session_dir,
            "neuron_activity_results_alternativeformat_primary_w_ori_w_match.pkl"))
-
 
 
     def plot_state_traces_with_spec_and_acorr(self, patch_or_idx=None):
@@ -1247,15 +1006,9 @@ class AnalysisManager:
             save_name = 'neuron'
         print("Plotting state traces for central %s in each channel" % save_name)
 
-
         # Load data
         full_data = pd.read_pickle(os.path.join(self.session_dir,
             "neuron_activity_results_alternativeformat_primary_w_ori_w_match.pkl"))
-
-        # Load data
-        # nrnact = pd.read_pickle(
-        #     os.path.join(self.session_dir,
-        #                  'neuron act ori.pkl'))
 
         # Prepare general variables
         model_exp_name = self.primary_model_exp_name
@@ -1316,12 +1069,6 @@ class AnalysisManager:
             fig, ax = plt.subplots(4)
             fig.set_size_inches(14.5, 8.5)
 
-            # spec_data = (df[name] - np.mean(df[name]))
-            # spec_data = spec_data / np.linalg.norm(spec_data)
-
-            # Denoise
-            # spec_data = self.butter_lowpass_filter(spec_data,cutoff=0.1,fs=100)
-
             ax[0].plot(on_nrn_acts.index, on_nrn_acts)
             ax[0].set_ylabel('State [a.u.]')
             ax[0].set_xlabel('Timesteps')
@@ -1339,7 +1086,6 @@ class AnalysisManager:
             lags1, acorrs1, plot11, plot12 = ax[2].acorr(
                 on_nrn_acts[self.primary_stim_start:self.primary_stim_stop],
                 detrend=plt.mlab.detrend_linear,
-                # lambda x: x - np.mean(x)
                 maxlags=self.autocorr_phase_len)
             lags2, acorrs2, plot21, plot22 = ax[3].acorr(
                 on_nrn_acts[self.burn_in_len:self.primary_stim_start],
@@ -1389,127 +1135,6 @@ class AnalysisManager:
         del activities, reshaped_activities
 
         return activities_df, arr_sh, colnames, inds
-
-    def plot_contrast_specgram_comparison_local(self, patch_or_idx=None):
-        print("Plotting spectrograms for each channel")
-
-        # Make dir to save plots for this experiment
-        exp_dir = os.path.join(self.session_dir,
-        'spectrogram comparisons')
-        if not os.path.isdir(exp_dir):
-            os.mkdir(exp_dir)
-
-        if patch_or_idx == 'patch':
-            centre1 = self.central_patch_min
-            centre2 = self.central_patch_max
-            save_name = 'patch'
-        else:
-            centre1 = self.top_left_pnt[0] + self.extracted_im_size / 2
-            centre2 = centre1
-            save_name = 'neuron'
-
-
-        # Load data
-        full_data = \
-            pd.read_pickle(os.path.join(self.session_dir,
-                "neuron_activity_results_alternativeformat_primary_w_ori_w_match.pkl"))
-
-        # Prepare general variables
-        model_exp_name = self.primary_model_exp_name
-
-
-        for ch in range(self.num_ch):
-            print("Channel %s" % str(ch))
-
-            # Get data
-            dm = datamanager.DataManager(root_path=self.args.root_path,
-                                         model_exp_name=model_exp_name,
-                                         var_names=self.st_var_name,
-                                         state_layers=[1],
-                                         batches=None,
-                                         channels=[ch],
-                                         hw=[self.top_left_pnt,
-                                             self.bottom_right_pnt],
-                                         timesteps=None)
-
-            # Process data
-            activities_df, arr_sh, colnames, inds = \
-                self.convert_ch_data_to_activity_df(dm)
-
-
-            # Find the subset of the nrnact df for this channel only and get
-            # the h, w values for on neurons in each batch
-            nrnact_ch = full_data.loc[full_data['channel'] == ch]
-            nrnact_ch.index = colnames[1:]
-            #nrnact_ch = pd.merge(nrnact_ch.transpose(), activities_df)
-            #nrnact_ch = nrnact_ch.transpose()
-            cond1 = nrnact_ch['matched_stim_ori_pref']
-            #cond2 = nrnact_ch['active']
-            cond3 = nrnact_ch['height'] >= centre1
-            cond4 = nrnact_ch['height'] <= centre2
-            cond5 = nrnact_ch['width'] >= centre1
-            cond6 = nrnact_ch['width'] <= centre2
-            #cond = cond1&cond2&cond3&cond4&cond5&cond6
-            cond = cond1 & cond3&cond4&cond5&cond6
-
-
-            on_colnames = list(nrnact_ch.index[cond])
-            nrnact_ch = nrnact_ch.loc[cond]
-            on_nrn_states = activities_df.transpose().loc[on_colnames]
-            nrnact_ch = pd.merge(nrnact_ch,on_nrn_states, left_index=True,
-                                 right_index=True)
-
-            if len(on_colnames) == 0:
-                print("No on neurons for channel %s." % ch)
-            else:
-                print("%i on neurons in channel %s" % (len(on_colnames), ch))
-
-            # Get the subset of contrasts that I want to plot
-            contrast_inds = [0,2,5,7]
-            contrasts = [self.contrast_and_angle_contrasts[i]
-                         for i in contrast_inds]
-
-            stims_present = list(set(nrnact_ch['stim_ori']))
-            for stim in stims_present:
-                # for p in range(1,7):
-                fig, ax = plt.subplots(1, 4, figsize=(10, 3))
-                k = 0
-
-                for axis, contrast in zip(ax, contrasts):
-                    cond_x = nrnact_ch['stim_contrast'] == contrast
-                    cond_y = nrnact_ch['stim_ori'] == stim
-                    cond_stims = cond_x & cond_y
-                    contrast_df = nrnact_ch.loc[cond_stims]
-                    drop_cols = list(contrast_df.columns[:-self.full_trace_len])
-                    contrast_df = contrast_df.drop(columns=drop_cols)
-                    #contrast_df = contrast_df.iloc[p]
-                    contrast_df = contrast_df.sum(axis=0)
-
-
-                    spectrum, freqs, t, im = axis.specgram(contrast_df,
-                                   NFFT=self.specgram_nfft, Fs=100, Fc=0,
-                                   detrend=None,
-                                   noverlap=self.specgram_nfft-1, xextent=None, pad_to=None,
-                                   sides='default',
-                                   scale_by_freq=True, scale='dB',
-                                   mode='default',
-                                   cmap=plt.get_cmap('hsv'))
-
-                    # axis.imshow(im)
-                    axis.set_ylabel('Frequency [a.u.]')
-
-                    plt.ticklabel_format(axis="y", style="sci", scilimits=(
-                         0, 0))  # Uses sci notation for units
-                    #plt.xticks(np.array(contrast_df.index))
-
-                    # plt.tight_layout()  # Stops y label being cut off
-
-                k+=1
-                plt.savefig(
-                    os.path.join(exp_dir,
-                                 'Spectrogram for central %s of ch%i for stim %f.png'% (
-                                     save_name, ch, round(stim, 3))))
-                plt.close()
 
     def plot_contrast_specgram_comparison_LFP(self, patch_or_idx='patch'):
         """The difference from the '_local' function is that this
@@ -1569,18 +1194,12 @@ class AnalysisManager:
             # the h, w values for on neurons in each batch
             nrnact_ch = full_data.loc[full_data['channel'] == ch]
             nrnact_ch.index = colnames[1:]
-            # nrnact_ch = pd.merge(nrnact_ch.transpose(), activities_df)
-            # nrnact_ch = nrnact_ch.transpose()
-            cond1 = nrnact_ch['matched_stim_ori_pref'] #Had removed
-            # cond2 = nrnact_ch['active']                #Had removed
+            cond1 = nrnact_ch['matched_stim_ori_pref']
             cond3 = nrnact_ch['height'] >= centre1
             cond4 = nrnact_ch['height'] <= centre2
             cond5 = nrnact_ch['width'] >= centre1
             cond6 = nrnact_ch['width'] <= centre2
-
             cond = cond1&cond3&cond4&cond5&cond6
-            # cond = cond1&cond2&cond3&cond4&cond5&cond6
-            #cond = cond3 & cond4 & cond5 & cond6
 
             on_colnames = list(nrnact_ch.index[cond])
             nrnact_ch = nrnact_ch.loc[cond]
@@ -1601,7 +1220,6 @@ class AnalysisManager:
                 drop_cols = list(
                     contrast_df.columns[:-self.full_trace_len])
                 contrast_df = contrast_df.drop(columns=drop_cols)
-                # contrast_df = contrast_df.iloc[p]
                 contrast_df = contrast_df.sum(axis=0)
 
                 if per_contr_series[n] is None:
@@ -1614,24 +1232,7 @@ class AnalysisManager:
         plot_titles = ['Low contrast  -        -        -    ', sep_str,
                        sep_str, '    -        -        -  High contrast']
         timesteps_per_second = self.ms_to_timesteps(1000)
-        #
-        # ts_chunk = 10
-        # min_range = -2
-        # max_range = 4
-        # ts_per_chunk = self.ms_to_timesteps(ts_chunk, 8)
-        # ticks_locs_ts = np.arange(min_range * ts_per_chunk, max_range * ts_per_chunk,
-        #                           ts_per_chunk)
-        # labels_ms = np.round(
-        #     np.arange(min_range * ts_chunk, max_range * ts_chunk, ts_chunk))
-        ###
-        # ts_per_chunk = self.ms_to_timesteps(1000,8)
-        # diff = 100 - 4 * ts_per_chunk
-        # # ticks_locs_ts = np.round(np.arange(-100, 150, (150+100)/10)) # TODO check all this is okay
-        # ticks_locs_ts = sorted(-np.arange(0, -2*ts_per_chunk, ts_per_chunk))[:-1]
-        # ticks_locs_ts.extend(list(np.arange(0, 4*ts_per_chunk, ts_per_chunk)))
-        # ticks_locs_ts = np.array(ticks_locs_ts)
-        # ticks_locs_ts = ticks_locs_ts - np.min(ticks_locs_ts) + diff
-        ###
+
 
         k=0
         fig, ax = plt.subplots(1, 4, figsize=(12, 3))
@@ -1663,12 +1264,11 @@ class AnalysisManager:
             axis.set_frame_on(False)
 
             if k ==0:
-                axis.set_ylabel('Frequency [Hz]') #TODO lee pick up from here. And check others that they're okay too.
+                axis.set_ylabel('Frequency [Hz]')
             axis.title.set_text(p_title)
-            rescale = lambda l: l/x_axis_scaler# - np.min(t)
             time_range = np.arange(1+np.min(t),11+np.min(t), 1)
-            axis.set_xticks([self.find_t_at(x, t)/x_axis_scaler for x in time_range])#[rescale(x) for x in [500, 1000,1500,2000]])#ticks=[2,4,6,8,10])#,labels=['0'])
-            axis.set_xticklabels(np.round(np.arange(-3,7,1)))#labels_ms[1:-1])#[self.ms_to_timesteps(x*1000,1) for x in np.arange(2,11,2)])
+            axis.set_xticks([self.find_t_at(x, t)/x_axis_scaler for x in time_range])
+            axis.set_xticklabels(np.round(np.arange(-3,7,1)))
             axis.set_yticks([0, 50, 100])
             axis.set_yticklabels([0, 50, 100])
 
@@ -1719,8 +1319,6 @@ class AnalysisManager:
         contrasts = [self.contrast_and_angle_contrasts[i]
                      for i in contrast_inds]
         per_contr_series = [None] * len(contrasts)
-        per_contr_powerspecs = [[]] * len(contrasts)
-        per_contr_powerfreqs = [[]] * len(contrasts)
 
         for ch in range(self.num_ch):
             print("Channel %s" % str(ch))
@@ -1744,17 +1342,11 @@ class AnalysisManager:
             # the h, w values for on neurons in each batch
             nrnact_ch = full_data.loc[full_data['channel'] == ch]
             nrnact_ch.index = colnames[1:]
-            # nrnact_ch = pd.merge(nrnact_ch.transpose(), activities_df)
-            # nrnact_ch = nrnact_ch.transpose()
             cond1 = nrnact_ch['matched_stim_ori_pref']
-            # cond2 = nrnact_ch['active']
-
             cond3 = nrnact_ch['height'] >= centre1
             cond4 = nrnact_ch['height'] <= centre2
             cond5 = nrnact_ch['width'] >= centre1
             cond6 = nrnact_ch['width'] <= centre2
-            # cond = cond1&cond2&cond3&cond4&cond5&cond6
-            # cond = cond3 & cond4 & cond5 & cond6
             cond = cond1 & cond3 & cond4 & cond5 & cond6
 
             on_colnames = list(nrnact_ch.index[cond])
@@ -1874,21 +1466,13 @@ class AnalysisManager:
             # the h, w values for on neurons in each batch
             nrnact_ch = full_data.loc[full_data['channel'] == ch]
             nrnact_ch.index = colnames[1:]
-            # nrnact_ch = pd.merge(nrnact_ch.transpose(), activities_df)
-            # nrnact_ch = nrnact_ch.transpose()
-            # cond1 = nrnact_ch['matched_stim_ori_pref']
-            # cond2 = nrnact_ch['active']
+
             cond3 = nrnact_ch['height'] >= centre1
             cond4 = nrnact_ch['height'] <= centre2
             cond5 = nrnact_ch['width'] >= centre1
             cond6 = nrnact_ch['width'] <= centre2
-            # cond = cond1&cond2&cond3&cond4&cond5&cond6
-            # cond = cond2 & cond3 & cond4 & cond5 & cond6
+
             cond = cond3 & cond4 & cond5 & cond6
-
-
-            # ON heights and widths for highest contrast stims
-            # cond_a = nrnact_ch['active'] & (nrnact_ch['stim_contrast'] > 1.4 )
 
             on_colnames = list(nrnact_ch.index[cond])
             nrnact_ch = nrnact_ch.loc[cond]
@@ -1912,7 +1496,6 @@ class AnalysisManager:
                 num_points = (len(contrast_df.columns) - self.primary_stim_stop) + (
                             self.primary_stim_start - self.burn_in_len)
                 if mean_thresholding:
-                    # contrast_df = np.array(contrast_df)
                     nrn_means = contrast_df.iloc[:,self.burn_in_len:self.primary_stim_start].sum(axis=1)
                     nrn_means += contrast_df.iloc[:,self.primary_stim_stop:len(contrast_df.columns)].sum(axis=1)
                     nrn_means = nrn_means / num_points
@@ -1920,15 +1503,12 @@ class AnalysisManager:
                                          len(contrast_df.columns))
                     contrast_df = np.where(contrast_df > nrn_means, contrast_df, nrn_means)
 
-                # contrast_df = contrast_df.iloc[p]
                 contrast_df = contrast_df.sum(axis=0)
-
 
                 mean = sum(
                     contrast_df[self.burn_in_len:self.primary_stim_start])
                 mean += sum(
                     contrast_df[self.primary_stim_stop:len(contrast_df)])
-                    # contrast_df[self.primary_stim_stop:len(contrast_df.columns)])
 
                 mean = mean / num_points
 
@@ -1952,32 +1532,9 @@ class AnalysisManager:
                             contrast_df.var()
                     per_contr_series[n] += contrast_df
 
-        #cmap = plt.cm.YlGn
         cmap = plt.cm.Greys
 
-        # Plot per-contrast traces
-        # Normalised traces
-
-        # fig, ax = plt.subplots()
-        # for contrast, series in zip(contrasts,per_contr_series):
-        #     trunc_series = \
-        #         series[self.primary_stim_start-100:self.primary_stim_start+100]
-        #     plt.plot(trunc_series, c=cmap(0.2*contrast + 0.3))
-        # plt.axvline(x=self.primary_stim_start, c='black',
-        #                  linewidth=1, linestyle='dashed')
-        # ax.legend(['Low contrast',' ', ' ', 'High contrast'])
-        # ax.set_xticks(ticks=[1000, 1100, 1200])  # ,labels=['0'])
-        # ax.set_xticklabels([-100, 0, 100])
-        # ax.set_yticklabels([])
-        # plt.tight_layout()  # Stops y label being cut off
-        # plt.savefig(
-        #     os.path.join(exp_dir,
-        #                  'Transients for active neurons in central ' +
-        #                  ' %s for all channels .png' % (save_name)))
-        # plt.close()
-
-
-        #Now do unnormalized plot
+        # Plot
         fig, ax = plt.subplots()
         ax.set_frame_on(False)
         ax.axes.get_yaxis().set_visible(False)
@@ -1988,19 +1545,17 @@ class AnalysisManager:
         plt.axvline(x=100, c='black',
                          linewidth=1, linestyle='dashed')
         ax.legend(['Low contrast','         -', '         -', 'High contrast'], loc='upper left')
-        # leg = plt.legend()
         ax.legend_.get_frame().set_linewidth(0.0)
+
         ts_per_100ms = self.ms_to_timesteps(100,8)
         diff = 100 - 4 * ts_per_100ms
-        # ticks_locs_ts = np.round(np.arange(-100, 150, (150+100)/10)) # TODO check all this is okay
         ticks_locs_ts = sorted(-np.arange(0, 4*ts_per_100ms, ts_per_100ms))[:-1]
         ticks_locs_ts.extend(list(np.arange(0, 8*ts_per_100ms, ts_per_100ms)))
         ticks_locs_ts = np.array(ticks_locs_ts)
         ticks_locs_ts = ticks_locs_ts - np.min(ticks_locs_ts) + diff
 
         labels_ms = np.round(np.arange(-400, 700, 100))
-        # labels_ms = labels_ms - labels_ms[len(labels_ms) // 2]
-        ax.set_xticks(ticks=ticks_locs_ts)  # ,labels=['0'])
+        ax.set_xticks(ticks=ticks_locs_ts)
         ax.set_xticklabels(labels_ms)
         ax.set_yticklabels([])
         plt.tight_layout()  # Stops y label being cut off
@@ -2017,7 +1572,7 @@ class AnalysisManager:
             plt.plot(trunc_series, c=cmap(0.2*contrast + 0.3))
         plt.axvline(x=100, c='black',
                          linewidth=1, linestyle='dashed')
-        ax.set_xticks(ticks=[0, 100, 200])  # ,labels=['0'])
+        ax.set_xticks(ticks=[0, 100, 200])
         ax.set_xticklabels([-100, 0, 100])
         ax.set_yticklabels([])
         ax.legend(['Low contrast',' ', ' ', 'High contrast'], loc='upper right')
@@ -2075,15 +1630,11 @@ class AnalysisManager:
             # Find the subset of the nrnact df for this channel only and get
             # the h, w values for on neurons in each batch
             nrnact_ch = full_data.loc[full_data['channel'] == ch]
-            #nrnact_ch = nrnact_ch.loc[nrnact_ch['active']]
-            # nrnact_ch = nrnact_ch.loc[nrnact_ch['height'] == centre_pix]
-            # nrnact_ch = nrnact_ch.loc[nrnact_ch['width'] == centre_pix]
             nrnact_ch = nrnact_ch.loc[nrnact_ch['height'] >= centre1]
             nrnact_ch = nrnact_ch.loc[nrnact_ch['height'] <= centre2]
             nrnact_ch = nrnact_ch.loc[nrnact_ch['width'] >= centre1]
             nrnact_ch = nrnact_ch.loc[nrnact_ch['width'] <= centre2]
             nrnact_ch = nrnact_ch.loc[nrnact_ch['matched_stim_ori_pref']]
-            #nrnact_ch = nrnact_ch.loc[nrnact_ch['stim_contrast']==2.8]
 
 
             nrnact_ch = nrnact_ch.reset_index()
@@ -2101,16 +1652,11 @@ class AnalysisManager:
             state_traces = state_traces[
                            self.primary_stim_start-400:
                            self.primary_stim_start+400]
-            #state_traces.columns = self.true_contrast_and_angle_contrasts
             state_traces = state_traces.transpose()
             state_traces['batch'] = batches
             state_traces['stim_oris'] = stim_oris
 
-
             stims = list(set(stim_oris))
-            #true_contrasts = self.true_contrast_and_angle_contrasts * num_stims
-            #state_traces.columns = true_contrasts
-
             for stim in stims:
                 # Sum across batch
                 st_df = state_traces.loc[state_traces['stim_oris']==stim]
@@ -2122,7 +1668,6 @@ class AnalysisManager:
 
                 fig, ax = plt.subplots()
                 cmap = plt.cm.YlGn
-                #cmap = plt.cm.Greys
 
                 legend_contrasts = []
                 k = 0
@@ -2159,16 +1704,12 @@ class AnalysisManager:
             os.path.join(self.session_dir,
                          'neuron act ori.pkl'))
 
-
         # Prepare general variables
         model_exp_name = self.primary_model_exp_name
         during_or_outside_names = ['during', 'outside']
         result_names = ['freq_power_product', 'peak_freqs', 'peak_freq_powers']
 
         # Prepare variables used for processing data
-        # stim_on_start = 1050
-        # stim_on_stop = 3550
-
         stim_on_start = self.primary_stim_start
         stim_on_stop = self.primary_stim_stop
 
@@ -2276,22 +1817,6 @@ class AnalysisManager:
                     if peak_locs.size == 0:
                         peak_locs = np.array(np.argmax(psd))
 
-                    #TODO if peaks are empty, take the max psd and its freq
-
-                    ##Plot the PSD
-                    # plt.figure(figsize=(6, 5))
-                    # plt.semilogx(freqs, psd)
-                    # plt.scatter(freqs[peaks[0]], psd[peaks[0]])
-                    # plt.title('PSD: power spectral density')
-                    # plt.xlabel('Frequency')
-                    # plt.ylabel('Power')
-                    # plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
-                    # plt.tight_layout()
-                    # plt.savefig(os.path.join(exp_dir,
-                    #                          "PSD ch%s col%s %s.png" % (
-                    #                          ch, col, durout_name)))
-                    # plt.close()
-
                     # Save PSD results
                     results = [np.sum(freqs * psd),
                                np.array([freqs[peak_locs]]),
@@ -2301,14 +1826,10 @@ class AnalysisManager:
                         col_assign_name = result_name + '_' + durout_name
                         nrnact.at[loc_index, col_assign_name] = val
 
-
             # Save the full df periodically at the end of every channel
             nrnact.to_pickle(os.path.join(
                 self.session_dir,
                 'neuron act and osc.pkl'))
-
-        # Then move on to a new function plot_contrast_frequency_plots()
-
 
 
     def plot_contrast_frequency_plots(self):
@@ -2317,13 +1838,6 @@ class AnalysisManager:
         angles = self.contrast_and_angle_angles
         contrasts = self.contrast_and_angle_contrasts
         angle_contrast_pairs = self.contrast_and_angle_angle_contrast_pairs
-        # angles = [0.0, 0.393, 0.785, 1.178, 1.571, 1.963, 2.356, 2.749,
-        #           3.142, 3.534, 3.927, 4.32, 4.712, 5.105, 5.498, 5.89]
-        # contrasts = [0., 0.4, 0.8, 1.2, 1.6, 2., 2.4, 2.8]
-        # angle_contrast_pairs = []
-        # for a in angles:
-        #     for c in contrasts:
-        #         angle_contrast_pairs.append((a, c))
 
         # Load df with freq and activity info
         nrn_actosc = pd.read_pickle(
@@ -2345,64 +1859,12 @@ class AnalysisManager:
             lambda x: np.nansum(
                 x['peak_freqs_during'] * x['peak_freq_powers_during']), axis=1)
 
-
-
-        # # Fill the new columns with the right info
-        # for idx_label, row_series in nrn_actosc.iterrows():
-        #     print(str(idx_label) + '/' + str(len(nrn_actosc)))
-        #     # Get the angle and contrast for each batch_idx and
-        #     # get the orientation preference of that channel
-        #     row_channel = nrn_actosc.at[idx_label, 'channel']
-        #     row_batch = nrn_actosc.at[idx_label, 'batch_idx']
-        #     row_stim_angle, row_stim_contrast = angle_contrast_pairs[row_batch]
-        #     row_ori_pref = ori_dict[row_channel]
-        #
-        #     nrn_actosc.at[idx_label, 'ori_pref']      = row_ori_pref
-        #     nrn_actosc.at[idx_label, 'stim_ori']      = row_stim_angle
-        #     nrn_actosc.at[idx_label, 'stim_contrast'] = row_stim_contrast
-        #
-        #     # Decide if a channels' orientation pref is matched by the
-        #     # orientation of the stimulus.
-        #     # I've chose a threshold of +/- 5 degrees
-        #     orientation_match = \
-        #         (np.abs(row_ori_pref - row_stim_angle) < 5*np.pi/180) or \
-        #         (np.abs(row_ori_pref + np.pi - row_stim_angle) < 5*np.pi/180)
-        #     if orientation_match:
-        #         nrn_actosc.at[idx_label, 'matched_stim_ori_pref'] = True
-        #     else:
-        #         nrn_actosc.at[idx_label, 'matched_stim_ori_pref'] = False
-        #
-        #     # Record the max_peak_power if it exists
-        #     peak_freq_powers_during = \
-        #         nrn_actosc.at[idx_label, 'peak_freq_powers_during']
-        #     if np.array(peak_freq_powers_during).size == 0:
-        #         print("B %i ; Ch %i ; H%i W%i ; Index % i is empty." % \
-        #                                 (row_batch,
-        #                                  row_channel,
-        #                                  nrn_actosc.at[idx_label, 'height'],
-        #                                  nrn_actosc.at[idx_label, 'width'],
-        #                                  idx_label))
-        #         continue
-        #     else:
-        #         nrn_actosc.at[idx_label, 'max_peak_power'] = \
-        #             np.nanmax(peak_freq_powers_during)
-        #
-        #         # Record the mean peak power-freq product. Note that the full
-        #         # power-freq product has already been calculated
-        #         peak_freqs = nrn_actosc.at[idx_label, 'peak_freqs_during']
-        #         peak_powers = nrn_actosc.at[idx_label, 'peak_freq_powers_during']
-        #         mean_peak_power_product = np.nanmean(peak_freqs * peak_powers)
-        #         nrn_actosc.at[
-        #             idx_label, 'mean_peak_power_during'] = mean_peak_power_product
-
         nrn_actosc.to_pickle(os.path.join(
             self.session_dir, 'neuron act and osc with new contrast freq info.pkl'))
 
         # Identify the neurons that have ALL [well def ori pref; matched
         # stim and ori pref; activated; peak power above a threshold]
-        # cond1 = nrn_actosc['peak_freqs_power_product'] > 0.0 & \
-        #     nrn_actosc['matched_stim_ori_pref'] & \
-        #     nrn_actosc['active']
+
         cond1a = nrn_actosc['peak_freqs_power_product'] > 0.0
         cond1b = nrn_actosc['matched_stim_ori_pref']
         cond1c = nrn_actosc['active']
@@ -2414,15 +1876,6 @@ class AnalysisManager:
         nrn_actosc_filt = \
             nrn_actosc.loc[cond1a&cond1b&cond1c&cond2&cond3&cond4&cond5&cond6]
 
-        # nrn_actosc_filt['mean_peak_power_during'] = pd.to_numeric(
-        #     nrn_actosc_filt['mean_peak_power_during'])
-        # nrn_actosc_filt['mean_peak_power_outside'] = pd.to_numeric(
-        #     nrn_actosc_filt['mean_peak_power_outside'])
-        # nrn_actosc_filt['freq_power_product_during'] = nrn_actosc_filt[
-        #     'freq_power_product_during'].astype(float)
-        # nrn_actosc_filt['freq_power_product_outside'] = nrn_actosc_filt[
-        #     'freq_power_product_outside'].astype(float)
-
         ### Take those neurons and group them by the contrast of their stimulus
 
         mean_peak_power_during  = nrn_actosc_filt.groupby(['stim_contrast'])[
@@ -2430,20 +1883,7 @@ class AnalysisManager:
         mean_peak_power_outside = nrn_actosc_filt.groupby(['stim_contrast'])[
                      'peak_freqs_power_product'].mean()
         print(mean_peak_power_during)
-        print(mean_peak_power_outside) #what about this is 'during'?
-        # mean_peak_power_during  = nrn_actosc_filt.groupby(['stim_contrast'])[
-        #              'mean_peak_power_during'].mean()
-        # mean_peak_power_outside = nrn_actosc_filt.groupby(['stim_contrast'])[
-        #              'mean_peak_power_outside'].mean()
-        # print(mean_peak_power_during)
-        # print(mean_peak_power_outside)
-        # Just check that there is the no unexpected relationship between
-        # ori pref and oscillations (I want there to be more oscillating for
-        # preferred orientations and less for non preferred)
-
-
-        # Get the active neurons and their frequencies and get the sum for
-        # each contrast level (may wish to normalise in some way)
+        print(mean_peak_power_outside)
 
 
         # Plot contrast on x, freq on y, ideally should see an increase
@@ -2456,8 +1896,6 @@ class AnalysisManager:
         plt.savefig(os.path.join(self.session_dir,
                                  'contrast frequency plots.png'))
         plt.close()
-
-        # Then move on to synchrony code
 
 
     def get_info_lists_from_nrnactch(self, nrnact_ch, only_matched=False):
@@ -2517,7 +1955,6 @@ class AnalysisManager:
         presaved_path = os.path.join(self.session_dir,
             "neuron_activity_results_alternativeformat_just_angles_few_angles.pkl")
         full_data = pd.read_pickle(presaved_path)
-        #"/home/lee/Documents/AI_ML_neur_projects/deep_attractor_network/analysis_results/20200731-040415__rndidx_60805_loaded20200722-144054__rndidx_25624_experiment_at_8490its"
         # Add stim_orientation info to data
         stim_angles = [self.just_angles_few_angles_angles[i] for i in
                        full_data['batch_idx']]
@@ -2567,8 +2004,6 @@ class AnalysisManager:
             nrnact_ch = nrnact_ch.loc[nrnact_ch['height'] <= centre2]
             nrnact_ch = nrnact_ch.loc[nrnact_ch['width'] >= centre1]
             nrnact_ch = nrnact_ch.loc[nrnact_ch['width'] <= centre2]
-            # nrnact_ch = nrnact_ch.loc[nrnact_ch['matched_stim_ori_pref']]
-            # nrnact_ch = nrnact_ch.loc[nrnact_ch['stim_contrast']==2.8]
             nrnact_ch = nrnact_ch.reset_index()
 
             # Get the names of the columns
@@ -2578,7 +2013,6 @@ class AnalysisManager:
             # For the  in the above-defined subset of nrnact, get
             # their timeseries from the arrays
             state_traces = activities_df[on_colnames]
-            # state_traces.columns = self.true_contrast_and_angle_contrasts
             state_traces = state_traces.transpose()
             state_traces['batch'] = batches
             state_traces['stim_oris'] = stim_oris
@@ -2679,14 +2113,14 @@ class AnalysisManager:
                                                'SynchronyExp1',
                                                'acorrs_gabor_fitted')
 
-        batch_groups = self.just_angles_few_angles_batchgroups  # [list(range(64)), list(range(64,128))]
+        batch_groups = self.just_angles_few_angles_batchgroups
 
-        plotting = False#True
+        plotting = False
         # Set initial gabor params (gaussian components) [sigma, amplitude]
-        p01 = [7e1, 400.0]#[5e2, 5., 1.0, 0.] ######[7e2, 0.9, 500.0, 0.]
-        p02 = [7e1, 500.0]#[5e2, -0.5, 100.0, 0.]
-        p03 = [7e1, 600.0]#[7e2, 0.9, 500.0, 0.]
-        init_params_gabor = [p01, p02, p03]#[p02]##, p04]
+        p01 = [7e1, 400.0]
+        p02 = [7e1, 500.0]
+        p03 = [7e1, 600.0]
+        init_params_gabor = [p01, p02, p03]
 
 
         for bg_angle_index, bg in enumerate(batch_groups):
@@ -2747,7 +2181,7 @@ class AnalysisManager:
                             init_params_sine = [[phaseshift0, mean0,
                                               lambdas[i]]
                                             for i in range(len(lambdas))]
-                            sine_curve = lambda p: (amplitude0 * np.cos(self.acorr_x * p[2] + p[0]) + p[1]) #* (1 / (np.sqrt(2 * np.pi) * base_sd)) * np.exp(-(self.acorr_x ** 2) / (2 * base_sd ** 2)) * 70
+                            sine_curve = lambda p: (amplitude0 * np.cos(self.acorr_x * p[2] + p[0]) + p[1])
                             opt_func_sine = lambda p: sine_curve(p) - acorr_data
 
                             # Go through each of the init param settings
@@ -2818,70 +2252,26 @@ class AnalysisManager:
                                                 ignore_index=True)
 
                             plotting = np.random.rand() > .999
-                            if plotting:
+                            if plotting: # Happens for 1/1000 plots
                                 # Plot results
                                 fig, ax = plt.subplots(1, figsize=(9, 5))
-                                ax.plot(self.acorr_x, acorr_data)  # /np.max(acorr_trace))
-                                # ax.plot(np.arange(len(acorr_data)),
-                                #                      gabor_func(orig_params) )
+                                ax.plot(self.acorr_x, acorr_data)
                                 ax.plot(self.acorr_x, est_gabor_curve )
                                 ax.scatter(self.acorr_x[peaks[0]], acorr_data[peaks[0]])
-                                # ax.plot(self.acorr_x, orig_sine )
-                                # ax.plot(np.arange(len(acorr_data)),
-                                #                      sine_curve(est_params_sine) )
-
-
                                 ax.set_xlabel('lag')
                                 ax.set_ylabel('correlation coefficient')
-                                # ax.legend()
 
                                 plt.savefig(
                                     "%s/cross correlation between %i and %i in batch %i for %s" % (
                                     acorr_dir, ch1, ch2, b,label))
                                 plt.close()
-                                plotting = False
+                                plotting = False  # Resets bool
 
                 df_title = "%s/estimated_gabor_params_batch_%i " % (exp_dir, b)
                 param_df.to_pickle(df_title)
 
-        ##Fitting sinewave
-        # fig, ax = plt.subplots(4,8, sharey=True, sharex=True)
-        # fig.set_size_inches(23, 8)
-        # k = 0
-        # angle_axis = [round((180/np.pi) * angle, 1) for angle in angles]
-        # orient_prefs = pd.DataFrame(columns=est_param_names)
-        # for i in range(4):
-        #     for j in range(8):
-        #         print("%i, %i" % (i,j))
-        #         normed_data = sum_angles_df[k] - np.mean(sum_angles_df[k])
-        #         normed_data = normed_data / \
-        #                       np.linalg.norm(normed_data)
-        #
-        #         amplitude0  = 2.0
-        #         phaseshift0 = 0
-        #         mean0  = 0.
-        #         params0 = [amplitude0, phaseshift0, mean0]
-        #         opt_func = lambda x: x[0] * np.cos(2*angles + x[1]) + x[
-        #             2] - normed_data
-        #
-        #         est_params = \
-        #             optimize.leastsq(opt_func, params0)[0]
-        #
-        #         ax[i,j].plot(angle_axis, normed_data)
-        #         ax[i,j].text(0.08, 0.27, 'Channel %s' % k)
-        #
-        #         if est_params[0] < 0.:
-        #             est_params[0] = est_params[0] * -1
-        #             est_params[1] += np.pi
-        #
-        #         if est_params[1] < 0.:
-        #             est_params[1] += 2 * np.pi
-        #
-        #         fitted_curve = est_params[0] * np.cos(2*angles + est_params[1]) \
-        #                        + est_params[2]
 
-
-    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_overlay(self): #not really used
+    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_CI_neighbours(self):
         """Collects the 128 batch dfs together
            Collects the acorr data for each trace
            Plots per channel for all batches for that angle"""
@@ -2892,79 +2282,7 @@ class AnalysisManager:
 
         ch_data_during  = pd.DataFrame()
         ch_data_outside = pd.DataFrame()
-        batch_groups = self.just_angles_few_angles_batchgroups  # [list(range(64)), list(range(64,128))]
-        max_peak = 28
-        min_trough = -20
-
-        for bg_angle_index, bg in enumerate(batch_groups):
-
-            # Collect all the dfs for this batch group (this stim)
-            dfs_all = \
-                [[pd.read_pickle(
-                    os.path.join(exp_dir,
-                        'cross_correlation_results_%s_%s.pkl' % (b, label)))
-                 for label in ['during', 'outside']] for b in bg]
-
-            # Go through each channel #TODO comment the below code
-            for ch1 in range(self.num_ch):
-                for ch2 in range(self.num_ch):
-                    print("%s %s %s" % (bg, ch1, ch2))
-
-                    #create plots and prepare to overlay
-                    fig, ax = plt.subplots(2,figsize=(8,9))
-                    for k, label in enumerate(['During', 'Outside']):
-                        ax[k].set_ylim([min_trough, max_peak])
-                        ax[k].set_title(label)
-                        ax[k].set_xlabel('lag')
-                        ax[k].set_ylabel('correlation coefficient')
-
-
-                    for batch_idx, b in enumerate(bg):
-                        print("%s" % (b))
-
-                        dfs = dfs_all[batch_idx].copy()
-
-                        # Just get the channel combination you want
-                        for j in range(len(dfs)):
-                            cond_a = dfs[j]['channel A'] == ch1
-                            cond_b = dfs[j]['channel B'] == ch2
-                            cond = cond_a & cond_b
-                            dfs[j] = dfs[j][cond]
-                            dfs[j] = np.array(dfs[j].iloc[:, 1:-3])
-
-                        for j, label in enumerate(['During', 'Outside']):
-
-                            title = \
-                                "Cross correlation between" + \
-                                " %i and %i for stim-type %i" % \
-                                (ch1, ch2, bg_angle_index)
-
-                            acorr_trace = dfs[j]
-                            acorr_trace = acorr_trace.squeeze()
-                            display_len = 400
-                            mid_point = len(acorr_trace) // 2
-                            acorr_trace = acorr_trace[
-                                 (mid_point - display_len):(mid_point + display_len)]
-                            ax[j].plot(np.arange(0-display_len, 0+display_len),
-                                       acorr_trace, c='blue', alpha=0.25)  # /np.max(acorr_trace))
-
-                            # plt.savefig(acorr_dir + '/' + title)
-                    plt.savefig(acorr_dir + '/' + title)
-                    plt.close()
-
-
-    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_CI_neighbours(self): #TODO boog
-        """Collects the 128 batch dfs together
-           Collects the acorr data for each trace
-           Plots per channel for all batches for that angle"""
-        # Prepare general variables
-        exp_dir, acorr_dir = self.prepare_dirs(self.session_dir,
-                                               'SynchronyExp1',
-                                               'acorrs_overlayed')
-
-        ch_data_during  = pd.DataFrame()
-        ch_data_outside = pd.DataFrame()
-        batches = list(range(self.num_batches))#[list(range(64)), list(range(64,128))]
+        batches = list(range(self.num_batches))
         max_peak = 0.5
         min_trough = -0.5
         display_len = 200
@@ -2973,9 +2291,9 @@ class AnalysisManager:
         full_plot_title = 'Mean cross correlation between neighbouring ' + \
                           'and non-neighbouring channels'
         num_plots = 5
-        acorr_traces_lists = [[].copy() for x in range(num_plots)]# * num_plots
+        acorr_traces_lists = [[].copy() for x in range(num_plots)]
 
-        # Go through each channel #TODO comment the below code
+        # Go through each channel
         dists = range(1, num_plots+1)
         fig, ax = plt.subplots(num_plots, figsize=(8, 12))
         fig.subplots_adjust(hspace=-0.4)
@@ -3053,10 +2371,6 @@ class AnalysisManager:
                 loc=mean_trace,
                 scale=spst.sem(acorr_traces_lists[k]))
 
-            # Bootstrapped CIs (memory error)
-            # mean_trace, (low_intv, high_intv) = \
-            #     bs.bootstrap(acorr_traces_lists[k], stat_func=bs_stats.mean)  # MemoryError: Unable to allocate 237. GiB for an array with shape (10000, 7936, 400) and data type float64
-
             ax[k].plot(np.arange(0 - display_len, 0 + display_len),
                        mean_trace, c='black',
                        alpha=1.0)  # /np.max(acorr_trace))
@@ -3088,7 +2402,6 @@ class AnalysisManager:
             for i in range(len(acorr_data_dfs[0])):
                 fig, ax = plt.subplots(2,figsize=(8,9))
 
-                #fig.tight_layout(pad=1.0)
                 for j, during_or_outside_label in enumerate(['During', 'Outside']):
                     row_data = acorr_data_dfs[j].iloc[i]
                     ch1, ch2, _ = row_data[-3:]
@@ -3101,7 +2414,7 @@ class AnalysisManager:
                     acorr_trace = acorr_trace[mid_point-400:mid_point+400]
 
                     ax[j].plot(np.arange(len(acorr_trace)),
-                            acorr_trace)#/np.max(acorr_trace))
+                            acorr_trace)
                     ax[j].set_ylim([min_trough, max_peak])
                     ax[j].set_title(during_or_outside_label)
                     ax[j].set_xlabel('lag')
@@ -3120,7 +2433,7 @@ class AnalysisManager:
         exp_dir, acorr_dir = \
             self.prepare_dirs(self.session_dir, 'SynchronyExp1', 'acorrs')
 
-        for b in range(3):#128):
+        for b in range(128):
             acorr_data_dfs = [pd.read_pickle(os.path.join(self.session_dir,
                                 'cross_correlation_results_%s_%s.pkl' % (b, label)))
                               for label in ['during', 'outside']]
@@ -3148,7 +2461,7 @@ class AnalysisManager:
                     acorr_trace = acorr_trace[mid_point-400:mid_point+400]
 
                     ax[j].plot(np.arange(len(acorr_trace)),
-                            acorr_trace)#/np.max(acorr_trace))
+                            acorr_trace)
                     ax[j].set_ylim([min_trough, max_peak])
                     ax[j].set_title(during_or_outside_label)
                     ax[j].set_xlabel('lag')
@@ -3230,7 +2543,7 @@ class AnalysisManager:
                 print("Boop! plotting")
                 # Plot results
                 fig, ax = plt.subplots(1, figsize=(9, 5))
-                ax.plot(self.acorr_x, gabor_curve)  # /np.max(acorr_trace))
+                ax.plot(self.acorr_x, gabor_curve)
                 ax.scatter(self.acorr_x[peaks[0]], gabor_curve[peaks[0]])
                 ax.set_xlabel('lag')
                 ax.set_ylabel('correlation coefficient')
@@ -3273,15 +2586,13 @@ class AnalysisManager:
         dur_or_out_groups = [np.array(g['amplitude'])
                              for g in dur_or_out_groups]
         dur_out_comparison = dur_or_out_groups[0] > (0.1 * dur_or_out_groups[1])
-        # dur_out_comparison = np.concatenate(
-        #     (dur_out_comparison, np.ones_like(dur_out_comparison) * -1))
+
         results_df['dur_out_amp_compar'] = -1.
 
         dur_index = results_df[results_df['dur_or_out'] == 0.0].index
         out_index = results_df[results_df['dur_or_out'] == 1.0].index
 
         results_df.loc[dur_index, 'dur_out_amp_compar'] = dur_out_comparison
-        #results_df.loc[out_index, 'dur_out_amp_compar'] = np.ones_like(dur_out_comparison) * -1.
 
         results_df.to_pickle(
             "%s/synchexp1 acorr analysis results.pkl" % self.session_dir)
@@ -3294,11 +2605,7 @@ class AnalysisManager:
         if not os.path.isdir(exp_dir):
             os.mkdir(exp_dir)
 
-        # Define some helper functions
-
-        # batch_groups = [list(range(64)), list(range(64, 128))]
         bg_angles = self.just_angles_few_angles_batchgroupangles
-
 
         acorr_results_df = pd.read_pickle(
             "%s/synchexp1 acorr analysis results.pkl" % self.session_dir)
@@ -3365,10 +2672,8 @@ class AnalysisManager:
                                  "Angle_diff vs Oscillation amplitude.png"))
         plt.close()
 
-
         # Plot angle diff vs freq (secondary imporance)
         m, c = np.polyfit(ori_pref_data, num_peaks_data, 1)
-
         fig, ax = plt.subplots(1, figsize=(9, 5))
         ax.scatter(ori_pref_data, num_peaks_data)
         plt.plot(ori_pref_data, m * ori_pref_data + c, c='r')
@@ -3392,15 +2697,12 @@ class AnalysisManager:
         # orientation_match = \
         #     (match_0_A | match_180_A) & (match_0_B | match_180_B)
 
-
         ## New code for when using direction selectivity
-        #np.pi - np.abs(np.abs(difference) - np.pi)
         diff_A = acorr_results_df['ori_pref A'] - stim_angles
         match_A = (np.pi - np.abs(np.abs(diff_A) - np.pi) < (thresh_ang*np.pi/180))
         diff_B = acorr_results_df['ori_pref B'] - stim_angles
         match_B = (np.pi - np.abs(np.abs(diff_B) - np.pi) < (thresh_ang*np.pi/180))
         orientation_match = match_A & match_B
-
 
 
 
@@ -3482,7 +2784,6 @@ class AnalysisManager:
         ax[1].set_xlabel('Angle difference [%s]' % degree_symb)
         ax[1].title.set_text('Unaligned')
 
-
         fig.tight_layout()
         plt.savefig(os.path.join(exp_dir,
                                  "Angle_diff vs Oscillation CI amplitude w and wo ori match.png"))
@@ -3508,7 +2809,6 @@ class AnalysisManager:
         presaved_path = os.path.join(self.session_dir,
             "neuron_activity_results_alternativeformat_double_stim.pkl")
         full_data = pd.read_pickle(presaved_path)
-        #"/home/lee/Documents/AI_ML_neur_projects/deep_attractor_network/analysis_results/20200731-040415__rndidx_60805_loaded20200722-144054__rndidx_25624_experiment_at_8490its"
         # Add stim_orientation info to data
         stim_angles = [self.double_stim_angles[i] for i in
                        full_data['batch_idx']]
@@ -3516,7 +2816,7 @@ class AnalysisManager:
 
         centre = 16
 
-        if patch_or_idx == 'patch': # probably remove this in future. unlikely to use patch but maybe in future.
+        if patch_or_idx == 'patch':
             centre1 = self.central_patch_min
             centre2 = self.central_patch_max
             central_patch_size = self.central_patch_size
@@ -3563,7 +2863,7 @@ class AnalysisManager:
             mobile_locs = \
                 [self.double_stim_locs[i] for i in nrnact_ch['batch_idx']]
             mobile_locs_x = \
-                [centre + mobile_locs[i][1] for i in range(len(mobile_locs))] #swapped 0 and 1 for new stims set. Not sure whether it was the right way round the first time.
+                [centre + mobile_locs[i][1] for i in range(len(mobile_locs))]
             mobile_locs_y = \
                 [centre + mobile_locs[i][0] for i in range(len(mobile_locs))]
 
@@ -3583,7 +2883,6 @@ class AnalysisManager:
             # For the  in the above-defined subset of nrnact, get
             # their timeseries from the arrays
             state_traces = activities_df[on_colnames]
-            # state_traces.columns = self.true_contrast_and_angle_contrasts
             state_traces = state_traces.transpose()
             state_traces['batch']     = batches
             state_traces['height']    = heights
@@ -3608,7 +2907,7 @@ class AnalysisManager:
 
             # Define the mobile neuron location for this batch
             mobile_loc = self.double_stim_locs[b]
-            mobile_loc_x = centre + mobile_loc[1] # again swapped 1 and 0 for new stim set
+            mobile_loc_x = centre + mobile_loc[1]
             mobile_loc_y = centre + mobile_loc[0]
 
             cond_mobilex = full_state_traces['width'] == mobile_loc_x
@@ -3696,13 +2995,13 @@ class AnalysisManager:
                                                'acorrs_gabor_fitted')
 
         batch_groups = self.double_stim_batchgroups
-        plotting = False #True
+        plotting = False
 
         # Set initial gabor params (gaussian components) [sigma, amplitude]
-        p01 = [7e1, 400.0]#[5e2, 5., 1.0, 0.] ######[7e2, 0.9, 500.0, 0.]
-        p02 = [7e1, 500.0]#[5e2, -0.5, 100.0, 0.]
-        p03 = [7e1, 600.0]#[7e2, 0.9, 500.0, 0.]
-        init_params_gabor = [p01, p02, p03]#[p02]#[p01, p02, p03]#, p04]
+        p01 = [7e1, 400.0]
+        p02 = [7e1, 500.0]
+        p03 = [7e1, 600.0]
+        init_params_gabor = [p01, p02, p03]
 
 
         for bg_angle_index, bg in enumerate(batch_groups):
@@ -3716,10 +3015,6 @@ class AnalysisManager:
             # Go through all the batchelements for that stim
             for b in bg:
                 print(b)
-                # if b < 8:
-                #     continue
-                # if b == 8:
-                #     print("Boop")
                 param_df = pd.DataFrame()  # df to save results
                 # which is saved every batch
 
@@ -3803,8 +3098,6 @@ class AnalysisManager:
                                         fitted_sine)
                             opt_func = lambda p: gabor_func(p) - acorr_data
 
-
-
                             costs_gabor = []
                             est_params_gabor = []
                             for p0x in init_params_gabor:
@@ -3853,18 +3146,12 @@ class AnalysisManager:
                             if plotting:
                                 # Plot results
                                 fig, ax = plt.subplots(1, figsize=(9, 5))
-                                ax.plot(self.acorr_x, acorr_data)  # /np.max(acorr_trace))
-                                # ax.plot(np.arange(len(acorr_data)),
-                                #                      gabor_func(orig_params) )
+                                ax.plot(self.acorr_x, acorr_data)
                                 ax.plot(self.acorr_x, est_gabor_curve )
-                                ax.scatter(self.acorr_x[peaks[0]], acorr_data[peaks[0]])
-                                # ax.plot(self.acorr_x, orig_sine )
-                                # ax.plot(np.arange(len(acorr_data)),
-                                #                      sine_curve(est_params_sine) )
-
+                                ax.scatter(self.acorr_x[peaks[0]],
+                                           acorr_data[peaks[0]])
                                 ax.set_xlabel('lag')
                                 ax.set_ylabel('correlation coefficient')
-
                                 plt.savefig(
                                     "%s/Xcorr between static ch %i and mobile ch %i at (x%i,y%i) in batch %i for %s" % (acorr_dir, ch1, ch2, x_loc,y_loc,b,label))
                                 plt.close()
@@ -3967,11 +3254,10 @@ class AnalysisManager:
             if plotting:
                 # Plot results
                 fig, ax = plt.subplots(1, figsize=(9, 5))
-                ax.plot(self.acorr_x, gabor_curve)  # /np.max(acorr_trace))
+                ax.plot(self.acorr_x, gabor_curve)
                 ax.scatter(self.acorr_x[peaks[0]], gabor_curve[peaks[0]])
                 ax.set_xlabel('lag')
                 ax.set_ylabel('correlation coefficient')
-                # ax.legend()
 
                 fig.savefig(
                  "%s/diagnostic plot for fitted gabors_ch %i and %i in batch %i for %s.jpg" % (
@@ -4027,23 +3313,18 @@ class AnalysisManager:
         results_df['sine_phase'] = results_df_peaks['sine_phase']
         results_df['num_peaks'] = results_df_peaks['num_peaks']
 
-
         # Check if amplitude during is more than 10% of amplitude outside
         dur_or_out_groups = [g[1] for g in results_df.groupby(
             ['dur_or_out'], as_index=False)]
         dur_or_out_groups = [np.array(g['amplitude'])
                              for g in dur_or_out_groups]
         dur_out_comparison = dur_or_out_groups[0] > (0.1*dur_or_out_groups[1])
-        # dur_out_comparison = np.concatenate(
-        #     (dur_out_comparison, np.ones_like(dur_out_comparison) * -1))
         results_df['dur_out_amp_compar'] = -1.
 
         dur_index = results_df[results_df['dur_or_out'] == 0.0].index
         out_index = results_df[results_df['dur_or_out'] == 1.0].index
 
         results_df.loc[dur_index, 'dur_out_amp_compar'] = dur_out_comparison
-        #results_df.loc[out_index, 'dur_out_amp_compar'] = \
-        #   np.ones_like(dur_out_comparison) * -1.
 
         results_df.to_pickle(
             "%s/synchexp2 acorr analysis results.pkl" % self.session_dir)
@@ -4095,7 +3376,7 @@ class AnalysisManager:
 
         # Add the location data for the mobile stim in each batchgroup
         locs = [bg_locs[int(i)] for i in acorr_results_df['batch_group']]
-        mob_locs_x = [loc[1] for loc in locs]#todo ensure this 0 and 1 are right way round
+        mob_locs_x = [loc[1] for loc in locs]
         mob_locs_y = [loc[0] for loc in locs]
         acorr_results_df['mob_loc_x'] = mob_locs_x
         acorr_results_df['mob_loc_y'] = mob_locs_y
@@ -4115,7 +3396,7 @@ class AnalysisManager:
 
         # Calculate euclidian distance of mobile from static stim
         centred_x_locs = [xy[1] - self.double_stim_static_x_0centre for xy in
-         self.double_stim_batchgroup_locs]#todo ensure this 0 and 1 are right way round
+         self.double_stim_batchgroup_locs]
         centred_y_locs = [xy[0] - self.double_stim_static_y_0centre for xy in
             self.double_stim_batchgroup_locs]
         eucl_dists = [np.sqrt(x**2 + y**2)
@@ -4173,13 +3454,12 @@ class AnalysisManager:
         x_vals_colin = sorted(list(set(colinear_indep_data)))
         x_vals_noncolin = sorted(list(set(noncolinear_indep_data)))
 
-        # for dist in set(dists):
-        #    calc CI for each dist
-        #    calc mean
-        # plot mean and dists in a plot with fill in the CI.
-
-        grouped_colinear_dep_data = [colinear_dependent_data[colinear_indep_data==d] for d in x_vals_colin]
-        grouped_noncolin_dep_data = [noncolinear_dependent_data[noncolinear_indep_data==d] for d in x_vals_noncolin]
+        grouped_colinear_dep_data = \
+            [colinear_dependent_data[colinear_indep_data==d]
+             for d in x_vals_colin]
+        grouped_noncolin_dep_data = \
+            [noncolinear_dependent_data[noncolinear_indep_data==d]
+             for d in x_vals_noncolin]
 
         bootstrap_res_colinear = []
         bootstrap_res_noncolin = []
@@ -4190,9 +3470,12 @@ class AnalysisManager:
                                   stat_func=bs_stats.mean,
                                   alpha=0.05)
             bootstrap_res_colinear.append(bs_res)
-        bs_means_colin = [bsr.value for bsr in bootstrap_res_colinear]
-        bs_low_intvs_colin = [bsr.lower_bound for bsr in bootstrap_res_colinear]
-        bs_high_intvs_colin = [bsr.upper_bound for bsr in bootstrap_res_colinear]
+        bs_means_colin = \
+            [bsr.value for bsr in bootstrap_res_colinear]
+        bs_low_intvs_colin = \
+            [bsr.lower_bound for bsr in bootstrap_res_colinear]
+        bs_high_intvs_colin = \
+            [bsr.upper_bound for bsr in bootstrap_res_colinear]
 
         # bootstrap of noncolinear
         for group in grouped_noncolin_dep_data:
@@ -4200,13 +3483,15 @@ class AnalysisManager:
                                   stat_func=bs_stats.mean,
                                   alpha=0.05)
             bootstrap_res_noncolin.append(bs_res)
-        bs_means_noncolin = [bsr.value for bsr in bootstrap_res_noncolin]
-        bs_low_intvs_noncolin = [bsr.lower_bound for bsr in bootstrap_res_noncolin]
-        bs_high_intvs_noncolin = [bsr.upper_bound for bsr in bootstrap_res_noncolin]
+        bs_means_noncolin = \
+            [bsr.value for bsr in bootstrap_res_noncolin]
+        bs_low_intvs_noncolin = \
+            [bsr.lower_bound for bsr in bootstrap_res_noncolin]
+        bs_high_intvs_noncolin = \
+            [bsr.upper_bound for bsr in bootstrap_res_noncolin]
 
 
-
-        ## Plot the main exp2 figure: #TODO change to include bootstrapped CIs
+        ## Plot the main exp2 figures:
         m_colin, c_colin = np.polyfit(colinear_indep_data, colinear_dependent_data, 1)  # Calc line
         m_noncolin, c_noncolin = np.polyfit(noncolinear_indep_data, noncolinear_dependent_data, 1)  # Calc line
 
@@ -4217,8 +3502,6 @@ class AnalysisManager:
         ax[0].plot(colinear_indep_data, m_colin * colinear_indep_data + c_colin, c='r')  # Plot line
         ax[0].set_xlabel('Stimuli separation distance')
         ax[0].set_ylabel('Oscillation amplitude')
-        # ax[0].set_yticks([1., 2.])
-        # ax[0].set_yticklabels([1, 2])
 
 
         ax[1].title.set_text('Noncolinear')
@@ -4226,7 +3509,6 @@ class AnalysisManager:
                    c=acorr_results_df['channel A'][not_overlap_cond & noncolinear_cond & orientation_match_cond])
         ax[1].plot(noncolinear_indep_data, m_noncolin * noncolinear_indep_data + c_noncolin, c='r')  # Plot line
         ax[1].set_xlabel('Stimuli separation distance')
-        # ax[1].set_ylabel('Oscillation amplitude')
 
         plot_title = "Oscillation amplitude vs stimuli separation distance for colinear and noncolinear stimuli for neurons with orientation preference matched to static stimulus"
         plt.tight_layout()
@@ -4252,122 +3534,6 @@ class AnalysisManager:
         plt.close()
 
 
-
-
-
-        ##### The rest isn't really used
-        # Do a systematic set of plots
-        # ori_same_below_all = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] == 0)
-        # ori_same_beside_all = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] != 0)
-        # ori_different_below_all = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] == 0)
-        # ori_different_beside_all = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] != 0)
-        # ori_same_below_onlyhorizconnect = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] == 0) & (df['mob_loc_y'] < self.double_stim_horizextent)
-        # ori_same_beside_onlyhorizconnect = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] != 0) & (df['mob_loc_y'] < self.double_stim_horizextent)
-        # ori_different_below_onlyhorizconnect = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] == 0) & (df['mob_loc_y'] < self.double_stim_horizextent)
-        # ori_different_beside_onlyhorizconnect = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] != 0) & (df['mob_loc_y'] < self.double_stim_horizextent)
-        # ori_same_below_onlyNOThorizconnect = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] == 0) & (df['mob_loc_y'] >= self.double_stim_horizextent)
-        # ori_same_beside_onlyNOThorizconnect = (df['mob_stim_angle'] == self.double_stim_static_angle) & (df['mob_loc_x'] != 0) & (df['mob_loc_y'] >= self.double_stim_horizextent)
-        # ori_different_below_onlyNOThorizconnect = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] == 0) & (df['mob_loc_y'] >= self.double_stim_horizextent)
-        # ori_different_beside_onlyNOThorizconnect = (df['mob_stim_angle'] != self.double_stim_static_angle) & (df['mob_loc_x'] != 0) & (df['mob_loc_y'] >= self.double_stim_horizextent)
-        #
-        # ori_same_below_all_label = "Static and mobile stims with same orientation, mobile stim below static stim (i.e. colinear)"
-        # ori_same_beside_all_label = "Static and mobile stims with same orientation, mobile stim beside static stim (i.e. not colinear)"
-        # ori_different_below_all_label = "Static and mobile stims with different orientation, mobile stim below static stim"
-        # ori_different_beside_all_label = "Static and mobile stims with different orientation, mobile stim beside static stim"
-        # ori_same_below_onlyhorizconnect_label = "Static and mobile stims with same orientation, mobile stim below static stim and within horizontal connections"
-        # ori_same_beside_onlyhorizconnect_label = "Static and mobile stims with same orientation, mobile stim beside static stim and within horizontal connections"
-        # ori_different_below_onlyhorizconnect_label = "Static and mobile stims with different orientation, mobile stim below static stim and within horizontal connections"
-        # ori_different_beside_onlyhorizconnect_label = "Static and mobile stims with different orientation, mobile stim beside static stim and within horizontal connections"
-        # ori_same_below_onlyNOThorizconnect_label = "Static and mobile stims with same orientation, mobile stim below static stim and outside horizontal connections"
-        # ori_same_beside_onlyNOThorizconnect_label = "Static and mobile stims with same orientation, mobile stim beside static stim and outside horizontal connections"
-        # ori_different_below_onlyNOThorizconnect_label = "Static and mobile stims with different orientation, mobile stim below static stim and outside horizontal connections"
-        # ori_different_beside_onlyNOThorizconnect_label = "Static and mobile stims with different orientation, mobile stim beside static stim and outside horizontal connections"
-        #
-        # cond_and_labs = [[ori_same_below_all, ori_same_below_all_label],
-        #                  [ori_same_beside_all, ori_same_beside_all_label],
-        #                  [ori_different_below_all, ori_different_below_all_label],
-        #                  [ori_different_beside_all, ori_different_beside_all_label],
-        #                  [ori_same_below_onlyhorizconnect, ori_same_below_onlyhorizconnect_label],
-        #                  [ori_same_beside_onlyhorizconnect, ori_same_beside_onlyhorizconnect_label],
-        #                  [ori_different_below_onlyhorizconnect, ori_different_below_onlyhorizconnect_label],
-        #                  [ori_different_beside_onlyhorizconnect, ori_different_beside_onlyhorizconnect_label],
-        #                  [ori_same_below_onlyNOThorizconnect, ori_same_below_onlyNOThorizconnect_label],
-        #                  [ori_same_beside_onlyNOThorizconnect, ori_same_beside_onlyNOThorizconnect_label],
-        #                  [ori_different_below_onlyNOThorizconnect, ori_different_below_onlyNOThorizconnect_label],
-        #                  [ori_different_beside_onlyNOThorizconnect, ori_different_beside_onlyNOThorizconnect_label]]
-        #
-        # # Go through the various conditions and data and make plots
-        # for indep_label in ['angle_diff', 'mob_eucl_dist', 'mob_sq_dist']:
-        #     for dependent_label in ['amplitude', 'sine_phase', 'num_peaks']:
-        #
-        #         # Prepare directory for saving plots
-        #         plot_dir = os.path.join(exp_dir, indep_label+" vs "+dependent_label)
-        #         if not os.path.isdir(plot_dir):
-        #             os.mkdir(plot_dir)
-        #
-        #         for cond, label in cond_and_labs:
-        #             print(indep_label, dependent_label, label)
-        #             # Define data using conds
-        #             indep_data = acorr_results_df[indep_label][not_overlap_cond & cond]
-        #             dependent_data = acorr_results_df[dependent_label][not_overlap_cond & cond]
-        #             # num_peaks_data = acorr_results_df['num_peaks'][not_overlap_cond & cond]
-        #
-        #
-        #             # Plot basic plot
-        #             m, c = np.polyfit(indep_data, dependent_data, 1) # Calc line
-        #             fig, ax = plt.subplots(1, figsize=(9, 5))
-        #             ax.scatter(indep_data, dependent_data, cmap=cmap,
-        #                        c=acorr_results_df['mob_sq_dist'][not_overlap_cond & cond])
-        #             plt.plot(indep_data, m * indep_data + c, c='r')  # Plot line
-        #             ax.set_xlabel('%s' % indep_label)
-        #             ax.set_ylabel('Oscillation %s' % dependent_label)
-        #             plot_title = "%s vs Oscillation %s for " % \
-        #                          (indep_label, dependent_label)
-        #             plot_title = plot_title + label
-        #             plt.savefig(os.path.join(plot_dir,
-        #                                      "SynchExp2 " + plot_title + ".png"))
-        #             plt.close()
-        #
-        #
-        #             # Plots with ori match:
-        #             # See whether there is a match between BOTH channels and the stim
-        #
-        #             ## Old code for when using orientation selectivity
-        #             # match_0_A = (np.abs(acorr_results_df['ori_pref A'] - stim_angles) < (thresh_ang*np.pi/180))
-        #             # match_180_A = (np.abs(acorr_results_df['ori_pref A'] + np.pi - stim_angles) < (thresh_ang*np.pi/180))
-        #             # match_0_B = (np.abs(acorr_results_df['ori_pref B'] - stim_angles) < (thresh_ang * np.pi / 180))
-        #             # match_180_B = (np.abs(acorr_results_df['ori_pref B'] + np.pi - stim_angles) < (thresh_ang * np.pi / 180))
-        #             # orientation_match = \
-        #             #     (match_0_A | match_180_A) & (match_0_B | match_180_B)
-        #
-        #             ## New code for when using direction selectivity
-        #             # np.pi - np.abs(np.abs(difference) - np.pi)
-        #             diff_A = acorr_results_df['ori_pref A'] - stim_angles
-        #             match_A = (np.pi - np.abs(np.abs(diff_A) - np.pi) < (
-        #                         thresh_ang * np.pi / 180))
-        #             diff_B = acorr_results_df['ori_pref B'] - stim_angles
-        #             match_B = (np.pi - np.abs(np.abs(diff_B) - np.pi) < (
-        #                         thresh_ang * np.pi / 180))
-        #             orientation_match = match_A & match_B
-        #
-        #             ## Redefine data
-        #             indep_data = acorr_results_df[indep_label][not_overlap_cond & cond & orientation_match]
-        #             dependent_data = acorr_results_df[dependent_label][not_overlap_cond & cond & orientation_match]
-        #
-        #             ## plot
-        #             m, c = np.polyfit(indep_data, dependent_data, 1)
-        #             fig, ax = plt.subplots(1, figsize=(9, 5))
-        #             ax.scatter(indep_data, dependent_data, cmap=cmap,
-        #                        c=acorr_results_df['mob_sq_dist'][not_overlap_cond & cond & orientation_match])
-        #             plt.plot(indep_data, m * indep_data + c, c='r')
-        #             ax.set_xlabel('%s' % indep_label)
-        #             ax.set_ylabel('Oscillation %s' % dependent_label)
-        #             plot_title = "%s vs Oscillation %s with ori match for " % (indep_label, dependent_label)
-        #             plot_title = plot_title + label
-        #             plt.savefig(os.path.join(plot_dir,
-        #                                      "SynchExp2 " + plot_title + ".png"))
-        #             plt.close()
-
     # SYNCH EXP 3
     def synchrony_experiment3_xcorrs(self, patch_or_idx=None): #TODO fix exp 3 so that it works with the new stims
         """Takes the column/patch of channels at the site of the static stimulus
@@ -4386,14 +3552,14 @@ class AnalysisManager:
         presaved_path = os.path.join(self.session_dir,
             "neuron_activity_results_alternativeformat_long_just_fewangles.pkl")
         full_data = pd.read_pickle(presaved_path)
-        #"/home/lee/Documents/AI_ML_neur_projects/deep_attractor_network/analysis_results/20200731-040415__rndidx_60805_loaded20200722-144054__rndidx_25624_experiment_at_8490its"
+
         # Add stim_orientation info to data
         stim_angles = [self.long_just_angle_angles[i] for i in
                        full_data['batch_idx']]
         full_data['stim_ori'] = stim_angles
 
 
-        if patch_or_idx == 'patch': # probably remove this in future. unlikely to use patch but maybe in future.
+        if patch_or_idx == 'patch':
             centre1 = self.central_patch_min
             centre2 = self.central_patch_max
             central_patch_size = self.central_patch_size
@@ -4440,9 +3606,6 @@ class AnalysisManager:
 
             nrnact_ch = full_data.loc[full_data['channel'] == ch]
 
-            # centre_rc_cond = (nrnact_ch['height'] == centre) | \
-            #               (nrnact_ch['width'] == centre)
-
 
             # Select a few locations along long stimulus
             bool_dfs = []
@@ -4481,26 +3644,6 @@ class AnalysisManager:
             state_traces['channel']   = ch
 
             full_state_traces = state_traces
-
-            # if full_state_traces.empty:
-            #     full_state_traces = state_traces
-            # else:
-            #     full_state_traces = full_state_traces.append(state_traces)
-
-            # Now, having collected all the state traces of the neurons of
-            # interest, compute cross correlation plots between neurons in THE SAME
-            # channel in the same batch element:
-
-            ## Define the locations of the central row and column for this batch
-            # bool_dfs_w = [(full_state_traces['width'] == i)&(full_state_traces['height']==centre) for i in self.rclocs]
-            # bool_dfs_h = [(full_state_traces['height'] == i)&(full_state_traces['width']==centre) for i in self.rclocs]
-            # bool_dfs = bool_dfs_w
-            # bool_dfs.extend(bool_dfs_h)
-            # for i, bdf in enumerate(bool_dfs):
-            #     if i==0:
-            #         centre_rc_cond = bdf
-            #     else:
-            #         centre_rc_cond = centre_rc_cond | bdf
 
             centre_only_cond = (full_state_traces['height'] == centre) & \
                                (full_state_traces['width']  == centre)
@@ -4559,7 +3702,6 @@ class AnalysisManager:
                     # Convert to array
                     trace_2 = np.array(trace_2).squeeze()
 
-
                     # Remove channel,batch information to get only traces
                     trace_2 = trace_2[0:self.full_trace_len]
 
@@ -4607,10 +3749,10 @@ class AnalysisManager:
         plotting = False
 
         # Set initial gabor params (gaussian components) [sigma, amplitude]
-        p01 = [7e1, 400.0]#[5e2, 5., 1.0, 0.] ######[7e2, 0.9, 500.0, 0.]
-        p02 = [7e1, 500.0]#[5e2, -0.5, 100.0, 0.]
-        p03 = [7e1, 600.0]#[7e2, 0.9, 500.0, 0.]
-        init_params_gabor = [p01, p02, p03]#[p02]#[p01, p02, p03]#, p04]
+        p01 = [7e1, 400.0]
+        p02 = [7e1, 500.0]
+        p03 = [7e1, 600.0]
+        init_params_gabor = [p01, p02, p03]
 
         for bg_angle_index, bg in enumerate(batch_groups):
 
@@ -4764,6 +3906,7 @@ class AnalysisManager:
                 df_title = "%s/estimated_gabor_params_batch_%i " % (exp_dir, b)
                 param_df.to_pickle(df_title)
 
+
     def synchrony_experiment3_Analyze_fitted_Gabors(self):
         """Analyze the fitted Gabor functions as in Gray et al. (1989).
 
@@ -4835,11 +3978,10 @@ class AnalysisManager:
             if plotting:
                 # Plot results
                 fig, ax = plt.subplots(1, figsize=(9, 5))
-                ax.plot(self.acorr_x, gabor_curve)  # /np.max(acorr_trace))
+                ax.plot(self.acorr_x, gabor_curve)
                 ax.scatter(self.acorr_x[peaks[0]], gabor_curve[peaks[0]])
                 ax.set_xlabel('lag')
                 ax.set_ylabel('correlation coefficient')
-                # ax.legend()
 
                 fig.savefig(
                     "%s/diagnostic plot for fitted gabors_ch%i in batch %i at (x%i, y%i) for %s.jpg" % (
@@ -4927,7 +4069,6 @@ class AnalysisManager:
         centr = 0
         vert_ang = bg_angles[1]
         horiz_ang = bg_angles[0]
-        # bg_locs = self.double_stim_batchgroup_locs
 
         cmap = 'hsv'
 
@@ -4952,13 +4093,6 @@ class AnalysisManager:
                                 self.extracted_im_size//2
         acorr_results_df['y'] = acorr_results_df['y'] - \
                                 self.extracted_im_size//2
-
-        # # Calculate (square) distance of mobile from static stim
-        # # as the max distance along an axis
-        # xbiggery = \
-        #     acorr_results_df['x'] > acorr_results_df['y']
-        # acorr_results_df['sq_dist'] = acorr_results_df['x'].where(
-        #     xbiggery, other=acorr_results_df['y'])
 
         # Calculate euclidian distances of second neuron from centre
         eucl_dists = [np.sqrt(x**2 + y**2)
@@ -5036,270 +4170,18 @@ class AnalysisManager:
             bs_high_intvs = [bsr.upper_bound for bsr in bootstrap_res]
 
             # Plot basic plot
-            # m, c = np.polyfit(indep_data, dependent_data, 1)  # Calc line
             ax[dur_out_idx].title.set_text(dur_out_lab)
             ax[dur_out_idx].errorbar(indep_data_categs, bs_means,
                                      yerr=[bs_low_intvs, bs_high_intvs], c='r',
                                      fmt='-o', capsize=3, elinewidth=1)
 
-            # ax[dur_out_idx].scatter(indep_data, dependent_data, cmap=cmap, c=colors)
-            # ax[dur_out_idx].plot(indep_data, m * indep_data + c, c='r')  # Plot line
             if dur_out_idx == 1:
                 ax[dur_out_idx].set_xlabel(
                     "Distance in direction of aligned orientation preference (pixels)")
             ax[dur_out_idx].set_ylabel('Oscillation amplitude')
-            # ax[dur_out_idx].set_ylim([0.1, 0.4])
         plt.savefig(
             os.path.join(plot_dir, "SynchExp3 osc amp vs distance with CIs.png"))
         plt.close()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-        # # Calculate the difference in ori pref of stim from vertical
-        # difference = acorr_results_df['ori_pref'] - vert_ang
-        # angle_diff = np.pi - np.abs(np.abs(difference) - np.pi)
-        # acorr_results_df['oripref_vert_angle_diff'] = angle_diff
-        #
-        # # Calculate the difference in ori pref of stim from horizontal
-        # difference = acorr_results_df['ori_pref'] - horiz_ang
-        # angle_diff = np.pi - np.abs(np.abs(difference) - np.pi)
-        # acorr_results_df['oripref_horiz_angle_diff'] = angle_diff
-
-        # Calculate the distance in the direction of ori pref
-        # vert_aligned_dists = acorr_results_df['y'].loc[(acorr_results_df['oripref_vert_angle_diff'] < ten_degrees)]
-        # horiz_aligned_dists = acorr_results_df['x'].loc[(acorr_results_df['oripref_horiz_angle_diff'] < ten_degrees)]
-        #
-        # vert_aligned_dists = np.abs(vert_aligned_dists)
-        # horiz_aligned_dists = np.abs(horiz_aligned_dists)
-
-        ## Add 'distance in the direction of ori pref' to main df
-        # combo_vert_horiz_dists = pd.concat(
-        #     [vert_aligned_dists, horiz_aligned_dists], axis=1)
-        # combo_vert_horiz_dists = \
-        #     combo_vert_horiz_dists['x'].fillna(combo_vert_horiz_dists['y'])
-        # combo_vert_horiz_dists = pd.DataFrame(combo_vert_horiz_dists)
-        # combo_vert_horiz_dists = \
-        #     combo_vert_horiz_dists.rename(columns={'x':'aligned_dist'})
-        # acorr_results_df['aligned_dist'] = np.nan
-        # acorr_results_df.update(combo_vert_horiz_dists)
-
-        # Define the conditions and their labels for plotting in a for-loop
-        # df = acorr_results_df  # for brevity
-        #
-        # """Conditions I want:
-        # stim_ori alignment conds:
-        # [stim and oripref are aligned; unaligned; either aligned or unaligned (all)]
-        # x
-        # loc_conds:
-        # [locations aligned with oripref; locations unaligned to oripref]
-        # x
-        # dur_out_conds:
-        # [during stim; outside stim]
-        # x
-        # distance_conds
-        # [sq distance; euclidean distancs; vertical distance; horizontal distance, distance in direction of aligned orientation preference]
-        # """
-        #
-        # stim_ori_align_conds = []
-        # loc_conds = []
-        # dur_out_conds = []
-        # distance_conds = []
-        #
-        # # Create labels based on above description
-        # stim_ori_align_labels = ['stim_oripref_aligned', 'stim_oripref_unaligned', 'stim_oripref_all']
-        # loc_labels = ['locs_vertical', 'locs_horiztonal', 'locs_oripref_aligned', 'locs_oripref_unaligned', 'locs_all']
-        # dur_out_labels = ['During experimental stimulus','Before experimental stimulus']
-        # distance_labels = ['square distance', 'Euclidean distance', 'vertical distance', 'horizontal distance', 'distance in direction of aligned orientation preference']
-        #
-        # # Create conditions that fit the labels, in the same order
-        # stim_ori_align_conds.append(df['oripref_stim_angle_diff']<ten_degrees)
-        # stim_ori_align_conds.append(df['oripref_stim_angle_diff']>=ten_degrees)
-        # stim_ori_align_conds.append(df['oripref_stim_angle_diff']>-1)
-        #
-        # loc_conds.append(df['x']==centr)
-        # loc_conds.append(df['y']==centr)
-        # loc_conds.append(((df['x']==centr)&(df['oripref_vert_angle_diff']<ten_degrees)) | ((df['y']==centr)&(df['oripref_horiz_angle_diff']<ten_degrees)))
-        # loc_conds.append(((df['x']==centr)&(df['oripref_vert_angle_diff']>=ten_degrees)) | ((df['y']==centr)&(df['oripref_horiz_angle_diff']>=ten_degrees)))
-        # loc_conds.append((df['x']==centr) | (df['y']==centr))
-        #
-        #
-        # dur_out_conds.append(df['dur_or_out']==0)
-        # dur_out_conds.append(df['dur_or_out']==1)
-        #
-        # distance_conds.append(df['sq_dist'])
-        # distance_conds.append(df['eucl_dist'])
-        # distance_conds.append(np.abs(df['y']))
-        # distance_conds.append(np.abs(df['x']))
-        # distance_conds.append(df['aligned_dist'])
-        #
-        #
-        # not_overlap_cond = ~((df['x'] == 0) & (df['y']==0))
-        # # not_overlap_cond = df['x'] > -8888 #for debugging
-        #
-        # # Go through the various conditions and data and make plots
-        # for indep_idx, (indep_label, indep_data_df) in \
-        #         enumerate(zip(distance_labels, distance_conds)):
-        #     for dependent_label in ['amplitude']:
-        #
-        #         # Prepare directory for saving plots
-        #         # plot_sub_dir = \
-        #         #     os.path.join(plot_dir, indep_label+" vs "+dependent_label)
-        #         # if not os.path.isdir(plot_sub_dir):
-        #         #     os.mkdir(plot_sub_dir)
-        #
-        #         for st_ori_idx, (st_ori_lab, st_ori_cond) in \
-        #                 enumerate(zip(stim_ori_align_labels, stim_ori_align_conds)):
-        #             for loc_idx, (loc_label, loc_cond) in \
-        #                     enumerate(zip(loc_labels, loc_conds)):
-        #
-        #                 title = "%s vs %s for %s when %s" % (indep_label, dependent_label, loc_label, st_ori_lab)
-        #                 print(title)
-        #
-        #
-        #
-        #                 # Create figure
-        #                 fig, ax = plt.subplots(2, figsize=(9, 9))
-        #
-        #                 for dur_out_idx, (dur_out_lab, dur_out_cond) in \
-        #                         enumerate(zip(dur_out_labels,
-        #                                       dur_out_conds)):
-        #                     print(dur_out_lab)
-        #                     # # Combine conditions
-        #                     # if indep_idx == 4:
-        #                     #     full_cond = not_overlap_cond & loc_cond & dur_out_cond  # No st_ori_cond
-        #                     # else:
-        #                     #     full_cond = not_overlap_cond & st_ori_cond & loc_cond & dur_out_cond
-        #                     full_cond = not_overlap_cond & st_ori_cond & loc_cond & dur_out_cond
-        #
-        #
-        #                     # Define data using conds
-        #                     indep_data = indep_data_df[full_cond]
-        #                     dependent_data = acorr_results_df[dependent_label][full_cond]
-        #                     # num_peaks_data = acorr_results_df['num_peaks'][not_overlap_cond & cond]
-        #
-        #                     colors = acorr_results_df['ori_pref'][full_cond]
-        #
-        #                     # Check for nans and all-zero data (both break np.polyfit)
-        #                     if indep_data.hasnans:
-        #                         wherena = indep_data.isna()
-        #                         indep_data = indep_data.loc[~wherena]
-        #                         dependent_data = dependent_data.loc[~wherena]
-        #                         colors = colors.loc[~wherena]
-        #                     if dependent_data.hasnans:
-        #                         wherena = dependent_data.isna()
-        #                         indep_data = indep_data.loc[~wherena]
-        #                         dependent_data = dependent_data.loc[~wherena]
-        #                         colors = colors.loc[~wherena]
-        #                     if all(indep_data==0) or all(dependent_data==0):
-        #                         print("data only zeros", )
-        #                         plt.close()
-        #                         break
-        #
-        #                     # Plot basic plot
-        #                     m, c = np.polyfit(indep_data, dependent_data, 1) # Calc line
-        #
-        #                     ax[dur_out_idx].title.set_text(dur_out_lab)
-        #
-        #                     ax[dur_out_idx].scatter(indep_data, dependent_data, cmap=cmap,
-        #                                c=colors)
-        #                     ax[dur_out_idx].plot(indep_data, m * indep_data + c, c='r')  # Plot line
-        #                     ax[dur_out_idx].set_xlabel('%s' % indep_label)
-        #                     ax[dur_out_idx].set_ylabel('Oscillation %s' % dependent_label)
-        #
-        #                 plt.savefig(os.path.join(plot_dir,
-        #                                          "SynchExp3 " + title + ".png"))
-        #                 plt.close()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    #
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    #
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     def plot_state_and_mom_trace(self, patch_or_idx=None):
@@ -5442,7 +4324,6 @@ class AnalysisManager:
             # Plot state and mom traces overlayed
             fig = plt.figure()
             ax = plt.subplot()
-            # fig.set_size_inches(4.5, 8.5)
             stattr = ax.plot(np.array(list(range(len(state_trace)))),
                        state_trace)
             momtr = ax.plot(np.array(list(range(len(momentum_trace)))),
@@ -5460,7 +4341,6 @@ class AnalysisManager:
             # Plot state and mom during and before, with overlayed traces
             fig, ax = plt.subplots(2, sharex=True)
             fig.set_size_inches(8.5, 8.5)
-            # fig.set_size_inches(4.5, 8.5)
             # Remove borders etc
             ax[0].set_frame_on(False)
             ax[0].axes.get_yaxis().set_visible(False)
@@ -5479,7 +4359,7 @@ class AnalysisManager:
             ax[0].set_yticks([-0.15, 0.0, 0.15])
             ax[0].set_yticklabels([-0.15, 0.0, 0.15])
             ax[0].set_xticks([])
-            # ax[0].legend(['State', 'Negative Momentum'])
+
             ##Before
             stattr = ax[1].plot(
                 np.array(list(range(len(state_trace_before_trunc)))),
@@ -5494,13 +4374,9 @@ class AnalysisManager:
 
             # Calculate labels in milliseconds
             ts_per = self.ms_to_timesteps(200, 8)
-            # diff = 100 - 4 * ts_per_100ms
-            # ticks_locs_ts = np.round(np.arange(-100, 150, (150+100)/10))
             ticks_locs_ts = np.arange(0, 7 * ts_per, ts_per)
-            # ticks_locs_ts = np.array(ticks_locs_ts)
-            # ticks_locs_ts = ticks_locs_ts - np.min(ticks_locs_ts) #+ diff
-
             labels_ms = np.round(np.arange(0, 1300, 200))
+
             ax[1].set_xticks(ticks_locs_ts)
             ax[1].set_xticklabels(["t+%i" % int(k) for k in labels_ms])
             ax[1].legend(['State', 'Negative Momentum'])
@@ -5612,7 +4488,7 @@ class AnalysisManager:
 
         # Prepare general variables
         model_exp_name = self.long_just_angles_exp_name
-        # model_exp_name = self.primary_model_exp_name #todo change to self.long_just_angles_exp_name
+
         for ch in range(self.num_ch):
             # Get the state data
             dm = datamanager.DataManager(root_path=self.args.root_path,
@@ -5740,7 +4616,6 @@ class AnalysisManager:
 
         global_max_min = True
 
-        # batches = range(self.num_batches)
         batches = [0, 65]
 
         for b in batches: #TODO comment the below code
@@ -5777,11 +4652,6 @@ class AnalysisManager:
                 axx.text(1.0, 3.0, 'Channel %s' % ch,
                          fontsize=20, color='white')
 
-                # axx.colorbar()
-                # plt.savefig(
-                #     os.path.join(self.session_dir,
-                #                  "raw b_ch neuron actv locs b%i_ch%i.png" % (
-                #                  b, ch)))
                 fig.tight_layout()
                 axx.xaxis.set_visible(False)
                 axx.yaxis.set_visible(False)
@@ -5792,15 +4662,6 @@ class AnalysisManager:
             plt.close()
 
 
-
-
-    def butter_lowpass_filter(self, data, cutoff, fs=1, order=2):
-        normal_cutoff = cutoff / 0.5  # Nyquist freq = 0.5 = 1/2
-        # Get the filter coefficients
-        b, a = butter(order, normal_cutoff, btype='low', analog=False)
-        y = filtfilt(b, a, data)
-        return y
-
     def one_d_gabor_function(self, p, x):
         return (1 / (np.sqrt(2*np.pi) * p[0])) \
                * np.exp(-(x**2)/(2*p[0])) * p[2] * \
@@ -5808,838 +4669,3 @@ class AnalysisManager:
 
     def gabor_fitting_func(self, p, x):
         return self.one_d_gabor_function(p, x)
-
-    # def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_overlay_neighbours(
-    #         self):
-    #     """Collects the 128 batch dfs together
-    #        Collects the acorr data for each trace
-    #        Plots per channel for all batches for that angle"""
-    #     # Prepare general variables
-    #     exp_dir, acorr_dir = self.prepare_dirs(self.session_dir,
-    #                                            'SynchronyExp1',
-    #                                            'acorrs_overlayed')
-    #
-    #     ch_data_during = pd.DataFrame()
-    #     ch_data_outside = pd.DataFrame()
-    #     batches = [7]  # [list(range(64)), list(range(64,128))]
-    #     max_peak = 28
-    #     min_trough = -20
-    #     plot_names = ['Neighbouring channels', 'Channels 2 at distance 2']
-    #     full_plot_title = 'Cross correlation between neighbouring ' + \
-    #                       'and non-neighbouring channels'
-    #     acorr_traces_dist1 = []
-    #     acorr_traces_dist2 = []
-    #
-    #     for b_idx, b in enumerate(batches):
-    #
-    #         # Collect all the dfs for this batch group (this stim)
-    #         dfs_all = \
-    #             [pd.read_pickle(
-    #                 os.path.join(exp_dir,
-    #                              'cross_correlation_results_%s_%s.pkl' % (
-    #                              b, label)))
-    #                 for label in ['during', 'outside']]
-    #
-    #         # Go through each channel #TODO comment the below code
-    #         fig, ax = plt.subplots(2, figsize=(8, 9))
-    #         for k, (label, dist) in enumerate(zip(plot_names, [1, 2])):
-    #             title = \
-    #                 "Cross correlation between channels" + \
-    #                 " at channel-distance=%i" % (dist)
-    #             ax[k].set_ylim([min_trough, max_peak])
-    #             ax[k].set_title(title)
-    #             ax[k].set_xlabel('lag')
-    #             ax[k].set_ylabel('correlation coefficient')
-    #
-    #             for ch1 in range(self.num_ch):
-    #                 for ch2 in range(self.num_ch):
-    #                     print("%s %s %s" % (b, ch1, ch2))
-    #                     if not np.abs(ch1 - ch2) == dist:
-    #                         continue
-    #
-    #                     # print("%s" % (b))
-    #                     dfs = dfs_all[b_idx].copy()
-    #
-    #                     # Just get the channel combination you want
-    #
-    #                     print("bi: %i" % b_idx)
-    #                     cond_a = dfs['channel A'] == ch1
-    #                     cond_b = dfs['channel B'] == ch2
-    #                     ch_diff = np.abs(dfs['channel A'] - dfs['channel B'])
-    #                     ch_diff = ch_diff == dist
-    #
-    #                     cond = cond_a & cond_b & ch_diff
-    #                     dfs = dfs[cond]
-    #                     dfs = np.array(dfs.iloc[:, 1:-3])
-    #
-    #                     acorr_trace = dfs
-    #                     acorr_trace = acorr_trace.squeeze()
-    #                     display_len = 400
-    #                     mid_point = len(acorr_trace) // 2
-    #                     acorr_trace = acorr_trace[
-    #                                   (mid_point - display_len):(
-    #                                               mid_point + display_len)]
-    #                     ax[k].plot(np.arange(0 - display_len, 0 + display_len),
-    #                                acorr_trace, c='blue',
-    #                                alpha=0.05)  # /np.max(acorr_trace))
-    #
-    #                     # plt.savefig(acorr_dir + '/' + title)
-    #                     print(ch1, ch2)
-    #         plt.savefig(acorr_dir + '/' + full_plot_title)
-    #         plt.close()
-    # def single_neuron_dynamics_plot_Ham_case(self):
-    #     """The oscillatory dynamics of a randomly selected neuron in the HD
-    #     networks. But also include activations of the momentum variables."""
-    #     print("Plotting single neuron dynamics (Hamiltonian case)")
-    #     model_exp_name = self.primary_model_exp_name
-    #     var_names = ['energy', 'state', 'momenta', 'grad']
-    #     var_label_pairs = [('energy_1', 'Energy'),
-    #                        ('momenta_1', 'Momenta'),
-    #                        ('state_1', 'State'),
-    #                        ('grad_1', 'Gradient')]
-    #
-    #     # Extract data from storage into DataManager
-    #     dm = datamanager.DataManager(root_path=self.args.root_path,
-    #                                  model_exp_name=model_exp_name,
-    #                                  var_names=var_names,
-    #                                  state_layers=[1],
-    #                                  batches=[0],#range(6,11),
-    #                                  channels=[3],
-    #                                  hw=[[14,14],[15,15]],
-    #                                  timesteps=range(0, 6999))
-    #
-    #     # Process data before putting in a dataframe
-    #     reshaped_data = [np.arange(len(dm.timesteps)).reshape(
-    #         len(dm.timesteps), 1)]
-    #     reshaped_data.extend([
-    #                 dm.data[var].reshape(len(dm.timesteps), -1) for var, _ in var_label_pairs])
-    #     data = np.concatenate(reshaped_data, axis=1)
-    #     colnames = ['Timestep']
-    #     colnames.extend([label for var, label in var_label_pairs])
-    #     df = pd.DataFrame(data, columns=colnames)
-    #
-    #     # Make one plot per variable
-    #     for var, label in var_label_pairs:
-    #         sns.set(style="darkgrid")
-    #         plot = sns.lineplot(x="Timestep", y=label, data=df)
-    #         plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
-    #         plt.tight_layout()  # Stops y label being cut off
-    #         fig = plot.get_figure()
-    #         fig.savefig(self.session_dir + '/' + 'plot_%s.png' % label)
-    #         fig.clf()  # Clears figure so plots aren't put on top of one another
-    #
-    #     # Make pairs plot
-    #     g = sns.PairGrid(df)
-    #     g.map(sns.lineplot)
-    #     g.savefig(self.session_dir + '/' + 'pairs plot.png')
-    #     plt.close()
-    #     # plot two plots, one for state/energy and the other for momenta
-
-
-    def single_neuron_dynamics_plot_LD_case(self):
-        """The oscillatory dynamics of a randomly selected neuron in the LD
-        networks."""
-        raise NotImplementedError()
-
-    # def single_neuron_autocorrelation(self):
-    #     """The oscillatory dynamics of a randomly selected neuron in the HD
-    #     networks. But also include activations of the momentum variables."""
-    #     print("Plotting the autocorrelation of a single neuron")
-    #     model_exp_name = self.primary_model_exp_name
-    #     var_names = ['energy', 'state', 'momenta', 'grad']
-    #     var_label_pairs = [('energy_1', 'Energy'),
-    #                        ('momenta_1', 'Momenta'),
-    #                        ('state_1', 'State'),
-    #                        ('grad_1', 'Gradient')]
-    #
-    #     # Extract data from storage into DataManager
-    #     dm = datamanager.DataManager(root_path=self.args.root_path,
-    #                                  model_exp_name=model_exp_name,
-    #                                  var_names=var_names,
-    #                                  state_layers=[1],
-    #                                  batches=[0],#range(6,11),
-    #                                  channels=[3],
-    #                                  hw=[[14,14],[15,15]],
-    #                                  timesteps=range(0, 6999))
-    #
-    #     # Process data before putting in a dataframe
-    #     reshaped_data = [np.arange(len(dm.timesteps)).reshape(
-    #         len(dm.timesteps), 1)]
-    #     reshaped_data.extend([
-    #                 dm.data[var].reshape(len(dm.timesteps), -1) for var, _ in var_label_pairs])
-    #     data = np.concatenate(reshaped_data, axis=1)
-    #     colnames = ['Timestep']
-    #     colnames.extend([label for var, label in var_label_pairs])
-    #     df = pd.DataFrame(data, columns=colnames)
-    #
-    #     # Make one autocorrelation plot per variable
-    #     for var, label in var_label_pairs:
-    #         sns.set(style="darkgrid")
-    #         _, _, plot1, plot2 = plt.acorr(df[label],
-    #                                        detrend=lambda x: x - np.mean(x),
-    #                                        maxlags=2000)
-    #         plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
-    #         plt.tight_layout()  # Stops y label being cut off
-    #         fig = plot1.get_figure()
-    #         fig.savefig(self.session_dir + '/' + 'plot_acf_%s.png' % label)
-    #         fig.clf()
-
-    # def two_neuron_crosscorrelation(self):
-    #     """The oscillatory dynamics of a randomly selected neuron in the HD
-    #     networks. But also include activations of the momentum variables."""
-    #     print("Plotting the cross correlation between two neurons")
-    #     model_exp_name = self.primary_model_exp_name
-    #     var_names = ['energy', 'state', 'momenta', 'grad']
-    #     var_label_pairs = [('energy_1', 'Energy'),
-    #                        ('momenta_1', 'Momenta'),
-    #                        ('state_1', 'State'),
-    #                        ('grad_1', 'Gradient')]
-    #
-    #     # Extract data from storage into DataManager
-    #     dm1 = datamanager.DataManager(root_path=self.args.root_path,
-    #                                   model_exp_name=model_exp_name,
-    #                                   var_names=var_names,
-    #                                   state_layers=[1],
-    #                                   batches=[0],#range(6,11),
-    #                                   channels=[3],
-    #                                   hw=[[14,14],[15,15]],
-    #                                   timesteps=range(0, 6999))
-    #     dm2 = datamanager.DataManager(root_path=self.args.root_path,
-    #                                   model_exp_name=model_exp_name,
-    #                                   var_names=var_names,
-    #                                   state_layers=[1],
-    #                                   batches=[0],#range(6,11),
-    #                                   channels=[3],
-    #                                   hw=[[20,20],[21,21]],
-    #                                   timesteps=range(0, 6999))
-    #
-    #
-    #     # Process data before putting in a dataframe
-    #     reshaped_data1 = [np.arange(len(dm1.timesteps)).reshape(
-    #         len(dm1.timesteps), 1)]
-    #     reshaped_data1.extend([
-    #                 dm1.data[var].reshape(len(dm1.timesteps), -1) for var, _ in var_label_pairs])
-    #     data1 = np.concatenate(reshaped_data1, axis=1)
-    #
-    #     reshaped_data2 = [np.arange(len(dm2.timesteps)).reshape(
-    #         len(dm2.timesteps), 1)]
-    #     reshaped_data2.extend([
-    #         dm2.data[var].reshape(len(dm2.timesteps), -1) for var, _ in
-    #         var_label_pairs])
-    #     data2 = np.concatenate(reshaped_data2, axis=1)
-    #
-    #     colnames = ['Timestep']
-    #     colnames.extend([label for var, label in var_label_pairs])
-    #     df1 = pd.DataFrame(data1, columns=colnames)
-    #     df2 = pd.DataFrame(data2, columns=colnames)
-    #
-    #     # Make one autocorrelation plot per variable
-    #     for var, label in var_label_pairs:
-    #         fig, ax = plt.subplots()
-    #         sns.set(style="darkgrid")
-    #         ax.set_title("%s cross correlation for random neurons" % label)
-    #         _, _, plot1, plot2 = plt.xcorr(x=df1[label],
-    #                                        y=df2[label],
-    #                                        detrend=lambda x: x - np.mean(x),
-    #                                        maxlags=2000)
-    #         plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
-    #         plt.tight_layout()  # Stops y label being cut off
-    #         fig = plot1.get_figure()
-    #         fig.savefig(self.session_dir + '/' + 'plot_xcf3_%s.png' % label)
-    #         fig.clf()
-
-    # def plot_energy_timeseries(self):
-    #     """Plot the decrease in energy as time progresses. Should be faster
-    #     in the HD case than in the LD case."""
-    #     print("Plotting the decrease in energy over time for both HD and LD")
-    #
-    #     # TODO
-    #     #  still need to run the LD experiments
-    #     #  then need to confirm this is working
-    #     #  Confirm what the error bars in their figure are and include them
-    #     var_names = ['energy']
-    #     var_label_pairs = [('energy_1', 'Energy (HD)'),
-    #                        ('energy_1', 'Energy (LD)')]
-    #     hd_model_exp_name = self.primary_model_exp_name
-    #     # TODO change the LD model name when you've done the inference
-    #     ld_model_exp_name = self.primary_model_exp_name
-    #
-    #     # Extract data from storage into DataManager
-    #     hd_dm = datamanager.DataManager(root_path=self.args.root_path,
-    #                                      model_exp_name=hd_model_exp_name,
-    #                                      var_names=var_names,
-    #                                      state_layers=[1],
-    #                                      batches=None,  # range(6,11),
-    #                                      channels=None,
-    #                                      hw=[[14,14],[15,15]],
-    #                                      timesteps=range(1, 100))
-    #     ld_dm = datamanager.DataManager(root_path=self.args.root_path,
-    #                                      model_exp_name=ld_model_exp_name,
-    #                                      var_names=var_names,
-    #                                      state_layers=[1],
-    #                                      batches=None,
-    #                                      channels=None,
-    #                                      hw=[[14,14],[15,15]],
-    #                                      timesteps=range(1, 100))
-    #
-    #     # Process data before putting in a dataframe
-    #     hd_energysum = hd_dm.data['energy_1'].sum(axis=(1, 2, 3, 4))
-    #     ld_energysum = ld_dm.data['energy_1'].sum(axis=(1, 2, 3, 4))
-    #
-    #     reshaped_data = [np.arange(len(hd_dm.timesteps)).reshape(
-    #         len(hd_dm.timesteps), 1)]
-    #     reshaped_data.extend([
-    #         hd_energysum.reshape(len(hd_dm.timesteps), -1)])
-    #     reshaped_data.extend([
-    #         ld_energysum.reshape(len(ld_dm.timesteps), -1)])
-    #
-    #     data = np.concatenate(reshaped_data, axis=1)
-    #     colnames = ['Timestep']
-    #     colnames.extend([label for var, label in var_label_pairs])
-    #     df = pd.DataFrame(data, columns=colnames)
-    #
-    #     # Plot the data in the dataframe, overlaying the HD and LD cases in
-    #     # one plot
-    #     sns.set(style="darkgrid")
-    #     plot1 = sns.lineplot(x="Timestep", y='Energy (HD)', data=df)
-    #     plot2 = sns.lineplot(x="Timestep", y='Energy (LD)', data=df)
-    #     plt.ticklabel_format(axis="y", style="sci",
-    #                          scilimits=(0, 0))  # Uses sci notation for units
-    #     plt.tight_layout()  # Stops y label being cut off
-    #     fig = plot1.get_figure()
-    #     fig.savefig(self.session_dir + '/' + 'plot_2%s.png' % 'HDLD_energy')
-
-    # def timeseries_EI_balance(self):
-    #     """As in Fig 5 of Aitcheson and Lengyel (2016)."""
-    #     print("Plotting the timeseries of the sum of the potential energy"+
-    #           " and the kinetic energy to demonstrate EI balance")
-    #     model_exp_name = self.primary_model_exp_name
-    #     var_names = ['energy', 'state', 'momenta', 'grad']
-    #     dm = datamanager.DataManager(root_path=self.args.root_path,
-    #                                  model_exp_name=model_exp_name,
-    #                                  var_names=var_names,
-    #                                  state_layers=[1],
-    #                                  batches=None,
-    #                                  channels=[3],
-    #                                  hw=[[14,14],[15,15]],
-    #                                  timesteps=range(0, 6999))
-    #
-    #     var_label_pairs = [('momenta_1', 'Momenta'),
-    #                        ('energy_1', 'Energy'),
-    #                        ('state_1', 'State'),
-    #                        ('grad_1', 'Gradient')]
-    #
-    #     # Put data into a df
-    #     data = [dm.data[var].sum(axis=(2,3,4))
-    #                           for var, _ in var_label_pairs
-    #             if var in ['momenta_1', 'energy_1']] #gets only mom and energy and unsqueezes
-    #     data = [v - v.mean(axis=0) for v in data]
-    #     reshaped_data = [rsd.reshape(len(dm.timesteps), self.num_batches)
-    #                           for rsd in data] # make into columns
-    #     summed_data = reshaped_data[0] + reshaped_data[1]  # Sum momenta and energy
-    #
-    #     num_ts = len(dm.timesteps)
-    #     timesteps = [np.arange(num_ts).reshape(num_ts, 1)] * self.num_batches #time idxs
-    #     timesteps = np.concatenate(timesteps, axis=0)
-    #     summed_data = summed_data.reshape(num_ts * self.num_batches, 1)
-    #     df_data = np.concatenate([timesteps, summed_data], axis=1)
-    #     colnames = ['Timestep', 'Mean-centred sum of momentum and energy']
-    #     df = pd.DataFrame(df_data, columns=colnames)
-    #
-    #     # Plot the data in the dataframe
-    #     sns.set(style="darkgrid")
-    #     plot = sns.lineplot(x=colnames[0],
-    #                         y=colnames[1],
-    #                         data=df)
-    #     #plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
-    #     plt.tight_layout()  # Stops y label being cut off
-    #     fig = plot.get_figure()
-    #     fig.savefig(self.session_dir + '/' + 'plot_%s vs %s.png' % (colnames[1], colnames[0]))
-    #     fig.clf()  # Clears figure so plots aren't put on top of one another
-
-
-    # def xcorr_EI_lag(self):
-    #     """As in Fig 5 of Aitcheson and Lengyel (2016).
-    #
-    #     It's supposed to show that the excitation leads the inhibition slightly
-    #     by showing a peak offset in the Xcorr plot. But """
-    #     print("Plotting the cross correlation between energy and momentum")
-    #     model_exp_name = self.primary_model_exp_name
-    #     var_names = ['energy', 'state', 'momenta', 'grad']
-    #     dm = datamanager.DataManager(root_path=self.args.root_path,
-    #                                  model_exp_name=model_exp_name,
-    #                                  var_names=var_names,
-    #                                  state_layers=[1],
-    #                                  batches=None,
-    #                                  channels=[3],
-    #                                  hw=[[14,14],[15,15]],
-    #                                  timesteps=range(0, 6999))
-    #
-    #     var_label_pairs = [('momenta_1', 'Momenta'),
-    #                        ('energy_1', 'Energy')]
-    #
-    #     # Process data before plotting
-    #     data = [dm.data[var].sum(axis=(2,3,4))
-    #                           for var, _ in var_label_pairs]  #unsqueezes
-    #     data = [v - v.mean(axis=0) for v in data]  # mean of timeseries to centre
-    #     reshaped_data = [rsd.reshape(len(dm.timesteps), self.num_batches)
-    #                           for rsd in data]  # make into columns
-    #     mean_data = [np.mean(rsdata, axis=1) for rsdata in reshaped_data]  # takes mean across batches
-    #
-    #     # Plot
-    #     sns.set(style="darkgrid")
-    #     fig, ax = plt.subplots()
-    #     ax.set_title("Cross correlation avg. momentum and avg. energy")
-    #     _, _, plot1, plot2 = plt.xcorr(x=mean_data[1],#1 is energy
-    #                                    y=mean_data[0],#0 is momentum
-    #                                    detrend=lambda x: x - np.mean(x),
-    #                                    maxlags=300)
-    #     plt.ticklabel_format(axis="y", style="sci",
-    #                          scilimits=(0, 0))  # Uses sci notation for units
-    #     plt.tight_layout()  # Stops y label being cut off
-    #     fig = plot1.get_figure()
-    #     fig.savefig(self.session_dir + '/' + 'plot_xcf_avgmom_avgenergy.png')
-    #     fig.clf()
-    #
-    # def find_orientation_preferences(self): #copied prior to changing from using activated neurons to the mean firing
-    #     print("Finding orientation preferences of neurons")
-    #
-    #     full_data = pd.read_pickle(os.path.join(self.session_dir,
-    #                   'neuron_activity_results_alternativeformat_just_angles.pkl'))
-    #     print(full_data.head().columns)
-    #     est_param_names = ['amplitude', 'phaseshift', 'mean']
-    #     # for name in est_param_names:
-    #     #     full_data[name] = np.nan
-    #
-    #     model_exp_name = self.just_angles_exp_name #self.primary_model_exp_name
-    #     var_label_pairs = [('state_1', 'State')]
-    #
-    #     angles = self.just_angle_angles
-    #     contrasts = self.just_angle_contrasts
-    #     angle_contrast_pairs = self.just_angle_angle_contrast_pairs
-    #     # angle_contrast_pairs = []
-    #     #
-    #     # angles = np.linspace(start=0.0, stop=np.pi*2, num=self.num_batches)
-    #     # contrasts = [2.4]
-    #     # for a in angles:
-    #     #     for c in contrasts:
-    #     #         angle_contrast_pairs.append((a, c))
-    #
-    #     activity_df = pd.read_pickle(os.path.join(
-    #         self.session_dir, 'neuron_activity_results_just_angles.pkl'))
-    #
-    #     # Create a new dataframe that sums over h and w (so we only have batch
-    #     # info per channel)
-    #     sum_cols = list(activity_df.columns).append(['angle', 'contrast'])
-    #     patch_activity_df = pd.DataFrame(columns=sum_cols)
-    #
-    #     centre1 = 16
-    #     centre2 = 16
-    #
-    #     # Get sum for central patch for each channel in each batch element.
-    #     # Each batch element corresponds to a particular (angle, contrast) pair
-    #     for b in range(self.num_batches):
-    #         cond_b = activity_df['batch_idx']==b
-    #         cond_x = (activity_df['width']>=centre1)&(activity_df['width']<=centre2)
-    #         cond_y = (activity_df['height']>=centre1)&(activity_df['height']<=centre2)
-    #         cond = cond_b & cond_x & cond_y
-    #         batch_df = activity_df.loc[cond].sum(axis=0)
-    #         batch_df['angle']    = angle_contrast_pairs[b][0]
-    #         batch_df['contrast'] = angle_contrast_pairs[b][1]
-    #         patch_activity_df = patch_activity_df.append(batch_df.T,
-    #                                                      ignore_index=True)
-    #
-    #     # Drop the trials that use very low contrasts
-    #     patch_activity_df = patch_activity_df.drop(
-    #         patch_activity_df[(patch_activity_df['contrast'] == 0) |
-    #                        (patch_activity_df['contrast'] == 0.4)].index)
-    #
-    #     # Create a new dataframe that sums over all remaining contrasts so that
-    #     # only channel response per angle remains
-    #     sum_angles_df = pd.DataFrame(columns=patch_activity_df.columns)
-    #     for a in angles:
-    #         sum_angles_df = sum_angles_df.append(
-    #             patch_activity_df.loc[patch_activity_df['angle'] == a].sum(axis=0),
-    #         ignore_index=True)
-    #     sum_angles_df = sum_angles_df.drop(columns=['width','height',
-    #                                                 'contrast', 'batch_idx'])
-    #
-    #     # Plot the orientation preference plots
-    #     fig, ax = plt.subplots(8,4, sharey=True, sharex=True)
-    #     fig.set_size_inches(12,16.5)
-    #     k = 0
-    #     angle_axis = [round((180/np.pi) * angle, 1) for angle in angles]
-    #     orient_prefs = pd.DataFrame(columns=est_param_names)
-    #     # TODO comment the below code
-    #     for i in range(8):
-    #         for j in range(4):
-    #             print("%i, %i" % (i,j))
-    #             normed_data = sum_angles_df[k] - np.mean(sum_angles_df[k])
-    #             normed_data = normed_data / \
-    #                           np.linalg.norm(normed_data)
-    #
-    #             amplitude0  = 2.0
-    #             phaseshift0 = 0
-    #             mean0  = 0.
-    #             params0 = [amplitude0, phaseshift0, mean0]
-    #             opt_func = lambda x: x[0] * np.cos(2*angles + x[1]) + x[
-    #                 2] - normed_data
-    #
-    #             est_params = \
-    #                 optimize.leastsq(opt_func, params0)[0]
-    #
-    #             ax[i,j].plot(angle_axis, normed_data)
-    #             ax[i,j].text(0.08, 0.35, 'Channel %s' % k)
-    #
-    #             est_params = self.rotate_est_params(est_params)
-    #
-    #
-    #             fitted_curve = \
-    #                 est_params[0] * np.cos(2*angles + est_params[1]) \
-    #                     + est_params[2]
-    #             if not all(normed_data.isna()):  # because nans
-    #                 ax[i,j].plot(angle_axis, fitted_curve)
-    #
-    #
-    #             if i==7: # Put labels on the edge plots only
-    #                 ax[i, j].set_xlabel('Angles (degree)')
-    #                 ax[i, j].set_xticks([0,90,180,270])
-    #             if j==0:
-    #                 ax[i,j].set_ylabel('Normed activity [a.u.]')
-    #
-    #             # Log orientation pref
-    #             orient_prefs.loc[len(orient_prefs)] = est_params
-    #             # cond = full_data['channel']==k
-    #             # idxs = full_data.loc[cond][name].index
-    #             # for r in idxs:
-    #             #     for n, name in enumerate(est_param_names):
-    #             #         full_data.loc[r, name] = est_params[n]
-    #
-    #             k += 1
-    #
-    #     orient_prefs['channel'] = np.array(orient_prefs.index)
-    #     #full_data = full_data.merge(orient_prefs)
-    #
-    #     plt.savefig(os.path.join(
-    #         self.session_dir, 'orientation_prefs.png'))
-    #     plt.close()
-    #     print(orient_prefs)
-    #
-    #
-    #     # Plot a grid of circular plots with a circle for each channel
-    #     # Plot the orientation preference plots
-    #     fig, ax = plt.subplots(8, 4, sharey=True, sharex=True,
-    #                            subplot_kw=dict(projection='polar'))
-    #     fig.set_size_inches(8,16.5)
-    #     k = 0
-    #     angle_axis = [round((180 / np.pi) * angle, 1) for angle in angles]
-    #     for i in range(8):
-    #         for j in range(4):
-    #             # TODO comment the below code
-    #             print("%i, %i" % (i, j))
-    #             normed_data = sum_angles_df[k] - np.mean(sum_angles_df[k])
-    #             normed_data = normed_data / np.linalg.norm(normed_data)
-    #             amplitude0 = 2.0
-    #             phaseshift0 = 0
-    #             mean0 = 0.
-    #             params0 = [amplitude0, phaseshift0, mean0]
-    #             opt_func = lambda x: x[0] * np.cos(2 * angles + x[1]) + x[
-    #                 2] - normed_data
-    #             est_params = \
-    #                 optimize.leastsq(opt_func, params0)[0]
-    #             ax[i, j].plot(angles, normed_data)
-    #             # ax[i,j].plot(angles, np.ones_like(angles) * 0.04,
-    #             #          linewidth=1,
-    #             #          color='r')
-    #             ax[i, j].text(np.pi * 0.73, 0.39, 'Channel %s' % k)
-    #
-    #             est_params = self.rotate_est_params(est_params)
-    #
-    #             fitted_curve = est_params[0] * np.cos(
-    #                 2 * angles + est_params[1]) \
-    #                            + est_params[2]
-    #             if not all(normed_data.isna()):  # because nans
-    #                 ax[i, j].plot(angles, fitted_curve)
-    #             # if i==3: # Put labels on the edge plots only
-    #             #     ax[i, j].set_xlabel('Angles (degree)')
-    #             #     ax[i, j].set_xticks([0,90,180,270])
-    #             # if j==0:
-    #             #     ax[i,j].set_ylabel('Normed activity [a.u.]')
-    #             ax[i, j].set_xticklabels([])
-    #             ax[i, j].set_yticklabels([])
-    #
-    #             k += 1
-    #     plt.tight_layout()
-    #     plt.savefig(os.path.join(
-    #         self.session_dir, 'orientation_prefs_circles.png'))
-    #     plt.close()
-    #
-    #     threshold = 0.04  # TODO do nested F?t? test to determine this
-    #
-    #     # Plot that shows a the spread of orientations around the unit circle
-    #     t = np.linspace(0, np.pi * 2, 100)
-    #     plt.figure(figsize=(6, 6))
-    #     ax = plt.subplot(projection='polar')
-    #     ax.set_yticklabels([])
-    #     degree_symb = u"\u00b0"
-    #
-    #     # ax.set_xticklabels([str(i/(2*np.pi)) for i in range(self.num_ch)])
-    #     ax.set_thetamin(0)
-    #     ax.set_thetamax(180)
-    #     # ax.set_yticks([list(sorted(orient_prefs['phaseshift']))])
-    #     plt.tight_layout()
-    #
-    #     # plt.plot(t, np.ones_like(t) * np.max(orient_prefs['amplitude']),
-    #     #          linewidth=1,
-    #     #          color='b')
-    #     plt.plot(t, np.ones_like(t) * threshold, linewidth=1,
-    #              color='r')
-    #
-    #     # Plot lines in between the points
-    #     thetas = orient_prefs['phaseshift']
-    #     ampls = orient_prefs['amplitude']
-    #     for i, (amp, ang) in enumerate(zip(ampls, thetas)):
-    #         print(i, amp)
-    #
-    #         ang_pi = ang + np.pi
-    #         if ang > 0.:
-    #             angles = [ang, ang_pi]
-    #             lengths = [np.abs(amp), 0.]
-    #             main_angle = ang
-    #         else:
-    #             angles = [ang_pi, ang]
-    #             lengths = [np.abs(amp), 0.]
-    #             main_angle = ang_pi
-    #
-    #         if np.abs(amp) > threshold:
-    #             plt.plot(np.array(angles),
-    #                      np.array(lengths), 'b-')
-    #             plt.plot(main_angle, np.abs(amp), 'bo')
-    #         else:
-    #             plt.plot(np.array(angles),
-    #                      np.array(lengths), 'r-')
-    #             plt.plot(main_angle, np.abs(amp), 'ro')
-    #         ax.annotate(str(i),
-    #                     xy=(main_angle, 1.05 * np.abs(ampls[i])),  # theta, radius
-    #                     xytext=(main_angle, 0.),  # fraction, fraction
-    #                     textcoords='offset pixels',
-    #                     horizontalalignment='center',
-    #                     verticalalignment='center',
-    #                     )
-    #     ax.set_xticks([0, np.pi/2, np.pi])
-    #     ax.set_xticklabels(['0'+degree_symb,
-    #                         '90'+degree_symb,
-    #                         '180'+degree_symb])
-    #     plt.tight_layout()
-    #     plt.savefig(os.path.join(self.session_dir,
-    #                              'orient_prefs_circle2.png'))
-    #     plt.close()
-    #
-    #
-    #
-    #     # Save the results
-    #     exp_type = '_just_angles'
-    #     orient_prefs.to_pickle(os.path.join(
-    #         self.session_dir, 'orientation_pref_results%s.pkl' % exp_type))
-    #     patch_activity_df.to_pickle(os.path.join(
-    #         self.session_dir, 'patch_activity_results%s.pkl'   % exp_type))
-    #     activity_df.to_pickle(os.path.join(
-    #         self.session_dir, 'neuron_activity_results%s.pkl'  % exp_type))
-    #
-    #     # full_data.to_pickle(os.path.join(
-    #     #     self.session_dir,
-    #     #     'neuron_activity_results_alternativeformat_primary_w_ori.pkl'))
-
-    def plot_pixel_vs_activity(self):
-        print("Plotting pixel vs activity map")
-        nrnact = pd.read_pickle(
-            os.path.join(self.session_dir,
-                         'neuron_activity_results_primary.pkl'))
-
-        im_start = self.top_left_pnt[0]
-
-        # Reorganises activity dataframe so we can sum over pixels
-        map_act = pd.melt(nrnact, id_vars=['batch_idx', 'height', 'width'],
-                          value_vars=list(range(32)))
-        map_act = map_act.rename(
-            columns={'variable': 'channel', 'value': 'active'})
-        pixel_inds = [(i, j) for i in list(range(self.extracted_im_size)) for j in
-                      range(self.extracted_im_size)]
-
-        # Get the experimental images
-        exp_stim_path_base = "data/gabor_filters/single/"
-        exp_stim_stem = "contrast_and_angle"
-        exp_stim_path = exp_stim_path_base + exp_stim_stem
-        (_, _, filenames) = next(os.walk(exp_stim_path))
-        filenames = sorted(filenames)
-        exp_stims = []
-        for flnm in filenames:
-            im = Image.open(os.path.join(exp_stim_path, flnm))
-            im = transforms.functional.to_tensor(im)
-            exp_stims.append(im)
-        exp_stims = torch.stack(
-            exp_stims)  # should have generated only 128 images
-        exp_stims = exp_stims.mean(dim=1)  # makes image black and white
-        exp_stims = exp_stims.numpy()
-
-        # Make column names from indices of batches, height, and width
-        inds = np.meshgrid(np.arange(exp_stims.shape[0]),
-                           np.arange(exp_stims.shape[1]),
-                           np.arange(exp_stims.shape[2]),
-                           sparse=False, indexing='ij')
-        inds = [i.reshape(-1) for i in inds]
-
-        # Make a df for pixel intensities
-        pix_intensities = exp_stims.reshape(-1)
-        df_data = np.stack([pix_intensities, inds[0], inds[1], inds[2]]).T
-        pix_int_df = pd.DataFrame(data=df_data, columns=['Pixel intensity',
-                                                         'batch_idx',
-                                                         'height',
-                                                         'width'])
-
-        # Combine the dataframes
-        pix_int_df = pd.merge(pix_int_df, map_act, how='inner')
-
-        # Plot for each channel over all batches
-        for ch in range(self.num_ch):
-            # Group the df data by pixel index (i.e. get the probability of
-            pch = pix_int_df['channel'] == ch
-            values_for_channel = pix_int_df.loc[pch]
-            values_for_channel = \
-                values_for_channel.groupby(['Pixel intensity'])[
-                    'active'].mean()
-            values_for_channel = pd.DataFrame(values_for_channel)
-            plt.scatter(values_for_channel.index,
-                        values_for_channel['active'], )
-            plt.xlabel('Pixel intensity')
-            plt.savefig(os.path.join(
-                self.session_dir,
-                'activity proportion vs pixel intensity for ch %i.png' % ch))
-            plt.close()
-
-    def explore_oscillations_in_channel(self, patch_or_idx=None):
-
-        # in a messy state right now but will maybe return to.
-
-        # Make dir to save plots for this experiment
-        exp_dir = os.path.join(self.session_dir, 'summed centre states')
-        if not os.path.isdir(exp_dir): os.mkdir(exp_dir)
-
-        if patch_or_idx == 'patch':
-            centre1 = self.central_patch_min
-            centre2 = self.central_patch_max
-            save_name = 'patch'
-        else:
-            centre1 = self.top_left_pnt[0] + self.extracted_im_size / 2
-            centre2 = centre1
-            save_name = 'neuron'
-        print("Exploring oscillations")
-
-
-        # Load data
-        full_data = pd.read_pickle(os.path.join(self.session_dir,
-            "neuron_activity_results_alternativeformat_primary_w_ori_w_match.pkl"))
-
-        # Load data
-        # nrnact = pd.read_pickle(
-        #     os.path.join(self.session_dir,
-        #                  'neuron act ori.pkl'))
-
-        # Prepare general variables
-        model_exp_name = self.primary_model_exp_name
-        # TODO this func is a bit of a mess, will return to it
-        for ch in range(self.num_ch):
-
-            # Get data
-            dm = datamanager.DataManager(root_path=self.args.root_path,
-                                         model_exp_name=model_exp_name,
-                                         var_names=self.st_var_name,
-                                         state_layers=[1],
-                                         batches=None,
-                                         channels=[ch],
-                                         hw=[self.top_left_pnt,
-                                             self.bottom_right_pnt],
-                                         timesteps=None)
-
-            # Process data
-            activities_df, arr_sh, colnames, inds = \
-                self.convert_ch_data_to_activity_df(dm)
-
-            # Find the subset of the nrnact df for this channel only and get
-            # the h, w values for on neurons in each batch
-            nrnact_ch = full_data.loc[full_data['channel'] == ch]
-            nrnact_ch = nrnact_ch.loc[nrnact_ch['matched_stim_ori_pref']]
-            nrnact_ch = nrnact_ch.loc[nrnact_ch['active']]
-            nrnact_ch = nrnact_ch.loc[nrnact_ch['height'] >= centre1]
-            nrnact_ch = nrnact_ch.loc[nrnact_ch['height'] <= centre2]
-            nrnact_ch = nrnact_ch.loc[nrnact_ch['width'] >= centre1]
-            nrnact_ch = nrnact_ch.loc[nrnact_ch['width'] <= centre2]
-            nrnact_ch = nrnact_ch.reset_index()
-
-            colnames = ['Timestep']
-            colnames.extend(energy_names)
-            df = pd.DataFrame(data, columns=colnames)
-            for name in colnames[1:]:
-                fig, ax = plt.subplots(4)
-                fig.set_size_inches(14.5, 8.5)
-                spec_data = df[name]
-                # spec_data = (df[name] - np.mean(df[name]))
-                # spec_data = spec_data / np.linalg.norm(spec_data)
-
-                # Denoise
-                # spec_data = self.butter_lowpass_filter(spec_data,cutoff=0.1,fs=100)
-
-                ax[0].plot(df['Timestep'], spec_data)
-                ax[0].set_ylabel('State [a.u.]')
-                ax[0].set_xlabel('Timesteps')
-
-                ax[1].specgram(spec_data, NFFT=512, Fs=100, Fc=0, detrend=None,
-                               noverlap=511, xextent=None, pad_to=None,
-                               sides='default',
-                               scale_by_freq=True, scale='dB', mode='default',
-                               cmap=plt.get_cmap('hsv'))
-                ax[1].set_ylabel('Frequency [a.u.]')
-
-                lags1, acorrs1, plot11, plot12 = ax[2].acorr(df[name][self.primary_stim_start:3550],
-                                                             detrend=plt.mlab.detrend_linear,
-                                                             # lambda x: x - np.mean(x)
-                                                             maxlags=2499)
-                lags2, acorrs2, plot21, plot22 = ax[3].acorr(df[name][3550:6050],
-                                                             detrend=plt.mlab.detrend_linear,
-                                                             maxlags=2499)
-                plt.ticklabel_format(axis="y", style="sci", scilimits=(
-                0, 0))  # Uses sci notation for units
-                plt.tight_layout()  # Stops y label being cut off
-
-                # plt.title('STFT Magnitude')
-                plt.savefig(
-                    self.session_dir + '/' + "spectrum__single_gabor%s.png" % name)
-                plt.close()
-
-                # p0 = {'sigma': 1.0,
-                #      'omega':  1.0,
-                #      'amp':    1.0,
-                #      'bias1':  0.0,
-                #      'bias2':  0.0}
-
-                p0 = [555.0, 550.0, 1e20, 0.0, 0.0]
-
-                p1, success = optimize.leastsq(self.gabor_fitting_func, p0,
-                                               args=(lags1))
-                # plt.plot(lags1, acorrs1)
-                plt.plot(lags1, self.one_d_gabor_function(p1, lags1))
-                plt.savefig(self.session_dir + '/' + "gabors.png")
-                plt.close()
-
-        # Make one plot per variable
-        # for j, colname in enumerate(colnames[1:]):
-        #     sns.set(style="darkgrid")
-        #     _, _, plot1, plot2 = plt.acorr(df[colname],
-        #                                    detrend=lambda x: x - np.mean(x),
-        #                                    maxlags=749)
-        #     plt.ticklabel_format(axis="y", style="sci", scilimits=(0, 0))  # Uses sci notation for units
-        #     plt.tight_layout()  # Stops y label being cut off
-        #     fig = plot1.get_figure()
-        #     fig.savefig('plot_osc_search_%s.png' % colname)
-        #     fig.clf()
-

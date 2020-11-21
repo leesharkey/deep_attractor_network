@@ -24,8 +24,6 @@ class Manager():
         self.sample_log_dir = sample_log_dir
         self.parameters = self.model.parameters()
 
-
-
         if self.args.weights_optimizer == 'sgd':
 
             self.optimizer = optim.SGD(self.parameters,
@@ -34,9 +32,7 @@ class Manager():
         elif self.args.weights_optimizer == 'adam':
             self.optimizer = optim.Adam(self.parameters,
                                         lr=self.args.lr[0],
-                                        betas=(0.0, 0.999))  # betas=(0.9, 0.999))
-
-
+                                        betas=(0.0, 0.999))
 
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer,
                                                    step_size=1,
@@ -65,7 +61,6 @@ class Manager():
             path = 'exps/models/' + self.loaded_model_name + '.pt'
             checkpoint = torch.load(path)
             self.model.load_state_dict(checkpoint['model'])
-            #self.optimizer.load_state_dict(checkpoint['model_optimizer'])
 
             # Decide which current settings should override old settings
             new_args = checkpoint['args']
@@ -105,8 +100,6 @@ class Manager():
             self.image_range = (-1, 1)
         else:
             self.image_range = (0,  1)
-
-
 
     def make_save_dict(self):
         """Assembles the dictionary of objects to be saved"""
@@ -175,7 +168,6 @@ class TrainingManager(Manager):
 
         self.sigma = self.args.sigma
 
-
     def train(self):
         self.save_net_and_settings()
         prev_states = None
@@ -223,11 +215,8 @@ class TrainingManager(Manager):
             new_lr = self.scheduler.get_lr()[0]
             self.writer.add_scalar('train/lr', new_lr, self.epoch)
 
-
         # Save network(s) and settings when training is complete too
         self.save_net_and_settings()
-
-
 
     def positive_phase(self, pos_img, prev_states=None):
 
@@ -273,7 +262,6 @@ class TrainingManager(Manager):
             initr_loss = self.initter.update_weights(outs=pos_states_init[1:],
                                                      targets=pos_states[1:],
                                                      step=self.batch_num)
-
         return pos_states
 
     def negative_phase(self):
@@ -301,7 +289,6 @@ class TrainingManager(Manager):
             self.sampler_step(neg_states, step=self.global_step)
             self.global_step += 1
             if (self.batch_num - 2) % 50  == 0 and (self.global_step % 20 ==0):
-                #bookmark: debugging
                 neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
                 if not os.path.isdir(neg_save_dir):
                     os.mkdir(neg_save_dir)
@@ -309,16 +296,8 @@ class TrainingManager(Manager):
                 utils.save_image(neg_imgs_save,
                                  os.path.join(neg_save_dir,
                                       str(self.global_step)+'neg' + '.png'),
-                                 nrow=16, normalize=True, range=self.image_range)
-            # neg_save_dir = os.path.join(self.sample_log_dir, 'neg')
-            # if not os.path.isdir(neg_save_dir):
-            #     os.mkdir(neg_save_dir)
-            # neg_imgs_save = neg_states[0].detach().to('cpu')
-            # utils.save_image(neg_imgs_save,
-            #                  os.path.join(neg_save_dir,
-            #                               str(
-            #                                   self.global_step) + 'neg' + '.png'),
-            #                  nrow=16, normalize=True, range=self.image_range)
+                                 nrow=16, normalize=True,
+                                 range=self.image_range)
 
         # Stop calculting grads w.r.t. images
         for neg_state in neg_states:
@@ -331,18 +310,9 @@ class TrainingManager(Manager):
 
     def sampler_step(self, states, positive_phase=False, pos_it=None,
                      step=None):
-
         if self.args.ff_dynamics:
-            # if self.batch_num < 200 or self.batch_num % 100:
-            #     e_calc_bool = True
-            # else:
-            #     e_calc_bool = False
-
-            energy, outs, full_energies = self.model(states, # energy_calc=e_calc_bool)
+            energy, outs, full_energies = self.model(states,
                                                      energy_calc=True)
-            #dev
-            # (-energy).backward()
-            # print(sum(torch.flatten(torch.isclose(states[0].grad, outs[0]))))
 
             # Set the gradients manually
             for state, update in zip(states, outs):
@@ -354,15 +324,14 @@ class TrainingManager(Manager):
                 if positive_phase and layer_idx == 0:
                     pass
                 else:
-                    # Note: Just set sigma to a very small value if you don't want to
-                    # add noise. It's so inconsequential that it's not worth the
-                    # if-statements to accommodate sigma==0.0
+                    # Note: Just set sigma to a very small value if you don't
+                    # want to add noise. It's so inconsequential that it's not
+                    # worth the if-statements to accommodate sigma==0.0
                     if not self.args.state_optimizer == "sghmc":  #new
                         for layer_idx, (noise, state) in enumerate(
                                 zip(self.noises, states)):
                             noise.normal_(0, self.sigma[layer_idx])
                             state.data.add_(noise.data)
-
 
         else:
             # Get total energy and energy outputs for indvdual neurons
@@ -376,7 +345,7 @@ class TrainingManager(Manager):
                 (-energy).backward()
 
             # Save latest energy outputs so you can schedule the phase lengths
-            print("Energy: %f" % energy.item())#TODO if noBP dynamics just put this print statement inside the model so that it only prints when energy is actually calculated
+            print("Energy: %f" % energy.item())
             if positive_phase:
                 self.latest_pos_enrg = energy.item()
                 if self.args.truncate_pos_its:
@@ -384,26 +353,10 @@ class TrainingManager(Manager):
             else:
                 self.latest_neg_enrg = energy.item()
 
-
         if self.args.clip_grad:
             torch.nn.utils.clip_grad_norm_(states,
                                            self.args.clip_state_grad_norm,
                                            norm_type=2)
-
-        # Adding noise in the Langevin step (only for non conditional
-        # layers in positive phase)
-        # for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-        #     if positive_phase and layer_idx == 0:
-        #         pass
-        #     else:
-        #         # Note: Just set sigma to a very small value if you don't want to
-        #         # add noise. It's so inconsequential that it's not worth the
-        #         # if-statements to accommodate sigma==0.0
-        #         if not self.args.state_optimizer == "sghmc":  #new
-        #             for layer_idx, (noise, state) in enumerate(
-        #                     zip(self.noises, states)):
-        #                 noise.normal_(0, self.sigma)
-        #                 state.data.add_(noise.data)
 
         # The gradient step in the Langevin/SGHMC step
         # It goes through each statelayer and steps back using its associated
@@ -431,7 +384,6 @@ class TrainingManager(Manager):
                     #print("Logging energy histograms")
                     self.writer.add_histogram(hist_layer_string, out, step)
                     self.writer.add_histogram(hist_full_enrg_string, nrgy, step)
-
 
         ## Pos or Neg total energies
         if positive_phase and step % self.args.scalar_logging_interval == 0:
@@ -496,10 +448,6 @@ class TrainingManager(Manager):
     def calc_energ_and_loss(self, neg_states, pos_states):
 
         # Get energies of positive and negative samples
-        #TODO if npBP dynamics, then there will have to be an option here that
-        # returns the actual energy so that backprop can be used for the
-        # weight updates
-
         pos_energy, _, _ = self.model(pos_states, energy_calc=True)
         neg_energy, _, _ = self.model(neg_states, energy_calc=True)
 
@@ -523,21 +471,14 @@ class TrainingManager(Manager):
         return neg_energy, pos_energy, loss
 
     def update_weights(self):
-
         # Stabilize weight updates
         self.clip_grad(self.parameters, self.optimizer)
 
         # Update the network params
         self.optimizer.step()
 
-
-
     def clip_grad(self, parameters, optimizer):
         if self.args.weights_optimizer == 'sgd':
-            #bound=100.0
-            # torch.nn.utils.clip_grad_norm_(parameters,
-            #                                10.,
-            #                                norm_type=2)
             with torch.no_grad():
                 for group in optimizer.param_groups:
                     for p in group['params']:
@@ -565,13 +506,12 @@ class TrainingManager(Manager):
                             exp_avg_sq / (1 - beta2 ** step)) + 0.1
                         p.grad.data.copy_(
                             torch.max(torch.min(p.grad.data, bound), -bound))
-                        #print("bound: %f" % bound.item())
 
     def param_update_phase(self, neg_states, pos_states):
 
         # Put model in training mode and prepare network parameters for updates
         lib.utils.requires_grad(self.parameters, True)
-        self.model.train()  # Not to be confused with self.TrainingManager.train
+        self.model.train() # Not to be confused with self.TrainingManager.train
         self.model.zero_grad()
 
         # Calc energy and loss
@@ -600,15 +540,8 @@ class TrainingManager(Manager):
         diff = max(self.pos_short_term_history) - \
                min(self.pos_short_term_history)
 
-        # increasing = False
-        # if all([val0 < val1 for (val0, val1) in
-        #         zip(self.pos_short_term_history[:-1],
-        #             self.pos_short_term_history[1:])]):
-        #     increasing = True
-        #     print("Increasing energy during pos phase")
-
         if current_iteration > 200 and \
-                (diff < self.args.truncate_pos_its_threshold): #or increasing):
+                (diff < self.args.truncate_pos_its_threshold):
             self.stop_pos_phase = True
             self.writer.add_scalar('train/trunc_pos_at', current_iteration,
                                    self.batch_num)
@@ -631,7 +564,7 @@ class TrainingManager(Manager):
             mean_pos = sum(self.pos_history)/len(self.pos_history)
             mean_neg = sum(self.neg_history)/len(self.neg_history)
             if mean_neg > mean_pos + self.mean_neg_pos_margin \
-                    and self.epoch > 5: # so never updates before 6th epoch
+                    and self.epoch > 5:  # so never updates before 6th epoch
 
                 # Scale up num it neg mean
                 self.num_it_neg_mean = int(self.num_it_neg_mean * 1.25)
@@ -722,7 +655,6 @@ class VisualizationManager(Manager):
                 num_ch = size[1]
                 for ch in range(num_ch):
                     print("Channel %s" % ch)
-                    #self.update_state_size_bs(state_layer_idx)
                     self.noises = lib.utils.generate_random_states(
                                     self.args,
                                     self.args.state_sizes,
@@ -758,18 +690,10 @@ class VisualizationManager(Manager):
                                                        self.args.state_scales,
                                                        self.initter)
         else:
-            # Original
             states = lib.utils.generate_random_states(
                     self.args,
                     self.args.state_sizes,
                     self.device)
-
-            # Gets the values of the pos states by running an inference phase
-            # with the image state_layer clamped
-            # rand_states_init = self.initialize_pos_states(pos_img=states[0],
-            #                                              prev_states=[])
-            # rand_states = [rsi.clone().detach() for rsi in rand_states_init]
-            # End original
 
         # Freeze network parameters and take grads w.r.t only the inputs
         lib.utils.requires_grad(states, True)
@@ -777,18 +701,6 @@ class VisualizationManager(Manager):
         if self.args.initializer == 'ff_init':
             lib.utils.requires_grad(self.initter.parameters(), False)
         self.model.eval()
-
-
-
-
-        # states = [s * 0.05 for s in states] ##TODO remvove after debugging viz
-        # if self.args.initializer == 'ff_init':
-        #     states_new = [states[0]]
-        #     self.initter.eval()
-        #     initted_states = self.initter.forward(states[0], [])
-        #     states_new.extend(initted_states)
-        #     states = states_new
-        #     states = [s.detach() for s in states]
 
         # Freeze network parameters and take grads w.r.t only the inputs
         lib.utils.requires_grad(states, True)
@@ -798,7 +710,6 @@ class VisualizationManager(Manager):
         # Set up state optimizer if approp
         self.state_optimizers = lib.utils.get_state_optimizers(self.args,
                                                                states)
-
         print("Sigma: %s" % str(self.sigma))
 
         # Viz phase sampling
@@ -858,18 +769,12 @@ class VisualizationManager(Manager):
         from the channel neuron that's being visualized. The gradients for
         other layers come from the energy gradient."""
 
-        #TODO if noBP dynamics these sampler steps will need to be updated too
-
         energy, outs, energies = self.model(states)  # Outputs energy of neg sample
-        #total_energy = energy.sum()
         total_energies = [e.sum() for e in energies]
 
-        # total_energies = [e*scale for (e, scale) in zip(total_energies,
-        #                                                 self.energy_masks)]
         total_energies = sum(total_energies)
         print("Energy: %f" % total_energies.float())
         # Take gradient wrt states (before addition of noise)
-        #total_energy.backward() #
         total_energies.backward()
 
         # The rest of the sampler step function is no different from the
@@ -878,14 +783,6 @@ class VisualizationManager(Manager):
             torch.nn.utils.clip_grad_norm_(states,
                                            self.args.clip_state_grad_norm,
                                            norm_type=2)
-
-        # Adding noise in the Langevin step (only for non conditional
-        # layers in positive phase)
-        #if not self.args.state_optimizer == "sghmc":  #LEE This was an offending line
-        # for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-        #     noise.normal_(0, self.sigma)
-        #     state.data.add_(noise.data)
-
 
         # The gradient step in the Langevin/SGHMC step
         # It goes through each statelayer and steps back using its associated
@@ -957,7 +854,7 @@ class VisualizationManager(Manager):
 
         # Adding noise in the Langevin step (only for non conditional
         # layers in positive phase)
-        if not self.args.state_optimizer == "sghmc":  #LEE This was an offending line
+        if not self.args.state_optimizer == "sghmc":
             for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
                 noise.normal_(0, self.sigma)
                 state.data.add_(noise.data)
@@ -993,7 +890,6 @@ class VisualizationManager(Manager):
         total_energy = energy.sum()
         total_energies = sum([e.sum() for e in energies])
         print("Energy: %f" % energy.item())
-
         total_energies.backward()
 
         # The rest of the sampler step function is no different from the
@@ -1002,14 +898,6 @@ class VisualizationManager(Manager):
             torch.nn.utils.clip_grad_norm_(states,
                                            self.args.clip_state_grad_norm,
                                            norm_type=2)
-
-        # Adding noise in the Langevin step (only for non conditional
-        # layers in positive phase)
-        #if not self.args.state_optimizer == "sghmc":  LEE This was an offending line
-        # for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-        #     noise.normal_(0, self.sigma)
-        #     state.data.add_(noise.data)
-
 
         # The gradient step in the Langevin/SGHMC step
         # It goes through each statelayer and steps back using its associated
@@ -1048,217 +936,6 @@ class VisualizationManager(Manager):
                 state.data = torch.where(clamp_array,
                                          clamped_values,
                                          opp_clamped_values)
-            # elif i > state_layer_idx:
-            #     state.data = torch.zeros_like(state.data)
-
-class WeightVisualizationManager(Manager):
-    def __init__(self, args, model, data, buffer, writer, device,
-                 sample_log_dir):
-        super().__init__(args, model, data, buffer, writer, device,
-                 sample_log_dir)
-        self.params = [p for p in self.model.parameters()]
-        self.quad_nets = self.model.quadratic_nets
-
-        # Get the forward network(s)
-        forward_net  = self.model.quadratic_nets[1]
-        backward_net = self.model.quadratic_nets[0]
-        self.f_net_conv = None
-        self.f_net_fc = None
-        self.b_net_conv = None
-        self.b_net_fc = None
-        if hasattr(forward_net, 'densecctblock'):
-            self.f_net_conv = forward_net.densecctblock
-        if hasattr(backward_net, 'densecctblock'):
-            self.b_net_conv = backward_net.densecctblock
-        if hasattr(forward_net, 'fc_net'):
-            self.f_net_fc = forward_net.fc_net
-        if hasattr(backward_net, 'fc_net'):
-            self.b_net_fc = backward_net.fc_net
-
-        self.base_save_dir = 'exps/weight_visualizations'
-        self.save_dir = self.base_save_dir + '/' + self.model.model_name
-
-        if not os.path.isdir(self.base_save_dir):
-            os.mkdir(self.base_save_dir)
-        if not os.path.isdir(self.save_dir):
-            os.mkdir(self.save_dir)
-
-
-    def visualize_base_weights(self):
-        lbls = ['densecctblock']
-        nets = [self.f_net_conv]
-        nets = [(lbl, net) for lbl, net in zip(lbls, nets) if net is not None]
-        for lbl, net in nets:
-            print("Visualizing %s" % lbl)
-            self.visualize_cctblock(net, nrow=8, label=lbl)
-
-    def standardize(self, tensor):
-        std_t = torch.std(tensor)
-        stdzd_t = (tensor / max([1e-14, std_t])) + 0.5
-        return stdzd_t
-
-
-    def visualize_cctblock(self, block, nrow, label):
-
-        # Get the conv and/or transposed conv weight tensor
-        if block.base_cctls[0][0].only_conv:
-            conv = block.base_cctls[0][0].conv
-            top = block.top_net
-            weight = conv.weight
-            bias = conv.bias
-
-            stdzd_weights = self.standardize(weight)
-
-            bias = bias.unsqueeze(1).unsqueeze(1).unsqueeze(1).transpose(0, 1)
-            bias = [bias] * (
-                torch.prod(torch.tensor(weight.shape[1:])))
-            bias = torch.cat(bias, dim=0)
-            bias = bias.view(weight.shape)
-            bias = bias.to('cpu')
-            stdzd_biases = self.standardize(bias)
-
-            w_b = weight + bias
-            stdzd_weights_and_biases = self.standardize(w_b)
-        elif block.base_cctls[0][0].only_conv_t:
-            # Untested
-            conv_t = block.base_cctls[0][0].conv_t
-            weight = conv_t.weight
-            bias = conv_t.bias
-
-            stdzd_weights = self.standardize(weight)
-
-            bias = bias.unsqueeze(1).unsqueeze(1).unsqueeze(1).transpose(0, 1)
-            bias = [bias] * (
-                torch.prod(torch.tensor(weight.shape[1:])))
-            bias = torch.cat(bias, dim=1)
-            bias = bias.view(weight.shape)
-            stdzd_biases = self.standardize(bias)
-
-            w_b = weight + bias
-            stdzd_weights_and_biases = self.standardize(w_b)
-        else:
-            conv = block.base_cctls[0][0].conv
-            conv_t = block.base_cctls[0][0].conv_T
-
-            # Combine their weights into one tensor
-            weight = torch.cat([conv.weight.transpose(0, 1),
-                                      conv_t.weight], dim=1)
-            bias = torch.cat([conv.bias, conv_t.bias], dim=0)
-
-            # Transform their weight block by the 1x1 conv that follows them
-            # in the dense cct block
-            transf_weight = block.top_net(weight)
-            stdzd_weights = self.standardize(transf_weight)
-
-            # Turn the vector of biases into a tensor with the same shape as the
-            # weights
-            bias = bias.unsqueeze(1).unsqueeze(1).unsqueeze(1).transpose(0, 1)
-            bias = [bias] * (torch.prod(torch.tensor(weight.transpose(0,1).shape[1:])))
-            bias = torch.cat(bias, dim=0)
-            bias = bias.view(weight.shape)
-
-            # Pass bias through the same 1x1 conv as the weights
-            transf_bias = block.top_net(bias)
-            stdzd_biases = self.standardize(transf_bias)
-
-            # Combine weights and biases and pass through 1x1 conv
-            w_b = weight + bias
-            transf_w_b = block.top_net(w_b)
-            stdzd_weights_and_biases = self.standardize(transf_w_b)
-
-        utils.save_image(stdzd_weights,
-                         self.save_dir + '/weights_%s.png' % label,
-                         nrow=nrow, normalize=True, range=(0, 1))
-        utils.save_image(stdzd_biases,
-                         self.save_dir + '/biases_%s.png' % label,
-                         nrow=nrow, normalize=True, range=(0, 1))
-        utils.save_image(stdzd_weights_and_biases,
-                         self.save_dir + '/weights_and_biases_%s.png' % label,
-                         nrow=nrow, normalize=True, range=(0, 1))
-
-
-    def visualize_weight_pretrained(self, name='densenet121'):
-        save_dir = self.base_save_dir + '/' + name
-        if not os.path.isdir(save_dir):
-            os.mkdir(save_dir)
-
-        imported = torch.hub.load('pytorch/vision:v0.5.0', name,
-                                  pretrained=True)
-        imported_w = [x for x in imported.parameters()][0]
-        std = torch.std(imported_w)
-        std_weights = (imported_w / std) + 0.5
-        utils.save_image(std_weights, save_dir + '/weights.png', nrow=8,
-                         normalize=True, range=(0, 1))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 class ExperimentsManager(Manager):
@@ -1267,8 +944,6 @@ class ExperimentsManager(Manager):
         super().__init__(args, model, data, buffer, writer, device,
                  sample_log_dir)
 
-        # self.latest_pos_enrg = None
-        # self.latest_neg_enrg = None
         self.num_it_neg_mean = self.args.num_it_neg
         self.num_it_neg = self.args.num_it_neg
         self.num_sl  = len(self.args.state_sizes)
@@ -1280,8 +955,6 @@ class ExperimentsManager(Manager):
         self.bno_strs     = ['bno_%i' % i for i in range(self.num_sl)]
         self.energy_strs  = ['energy_%i' % i for i in range(self.num_sl)]
         self.img_str = 'images'
-        # self.save_vars = ['momenta', 'all_states', 'binary_net_outputs',
-        #                   'energies']
         self.base_save_dir = self.args.exp_data_root_path
         self.save_dir_model = self.base_save_dir + '/' + self.model.model_name + '_loaded' + self.loaded_model_name
         self.save_dir_exp = None
@@ -1328,7 +1001,7 @@ class ExperimentsManager(Manager):
 
 
         # Determine how long each stim will be displayed for
-        self.phase_lens = [1500]#[7000]
+        self.phase_lens = [1500]
 
         phase_idxs = []
         for phase, phase_len in enumerate(self.phase_lens):
@@ -1343,18 +1016,14 @@ class ExperimentsManager(Manager):
 
         exp_stim_path_base = "data/gabor_filters/%s/" % type_stim
 
-        # To measure oscillations, use experiment with varied contrast & angle
-        #exp_stim_stem = "contrast_and_angle" #TODO make into a cli arg
-
-        # To measure orientation preferences, use exp that varies only angle
-        #exp_stim_stem = "just_angle"
-
         exp_stim_path = exp_stim_path_base + exp_stim_stem
 
         self.save_dir_exp = self.save_dir_model + '/' + \
                             'orientations_present_%s_gabor_' % type_stim + \
                             exp_stim_stem + '/'
+
         self.save_img = True
+
         if not os.path.isdir(self.save_dir_exp):
             os.mkdir(self.save_dir_exp)
         for data_dir in self.data_save_dirs:
@@ -1375,7 +1044,6 @@ class ExperimentsManager(Manager):
 
         # Images for first 50 timesteps are from data distribution
         image_phase_list = [pos_img]
-        #image_phase_list = []
 
         # The next image is a blank image
         image_phase_list.append(self.base_im_batch)
@@ -1398,12 +1066,8 @@ class ExperimentsManager(Manager):
         image_phase_list.append(self.base_im_batch)
 
         # Determine how long each stim will be displayed for
-        #self.experiment_len = 200
-        #self.phase_lens = [50, 1000, 2500, 3000] #orig
         self.phase_lens = [int(self.args.num_burn_in_steps),
-                           1000, 1000, 600] #modern
-        # self.phase_lens = [2,
-        #                    2, 2, 2] #test
+                           1000, 1000, 600]
 
         phase_idxs = []
         for phase, phase_len in enumerate(self.phase_lens):
@@ -1506,19 +1170,6 @@ class ExperimentsManager(Manager):
                                            self.args.clip_state_grad_norm,
                                            norm_type=2)
 
-
-        # Adding noise in the Langevin step (only for non conditional
-        # layers in positive phase)
-        # for layer_idx, (noise, state) in enumerate(zip(self.noises, states)):
-        #     if positive_phase and layer_idx == 0:
-        #         pass
-        #     else:
-        #         noise.normal_(0, self.args.sigma[0])
-        #         # Note: Just set sigma to a very small value if you don't want to
-        #         # add noise. It's so inconsequential that it's not worth the
-        #         # if-statements to accommodate sigma==0.0
-        #         state.data.add_(noise.data)
-
         # The gradient step in the Langevin/SGHMC step
         # It goes through each statelayer and steps back using its associated
         # optimizer.
@@ -1537,7 +1188,6 @@ class ExperimentsManager(Manager):
                 if self.args.log_histograms  and \
                         step % self.args.histogram_logging_interval == 0:
                     hist_layer_string = 'layers/hist_bnrys_%s' % i
-                    #print("Logging energy histograms")
                     self.writer.add_histogram(hist_layer_string, enrg, step)
 
         ## Pos or Neg total energies
@@ -1554,20 +1204,12 @@ class ExperimentsManager(Manager):
         if step % self.args.scalar_logging_interval == 0:
             for i, state in enumerate(states):
                 mean_layer_string = 'layers/mean_states_%s' % i
-                #print("Logging mean energies")
                 self.writer.add_scalar(mean_layer_string, state.mean(), step)
                 if self.args.log_histograms and \
                         step % self.args.histogram_logging_interval == 0:
                     hist_layer_string = 'layers/hist_states_%s' % i
-                    #print("Logging energy histograms")
                     self.writer.add_histogram(hist_layer_string, state, step)
         # End of tensorboard logging
-
-        # Save latest energy outputs so you can schedule the phase lengths
-        # if positive_phase:
-        #     self.latest_pos_enrg = energy.item()
-        # else:
-        #     self.latest_neg_enrg = energy.item()
 
         # Prepare gradients and sample for next sampling step
         for i, state in enumerate(states):
@@ -1593,7 +1235,7 @@ class ExperimentsManager(Manager):
         for j, (state, out, enrg, opt) in enumerate(zip(states[start:end], outs[start:end],
                                                         energies[start:end],
                                                     self.state_optimizers[start:end]),
-                                                    start=start): # LEE only saving the bottom two
+                                                    start=start): # only saving the bottom two
             if opt.state_dict()['state']: # i.e. if momentum exists isn't empty, because it's only instantiated after 1 steps I think
                 key = list(opt.state_dict()['state'].keys())[0]
                 state_mom = opt.state_dict()['state'][key]['momentum']
@@ -1639,7 +1281,6 @@ class ExperimentsManager(Manager):
                          nrow=16, normalize=True, range=(0, 1))
 
     def obs_negative_phase(self):
-        #TODO if necess
         print('\nStarting observational negative phase...')
         # Initialize the chain (either as noise or from buffer)
         neg_states = self.buffer.sample_buffer()
@@ -1662,15 +1303,11 @@ class ExperimentsManager(Manager):
         for neg_state in neg_states:
             neg_state.detach_()
 
-        # Send negative samples to the negative buffer
-        # self.buffer.push(neg_states, neg_id)
-
         return neg_states
 
 
-
 class ExperimentalStimuliGenerationManager:
-    # TODO function that creates a single long bar image
+
     def __init__(self,
                  base_image_path='mean_cifar10_trainingset_pixels.png',
                  save_path_root='data/gabor_filters/'):
@@ -1699,8 +1336,7 @@ class ExperimentalStimuliGenerationManager:
         loader = DataLoader(dataset,
                             batch_size=1024,
                             shuffle=True,
-                            drop_last=False,
-                            )
+                            drop_last=False)
         sum_pos_state = None
         counter = 0
         for pos_state, _ in loader:
@@ -1759,18 +1395,6 @@ class ExperimentalStimuliGenerationManager:
                              folder_name='FolderNameUnfilled',
                              save_image=True):
 
-        #orig single gabor settings
-        # (self,
-        #  loc=[0, 0],
-        #  sigma=0.7,
-        #  angle=0,
-        #  wavelength=3.,
-        #  spat_asp_ratio=0.4,
-        #  ellipicity=1,
-        #  contrast=1,
-        #  folder_name='FolderNameUnfilled',
-        #  save_image=True)
-
         static_y = 16
         static_x = 16
 
@@ -1782,7 +1406,6 @@ class ExperimentalStimuliGenerationManager:
                     'Location cannot be outside the bounds of image')
 
         # Get gabor filters
-
         filtr1 = self.gabor(sigma=0.7, theta=angle1, gamma=0.4,
                            Lambda=3., psi=1,
                            contrast=contrast)
@@ -1804,7 +1427,7 @@ class ExperimentalStimuliGenerationManager:
         print(patch.shape, filtr1.shape)
         mask1[:, (static_y - hf_h):(static_y - hf_h + fshape1[0]),
         (static_x - hf_w):(static_x - hf_w + fshape1[1])] = \
-            filtr1-np.ones_like(filtr1)#np.multiply(patch, filtr1)
+            filtr1-np.ones_like(filtr1)
 
         ##2
         hf_h, hf_w = int(fshape2[0] / 2), int(fshape2[1] / 2)
@@ -1813,9 +1436,9 @@ class ExperimentalStimuliGenerationManager:
         print(patch.shape, filtr2.shape)
         mask2[:, (loc[0] - hf_h):(loc[0] - hf_h + fshape2[0]),
         (loc[1] - hf_w):(loc[1] - hf_w + fshape2[1])] = \
-            filtr2-np.ones_like(filtr2)#np.multiply(patch, filtr2)
+            filtr2-np.ones_like(filtr2)
 
-        #Combine masks
+        # Combine masks
         mask = mask1*2 + mask2*2 + np.ones_like(mask1)
 
         # Multiply base image by filter
@@ -1845,8 +1468,6 @@ class ExperimentalStimuliGenerationManager:
                              nrow=1, normalize=True, range=(0, 1))
         return new_image
 
-
-
     def single_gabor_image(self,
                              loc=[0, 0],
                              sigma=0.7,
@@ -1858,20 +1479,7 @@ class ExperimentalStimuliGenerationManager:
                              repeat=None,
                              folder_name='FolderNameUnfilled',
                              save_image=True,
-                             clip=False): #Be sure to change double defaults
-
-        #original defaults:
-        # (self,
-        #  loc=[0, 0],
-        #  sigma=0.7,
-        #  angle=0,
-        #  wavelength=3.,
-        #  spat_asp_ratio=0.4, #0.3
-        #  ellipicity=1,
-        #  contrast=1,
-        #  folder_name='FolderNameUnfilled',
-        #  save_image=True)
-
+                             clip=False):
 
         # Possibly nice defaults (just a thin white bar with even surround)
         # loc = [0, 0],
@@ -2096,14 +1704,7 @@ class ExperimentalStimuliGenerationManager:
               "previously generated data. Cancel if you wish, or enter "+
               "any input")
 
-
         contrast = 2.4
-        # angle_min = 0.0
-        # angle_max = np.pi * 2
-        # angle_incr = (np.pi * 2) / 128
-        # angles = [0.0] * 64
-        # angles.extend([np.pi * 0.5] * 64)
-
         angles = np.arange(0, 2*np.pi, (np.pi * 2) / 8)
         angles = list(angles)
         angles = angles * 16
@@ -2193,82 +1794,6 @@ class ExperimentalStimuliGenerationManager:
                                  save_string,
                                  nrow=1, normalize=True, range=(0, 1))
 
-    # def generate_double_gabor_dataset__fewlocs_and_angles(self): #not used as far as I remember. Used fewlocs and fewer angles instead.
-    #     folder_name1 = 'double'
-    #     folder_name2 = 'fewlocs_and_angles'
-    #
-    #     full_folder_name = os.path.join(self.save_path_root,
-    #                                     folder_name1,
-    #                                     folder_name2)
-    #
-    #     if not os.path.exists(os.path.join(self.save_path_root,
-    #                               folder_name1)):
-    #         os.mkdir(os.path.join(self.save_path_root,
-    #                               folder_name1))
-    #     if not os.path.exists(full_folder_name):
-    #         os.mkdir(os.path.join(self.save_path_root,
-    #                               folder_name1,
-    #                               folder_name2))
-    #
-    #     contrast = 2.4
-    #
-    #     angle_min = 0.0
-    #     angle_max = np.pi * 2
-    #     angle_incr = (np.pi * 2) / 8
-    #     angle_range = np.arange(start=angle_min, stop=angle_max,
-    #                             step=angle_incr)
-    #
-    #     y_min = -4
-    #     y_max = 12
-    #     y_incr = 2
-    #     y_range = list(np.arange(y_min, y_max, y_incr))
-    #
-    #     x_min = 0
-    #     x_max = 9
-    #     x_incr = 8
-    #     x_range = list(range(x_min, x_max, x_incr))
-    #     locs = [[i, j] for i in y_range for j in x_range]
-    #     print(len([(a, l) for a in angle_range for l in locs]))  # remove
-    #
-    #     # single_base_im = self.single_gabor_image(angle=0.5*np.pi,
-    #     #                                          save_image=False)
-    #     # centred_base_im = single_base_im - self.base_image
-    #     save_name_idx = 0
-    #     for loc in locs:
-    #         for angle in angle_range:
-    #
-    #             print([angle, loc])
-    #             # Create second gabor filter
-    #             new_im = self.double_gabor_image(angle=angle,
-    #                                              loc=loc,
-    #                                              contrast=contrast,
-    #                                              save_image=False)
-    #
-    #             # # Combine first and second images into one
-    #             # centred_new_im = new_im - self.base_image
-    #             # centred_combo = centred_new_im + centred_base_im
-    #             # new_im = centred_combo + self.base_image
-    #
-    #             # Create name of image based on attributes
-    #             loc_string = ''
-    #             for l in loc:
-    #                 loc_string += str(l) + '-'
-    #             loc_string = loc_string[:-1]
-    #             save_string = '%04d_gf_loc%s_th%s' % (save_name_idx,
-    #                                                 loc_string, '%.5f' % angle)
-    #             save_string = os.path.join(self.save_path_root,
-    #                                        folder_name1,
-    #                                        folder_name2,
-    #                                        save_string)
-    #             save_string += '.png'
-    #             print(save_string)
-    #
-    #             # Save image
-    #             utils.save_image(new_im,
-    #                              save_string,
-    #                              nrow=1, normalize=True, range=(0, 1))
-    #
-    #             save_name_idx += 1
 
     def generate_double_gabor_dataset__fewlocs_and_fewerangles(self):
         folder_name1 = 'double'
@@ -2288,13 +1813,6 @@ class ExperimentalStimuliGenerationManager:
                                   folder_name2))
 
         contrast = 2.4
-
-        # y_min = -4
-        # y_range = [-3, 1, 5, 9]
-        # x_range = [0, 7]
-        # locs = [[i, j] for i in y_range for j in x_range]
-        # print(len([(a, l) for a in angle_range for l in locs]))  # remove
-
 
         # Define locations and angles
         static_angles = np.arange(0, 2*np.pi, np.pi/2)
@@ -2317,9 +1835,6 @@ class ExperimentalStimuliGenerationManager:
             pair = pair * 4
             angles.extend(pair)
 
-
-        # angles = angles_starts * 4
-        # angles = sorted(angles) * 8
 
         i = 0
         locs = []
@@ -2344,9 +1859,6 @@ class ExperimentalStimuliGenerationManager:
             locs.extend(nl)
 
 
-        # single_base_im = self.single_gabor_image(angle=0.5*np.pi,
-        #                                          save_image=False)
-        # centred_base_im = single_base_im - self.base_image
         save_name_idx = 0
         for loc, static_angle, mob_angle in zip(locs, static_angles, angles):
 
@@ -2357,11 +1869,6 @@ class ExperimentalStimuliGenerationManager:
                                              loc=loc,
                                              contrast=contrast,
                                              save_image=False)
-
-            # # Combine first and second images into one
-            # centred_new_im = new_im - self.base_image
-            # centred_combo = centred_new_im + centred_base_im
-            # new_im = centred_combo + self.base_image
 
             # Create name of image based on attributes
             loc_string = ''
@@ -2385,8 +1892,3 @@ class ExperimentalStimuliGenerationManager:
                              nrow=1, normalize=True, range=(0, 1))
 
             save_name_idx += 1
-
-
-
-
-shapes = lambda x : [y.shape for y in x]
