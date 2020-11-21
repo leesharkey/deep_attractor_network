@@ -4,6 +4,7 @@ import pandas as pd
 import scipy.stats as spst
 from scipy.signal import butter, filtfilt, detrend, welch, find_peaks
 from scipy.stats import shapiro
+import math
 import matplotlib.pyplot as plt
 from torchvision import transforms, utils
 import tensorboard as tb
@@ -1609,15 +1610,35 @@ class AnalysisManager:
                     per_contr_series[n] += contrast_df
 
         # Plot per-contrast spectrograms of the series
-        sep_str = '-        -        -        -        -        -        -        -'
-        plot_titles = ['Low contrast -        -        -        -', sep_str,
-                       sep_str, '-        -        -        - High contrast']
+        sep_str = '    -        -        -        -        -        -        -    '
+        plot_titles = ['Low contrast  -        -        -    ', sep_str,
+                       sep_str, '    -        -        -  High contrast']
+        timesteps_per_second = self.ms_to_timesteps(1000)
+        #
+        # ts_chunk = 10
+        # min_range = -2
+        # max_range = 4
+        # ts_per_chunk = self.ms_to_timesteps(ts_chunk, 8)
+        # ticks_locs_ts = np.arange(min_range * ts_per_chunk, max_range * ts_per_chunk,
+        #                           ts_per_chunk)
+        # labels_ms = np.round(
+        #     np.arange(min_range * ts_chunk, max_range * ts_chunk, ts_chunk))
+        ###
+        # ts_per_chunk = self.ms_to_timesteps(1000,8)
+        # diff = 100 - 4 * ts_per_chunk
+        # # ticks_locs_ts = np.round(np.arange(-100, 150, (150+100)/10)) # TODO check all this is okay
+        # ticks_locs_ts = sorted(-np.arange(0, -2*ts_per_chunk, ts_per_chunk))[:-1]
+        # ticks_locs_ts.extend(list(np.arange(0, 4*ts_per_chunk, ts_per_chunk)))
+        # ticks_locs_ts = np.array(ticks_locs_ts)
+        # ticks_locs_ts = ticks_locs_ts - np.min(ticks_locs_ts) + diff
+        ###
+
         k=0
-        fig, ax = plt.subplots(1, 4, figsize=(15, 4))
+        fig, ax = plt.subplots(1, 4, figsize=(12, 3))
         for axis, contrast, p_title, series in zip(ax, contrasts,plot_titles,per_contr_series):
             spectrum, freqs, t, im = axis.specgram(series[100:],
                                                    NFFT=self.specgram_nfft,
-                                                   Fs=100,
+                                                   Fs=timesteps_per_second,
                                                    Fc=0,
                                                    detrend=None,
                                                    noverlap=self.specgram_nfft-1,
@@ -1627,21 +1648,30 @@ class AnalysisManager:
                                                    scale_by_freq=True,
                                                    scale='dB',
                                                    mode='default',
-                                                   vmin=-120.,
+                                                   vmin=-110.,
                                                    vmax=0.,
-                                                   cmap=plt.get_cmap(
-                                                       'hsv'))
-            x_axis_scaler = 100
-            axis.axvline(x=self.primary_stim_start/x_axis_scaler, c='black',
+                                                   cmap=plt.get_cmap('hsv'))
+            # Increase length of t just for axes
+            t = np.arange(np.min(t), np.max(t) + 1,
+                      np.mean([t[i] - t[i - 1] for i in range(1, len(t))]))
+            x_axis_scaler = timesteps_per_second
+            axis.axvline(x=(self.primary_stim_start-128)/x_axis_scaler, c='black',
+                         linewidth=1, linestyle='dashed') # subtracting min(t) moves the line so that it's in the middle of the segment that is centred on the start of the stim
+            axis.axvline(x=(self.primary_stim_stop-128)/x_axis_scaler, c='black',
                          linewidth=1, linestyle='dashed')
-            axis.set_xlabel('Timesteps before stimulus')
-            if k ==0:
-                axis.set_ylabel('Frequency [a.u.]')
-            axis.title.set_text(p_title)
-            axis.set_xticks(ticks=[6,11,16,21])#,labels=['0'])
-            axis.set_xticklabels([-500,0,500,1000])
+            axis.set_xlabel('Time before stimulus [s]')
+            axis.set_frame_on(False)
 
-            axis.set_yticks([])
+            if k ==0:
+                axis.set_ylabel('Frequency [Hz]') #TODO lee pick up from here. And check others that they're okay too.
+            axis.title.set_text(p_title)
+            rescale = lambda l: l/x_axis_scaler# - np.min(t)
+            time_range = np.arange(1+np.min(t),11+np.min(t), 1)
+            axis.set_xticks([self.find_t_at(x, t)/x_axis_scaler for x in time_range])#[rescale(x) for x in [500, 1000,1500,2000]])#ticks=[2,4,6,8,10])#,labels=['0'])
+            axis.set_xticklabels(np.round(np.arange(-3,7,1)))#labels_ms[1:-1])#[self.ms_to_timesteps(x*1000,1) for x in np.arange(2,11,2)])
+            axis.set_yticks([0, 50, 100])
+            axis.set_yticklabels([0, 50, 100])
+
             plt.tight_layout()  # Stops y label being cut off
             k += 1
         plt.savefig(
@@ -1649,6 +1679,17 @@ class AnalysisManager:
                          'Spectrogram for central %s for all channels .png' % (
                              save_name)))
         plt.close()
+
+    def find_t_at(self, x, t_range_ms):
+        """Helper function to find the corresponding timestep (in a.u.) for
+        a time in ms"""
+        if x > np.max(t_range_ms) or x < np.min(t_range_ms):
+            raise ValueError("Desired time x not in range of times given")
+        else:
+            nearby_values = np.where(np.isclose(t_range_ms, x, 0.0006))[0]
+            # print(nearby_values)
+            timestep = nearby_values[len(nearby_values)//2]
+            return timestep
 
     def plot_contrast_power_spectra_LFP(self, patch_or_idx=None):
 
@@ -1951,7 +1992,7 @@ class AnalysisManager:
         ax.legend_.get_frame().set_linewidth(0.0)
         ts_per_100ms = self.ms_to_timesteps(100,8)
         diff = 100 - 4 * ts_per_100ms
-        # ticks_locs_ts = np.round(np.arange(-100, 150, (150+100)/10))
+        # ticks_locs_ts = np.round(np.arange(-100, 150, (150+100)/10)) # TODO check all this is okay
         ticks_locs_ts = sorted(-np.arange(0, 4*ts_per_100ms, ts_per_100ms))[:-1]
         ticks_locs_ts.extend(list(np.arange(0, 8*ts_per_100ms, ts_per_100ms)))
         ticks_locs_ts = np.array(ticks_locs_ts)
@@ -2912,7 +2953,7 @@ class AnalysisManager:
                     plt.close()
 
 
-    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_CI_neighbours(self):
+    def synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_CI_neighbours(self): #TODO boog
         """Collects the 128 batch dfs together
            Collects the acorr data for each trace
            Plots per channel for all batches for that angle"""
@@ -2924,29 +2965,45 @@ class AnalysisManager:
         ch_data_during  = pd.DataFrame()
         ch_data_outside = pd.DataFrame()
         batches = list(range(self.num_batches))#[list(range(64)), list(range(64,128))]
-        max_peak = 0.75
-        min_trough = -0.75
+        max_peak = 0.5
+        min_trough = -0.5
         display_len = 200
 
         plot_names = ['Neighbouring channels', 'Channels 2 at distance 2']
-        full_plot_title = 'Cross correlation between neighbouring ' + \
+        full_plot_title = 'Mean cross correlation between neighbouring ' + \
                           'and non-neighbouring channels'
-        acorr_traces_dist1 = []
-        acorr_traces_dist2 = []
-        acorr_traces_lists = [acorr_traces_dist1, acorr_traces_dist2]
+        num_plots = 5
+        acorr_traces_lists = [[].copy() for x in range(num_plots)]# * num_plots
 
         # Go through each channel #TODO comment the below code
-        fig, ax = plt.subplots(2, figsize=(8, 9))
-        for k, (label, dist) in enumerate(zip(plot_names, [1, 2])):
-            title = \
-                "Cross correlation between channels" + \
-                " at channel-distance=%i" % (dist)
+        dists = range(1, num_plots+1)
+        fig, ax = plt.subplots(num_plots, figsize=(8, 12))
+        fig.subplots_adjust(hspace=-0.4)
+
+        for k, dist in enumerate(dists):
+
             ax[k].set_ylim([min_trough, max_peak])
-            ax[k].set_title(title)
-            ax[k].set_xlabel('lag')
-            ax[k].set_ylabel('correlation coefficient')
-            ax[k].set_yticks([-0.5, 0, 0.5])
-            ax[k].set_yticklabels([-0.5, 0, 0.5])
+            ax[k].set_frame_on(False)
+            timerange = np.arange(-800, 1000, 200)
+            print(timerange)
+            if k == 0:
+                title = \
+                    "Mean cross correlation between channels" + \
+                    " at different channel-distances"
+                ax[k].set_title(title)
+
+            if dist == num_plots: # Add x axis on last plot only
+                ax[k].set_xticklabels(timerange)
+                ax[k].set_xlabel('Lag [ms]')
+                ax[k].set_xticks([self.ms_to_timesteps(x) for x in timerange])
+            else:
+                ax[k].set_xticklabels([])
+                ax[k].set_xticks([])
+
+            ax[k].set_ylabel('Channel dist %i' % dist)
+            ax[k].set_yticks([-0.25, 0, 0.25])
+            ax[k].set_yticklabels([-0.25, 0, 0.25])
+
 
             for b_idx, b in enumerate(batches):
 
@@ -2959,6 +3016,7 @@ class AnalysisManager:
                 for ch1 in range(self.num_ch):
                     for ch2 in range(self.num_ch):
                         print("%s %s %s" % (b, ch1, ch2))
+
                         if not np.abs(ch1-ch2)==dist:
                             continue
 
@@ -3236,6 +3294,8 @@ class AnalysisManager:
         if not os.path.isdir(exp_dir):
             os.mkdir(exp_dir)
 
+        # Define some helper functions
+
         # batch_groups = [list(range(64)), list(range(64, 128))]
         bg_angles = self.just_angles_few_angles_batchgroupangles
 
@@ -3396,17 +3456,30 @@ class AnalysisManager:
         plt.close()
 
 
+        # Prep for rad conversion:
+        degree_symb = u"\u00b0"
+        ticks_in_deg_left = np.arange(0, 12, 2)
+        ticks_in_rad_left = [math.radians(deg) for deg in ticks_in_deg_left]
+
+        ticks_in_deg_right = np.arange(0, 181, 20)
+        ticks_in_rad_right = [math.radians(deg) for deg in ticks_in_deg_right]
+
+
         # Do CI plot
         fig, ax = plt.subplots(1,2, figsize=(9,4), sharey=True)
 
         ax[0].errorbar(ori_pref_categs_ali, bs_means_ali, yerr=[bs_low_intvs_ali, bs_high_intvs_ali], c='r', fmt='-o', capsize=3, elinewidth=1)
-        ax[0].set_xlabel('Angle difference (rad)')
+        ax[0].set_xlabel('Angle difference [%s]' % degree_symb)
+        ax[0].set_xticks(ticks_in_rad_left)
+        ax[0].set_xticklabels([str(deg) for deg in ticks_in_deg_left])
         ax[0].set_ylabel('Oscillation amplitude')
         ax[0].title.set_text('Aligned')
 
 
         ax[1].errorbar(ori_pref_categs_ua, bs_means_ua, yerr=[bs_low_intvs_ua, bs_high_intvs_ua], c='r', fmt='-o', capsize=2, elinewidth=0.5)
-        ax[1].set_xlabel('Angle difference (rad)')
+        ax[1].set_xticks(ticks_in_rad_right)
+        ax[1].set_xticklabels([str(deg) for deg in ticks_in_deg_right])
+        ax[1].set_xlabel('Angle difference [%s]' % degree_symb)
         ax[1].title.set_text('Unaligned')
 
 

@@ -68,6 +68,7 @@ def main():
     # am.find_orientation_preferences()
     # am.assign_ori_info()
 
+
     # CONTRAST DEPENDENT FREQ ANALYSIS
     # am.plot_state_traces_with_spec_and_acorr('patch')
     # am.plot_state_traces_with_spec_and_acorr(None)
@@ -75,7 +76,7 @@ def main():
     # # am.plot_contrast_specgram_comparison_local(None)    # not used
     # am.plot_contrast_specgram_comparison_LFP()  # In thesis
     # am.plot_contrast_specgram_comparison_LFP('neuron')
-    am.plot_contrast_power_spectra_LFP()  # In thesis
+    # am.plot_contrast_power_spectra_LFP()  # In thesis
 
 
     # CONTRAST DEPENDENT TRANSIENTS ANALYSIS
@@ -98,10 +99,8 @@ def main():
     # # am.two_neuron_crosscorrelation() #hasn't been used in a long time
     # # am.explore_oscillations_in_channel() #in a messy state right now but will maybe return to.
 
-
     # am.plot_state_and_mom_trace() # In thesis # still needs to be run for all channels
     # am.calculate_EI_lag()
-
 
 
     # # SYNCHRONY EXPERIMENT 1
@@ -109,11 +108,11 @@ def main():
     # am.synchrony_experiment1_overlapping_rec_fields_fit_Gabors() # TODO change name to remove 'overlapping rec fields' part
     # # # am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_individually() #not really used
     # # # am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_overlay() # not really used
-    # am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_CI_neighbours()
+    # am.synchrony_experiment1_overlapping_rec_fields_Plot_acorrs_CI_neighbours()  # In thesis
     # am.synchrony_experiment1_overlapping_rec_fields_Analyze_fitted_Gabors()
-    # am.synchrony_experiment1_overlapping_rec_fields_OriPref_vs_OscAmp()
-    #
-    #
+    am.synchrony_experiment1_overlapping_rec_fields_OriPref_vs_OscAmp()
+
+
     # # # SYNCHRONY EXPERIMENT 2
     # am.synchrony_experiment2_xcorrs()
     # am.synchrony_experiment2_fit_Gabors()
