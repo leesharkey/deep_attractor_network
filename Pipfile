@@ -17,6 +17,8 @@ tensorboard = "*"
 torchviz = "*"
 matplotlib = "*"
 seaborn = "*"
+array2gif = "*"
+bootstrapped = "*"
 
 [requires]
 python_version = "3.7"
