@@ -1,24 +1,3 @@
-"""
-Recommended settings for getting started:
-
-Run command
-
-python main.py --use_cuda --batch_size 128 --network_type NRFLV
---dataset CIFAR10 --architecture NRFLV_CIFAR_4SL_small_densebackw_wideSL1base
---initter_network_weight_norm --model_weight_norm --initializer ff_init
---initter_network_lr 5e-4 --l2_reg_energy_param 1.0 --num_it_neg 500
---num_it_pos 500 --img_logging_interval 10 --scalar_logging_interval 200
---log_histograms --histogram_logging_interval 3000 --sample_buffer_prob 0.95
---lr 5e-4 --lr_decay_gamma 0.95 --sampling_step_size 0.1
---states_activation hardtanh --activation swish --model_save_interval 50
---sigma 0.00 --state_optimizer sghmc --momentum_param 0.1 --non_diag_inv_mass
---num_burn_in_steps 100 --scale_grad 1.0 --max_sq_sigma 1e-4 1e-4 1e-4 1e-4
---min_sq_sigma 9e-5 --viz --viz_type standard --num_it_viz 5000
---viz_img_logging_step_interval 25 --viz_start_layer 1 --weights_optimizer adam
-
-"""
-
-
 import argparse
 import os
 import numpy as np
@@ -29,32 +8,10 @@ from lib.data import SampleBuffer, Dataset
 import lib.utils
 import lib.managers as managers
 
-def dict_len_check(args):
-    """Check the dicts are the right length."""
-    num_layers = len(args.state_sizes)
-    for l in range(num_layers):
-        inps           = args.arch_dict['mod_connect_dict'][l]
-        cct_statuses   = args.arch_dict['mod_cct_status_dict'][l]
-        base_kern_pads = args.arch_dict['base_kern_pad_dict'][l]
-
-        if not len(cct_statuses)==len(inps) or not \
-            len(inps)==len(base_kern_pads):
-            str1 = "Layer %i architecture dictionaries invalid. " % l
-            raise ValueError(str1 +
-                             "cct_statuses, inp_state_shapes, and " +
-                             "base_kern_pads must be the same length. Check " +
-                             "that the architecture dictionary defines these "+
-                             "correctly.")
 
 def finalize_args(parser):
-    """Sets and finalizes args
-    Recommend using architecture "NRFLV_CIFAR_4SL_small_densebackw_wideSL1base"
-    """
-    args = parser.parse_args()
 
-    # Generate random args, if any
-    if args.randomize_args is not []:
-        args = lib.utils.random_arg_generator(parser, args)
+    args = parser.parse_args()
 
     # Determine the correct device
     vars(args)['use_cuda'] = args.use_cuda and torch.cuda.is_available()
