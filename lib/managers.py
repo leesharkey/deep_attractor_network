@@ -955,7 +955,7 @@ class ExperimentsManager(Manager):
         self.bno_strs     = ['bno_%i' % i for i in range(self.num_sl)]
         self.energy_strs  = ['energy_%i' % i for i in range(self.num_sl)]
         self.img_str = 'images'
-        self.base_save_dir = self.args.exp_data_root_path
+        self.base_save_dir = args.exp_data_root_path
         self.save_dir_model = self.base_save_dir + '/' + self.model.model_name + '_loaded' + self.loaded_model_name
         self.save_dir_exp = None
         self.data_save_dirs = self.momenta_strs

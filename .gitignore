@@ -1,8 +1,6 @@
 .idea/
 .png
 *.pyc
-Pipfile
-Pipfile.lock
 analysis_results/
 archived plots/
 data/
